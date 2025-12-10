@@ -149,6 +149,24 @@
               <div class="task-info">
                 <strong>排程:</strong> {{ task.schedule }}
               </div>
+              <div class="task-info" v-if="task.last_run">
+                <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span
+                  v-if="task.last_run_status"
+                  :class="['execution-status', 'status-' + task.last_run_status]"
+                >
+                  {{ getStatusText(task.last_run_status) }}
+                </span>
+              </div>
+              <div class="task-info" v-else>
+                <strong>最後執行:</strong> <span class="text-muted">尚未執行</span>
+              </div>
+              <div class="task-info" v-if="task.last_run_result">
+                <strong>執行結果:</strong> {{ task.last_run_result }}
+              </div>
+              <div class="task-error" v-if="task.error_message">
+                <strong>❌ 錯誤訊息:</strong> {{ task.error_message }}
+              </div>
             </div>
             <button
               @click="triggerTask(task.task_name)"
@@ -618,6 +636,17 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString('zh-TW')
 }
 
+function getStatusText(status: string) {
+  const statusMap: Record<string, string> = {
+    'success': '✅ 成功',
+    'failed': '❌ 失敗',
+    'pending': '⏳ 等待中',
+    'running': '▶️ 執行中',
+    'unknown': '❓ 未知'
+  }
+  return statusMap[status] || status
+}
+
 // Lifecycle
 onMounted(() => {
   const token = localStorage.getItem('access_token')
@@ -947,6 +976,59 @@ onMounted(() => {
 
   strong {
     color: #374151;
+  }
+
+  .text-muted {
+    color: #9ca3af;
+    font-style: italic;
+  }
+}
+
+.task-error {
+  font-size: 0.875rem;
+  color: #dc2626;
+  background: #fee2e2;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  margin-top: 0.5rem;
+  border-left: 3px solid #ef4444;
+
+  strong {
+    color: #991b1b;
+  }
+}
+
+.execution-status {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+
+  &.status-success {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  &.status-failed {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  &.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  &.status-running {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  &.status-unknown {
+    background: #f3f4f6;
+    color: #6b7280;
   }
 }
 

@@ -9,12 +9,14 @@ from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.services.fundamental_service import FundamentalService
 from app.services.finlab_client import FinLabClient
+from app.utils.task_history import record_task_history
 from loguru import logger
 from datetime import datetime, timezone
 from typing import List
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_fundamental_data")
+@record_task_history
 def sync_fundamental_data(
     self: Task,
     stock_ids: List[str] = None,
@@ -100,6 +102,7 @@ def sync_fundamental_data(
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_fundamental_latest")
+@record_task_history
 def sync_fundamental_latest(self: Task) -> dict:
     """
     快速同步最新季度的財務數據

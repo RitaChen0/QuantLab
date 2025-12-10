@@ -252,6 +252,9 @@ async def list_sync_tasks(
     current_user: User = Depends(get_current_superuser),
 ):
     """Get all sync tasks and their schedules (admin only)"""
+    from app.utils.cache import cache
+    import json
+
     schedule = celery_app.conf.beat_schedule
     tasks = []
 
@@ -267,10 +270,42 @@ async def list_sync_tasks(
 
     for name, config in schedule.items():
         task_name = config["task"]
+
+        # Get last run information from Redis cache
+        last_run = None
+        last_run_status = None
+        last_run_result = None
+        error_message = None
+
+        try:
+            if cache.is_available():
+                # Try to get task execution history from Redis
+                # Key format: task_history:{task_name}
+                history_key = f"task_history:{task_name}"
+                history_data = cache.get(history_key)
+
+                if history_data:
+                    if isinstance(history_data, str):
+                        history_data = json.loads(history_data)
+
+                    last_run_str = history_data.get("last_run")
+                    if last_run_str:
+                        last_run = datetime.fromisoformat(last_run_str.replace('Z', '+00:00'))
+
+                    last_run_status = history_data.get("status", "unknown")
+                    last_run_result = history_data.get("result")
+                    error_message = history_data.get("error")
+        except Exception as e:
+            logger.warning(f"Failed to get task history for {task_name}: {str(e)}")
+
         tasks.append(SyncTaskInfo(
             task_name=task_name,
             display_name=task_display_names.get(task_name, task_name),
             schedule=str(config["schedule"]),
+            last_run=last_run,
+            last_run_status=last_run_status,
+            last_run_result=last_run_result,
+            error_message=error_message,
             status="active",
         ))
 

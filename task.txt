@@ -1,7 +1,5 @@
 
 
-ssh-keygen -t ed25519 -C "112826003@cc.ncu.edu.tw"
-
 Qlib + RD_Agent 
 
   - 支援更多表達式（RSI, MACD, Bollinger Bands 等）
@@ -141,3 +139,189 @@ Qlib + RD_Agent
   3. TradingView Pine Script AI：自然語言轉策略代碼
   4. Bloomberg Terminal GPT：財經新聞情緒分析
 
+
+
+整合 Shioaji
+
+● 根據 QuantLab 現有架構，我建議採用分層存儲 + 用途分離的策略。以下是詳細分析：
+
+  📊 資料特性對比
+
+  | 維度   | 日線資料 (FinLab)             | 分鐘線資料 (Shioaji)                       |
+  |------|---------------------------|---------------------------------------|
+  | 資料量  | ~2,671 檔 × 10 年 ≈ 1000 萬筆 | ~2,671 檔 × 270 分/日 × 250 天 ≈ 1.8 億筆/年 |
+  | 更新頻率 | 每日收盤後                     | 即時 or 每分鐘                             |
+  | 適用場景 | 長期策略、基本面分析                | 日內交易、高頻策略                             |
+  | 存儲成本 | 低（目前約 500MB）              | 高（預估 10-50GB/年）                       |
+
+  🎯 推薦方案：混合架構
+
+  1. 資料表設計（TimescaleDB hypertable）
+
+  -- 分鐘線資料表（使用 TimescaleDB 時序資料庫）
+  CREATE TABLE stock_minute_prices (
+      time TIMESTAMPTZ NOT NULL,           -- 時間戳（精確到分鐘）
+      stock_id VARCHAR(10) NOT NULL,       -- 股票代碼
+      open NUMERIC(10, 2),
+      high NUMERIC(10, 2),
+      low NUMERIC(10, 2),
+      close NUMERIC(10, 2),
+      volume BIGINT,
+      source VARCHAR(20) DEFAULT 'shioaji', -- 資料來源標記
+      PRIMARY KEY (time, stock_id)
+  );
+
+  -- 轉換為 TimescaleDB hypertable（自動分區）
+  SELECT create_hypertable('stock_minute_prices', 'time');
+
+  -- 設定資料保留政策（例如只保留最近 3 個月）
+  SELECT add_retention_policy('stock_minute_prices', INTERVAL '90 days');
+
+  優點：
+  - TimescaleDB 已在系統中（docker-compose.yml:9 使用 timescale/timescaledb:latest-pg15）
+  - 自動時間分區，查詢效能佳
+  - 內建壓縮功能（可節省 90% 存儲空間）
+  - 自動資料保留政策（舊資料自動刪除）
+
+  2. 資料同步策略
+
+  # backend/app/tasks/shioaji_sync.py
+
+  @celery_app.task(bind=True, name="app.tasks.sync_minute_prices")
+  def sync_minute_prices(self: Task, stock_ids: list[str], date: str) -> dict:
+      """
+      同步分鐘線資料（歷史資料補齊）
+      
+      Args:
+          stock_ids: 股票代碼列表
+          date: 日期 (YYYY-MM-DD)
+      """
+      # 使用 Shioaji API 獲取歷史分鐘線
+      # 批次寫入 TimescaleDB
+      pass
+
+  @celery_app.task(bind=True, name="app.tasks.sync_realtime_minute_prices")
+  def sync_realtime_minute_prices(self: Task) -> dict:
+      """
+      同步即時分鐘線資料（僅交易時段）
+      
+      Celery Beat 配置：每 1 分鐘執行一次（9:00-13:30）
+      """
+      pass
+
+  建議同步策略：
+  - 歷史資料：一次性批次匯入（過去 3-6 個月）
+  - 即時資料：交易時段每分鐘同步（僅熱門股票，如台積電、鴻海等前 50 大）
+  - 全市場資料：收盤後批次同步當日分鐘線（所有股票）
+
+  3. Qlib 分鐘線支援
+
+  # backend/app/core/qlib_config.py
+
+  def init_qlib_minute_data():
+      """初始化 Qlib 分鐘線引擎"""
+      import qlib
+      from qlib.config import C
+
+      qlib.init(
+          provider_uri="/data/qlib/tw_stock_minute",  # 分鐘線資料路徑
+          region="cn",  # 使用中國日曆（最接近台股）
+          freq="1min",  # 分鐘線頻率 ✅
+          expression_cache=None,
+          dataset_cache=None,
+      )
+
+  Qlib 資料轉換：
+  # 將 TimescaleDB 分鐘線匯出為 Qlib 格式
+  docker compose exec backend python scripts/export_minute_to_qlib.py \
+    --output-dir /data/qlib/tw_stock_minute \
+    --freq 1min
+
+  4. API 端點設計
+
+  # backend/app/api/v1/data.py
+
+  @router.get("/minute-price/{stock_id}")
+  async def get_minute_price(
+      stock_id: str,
+      start_date: str,
+      end_date: str,
+      interval: int = 1,  # 1, 5, 15, 30, 60 分鐘
+      current_user: User = Depends(get_current_user),
+  ):
+      """
+      獲取分鐘線資料
+      
+      Args:
+          interval: K 線週期（1/5/15/30/60 分鐘）
+      """
+      # 查詢 stock_minute_prices
+      # 根據 interval 進行聚合（resample）
+      pass
+
+  5. 回測引擎整合
+
+  # backend/app/services/qlib_backtest_engine.py
+
+  class QlibBacktestEngine:
+      def run_backtest(
+          self,
+          strategy_code: str,
+          freq: str = "day",  # "day" or "1min" ✅
+          **kwargs
+      ):
+          if freq == "1min":
+              # 切換到分鐘線 Qlib 引擎
+              init_qlib_minute_data()
+          else:
+              # 使用日線 Qlib 引擎
+              init_qlib()
+
+          # 執行回測...
+
+  ⚖️ 方案比較
+
+  | 方案                 | 優點        | 缺點       | 適用場景      |
+  |--------------------|-----------|----------|-----------|
+  | A. 全部存 TimescaleDB | 統一管理、查詢靈活 | 存儲成本高    | 需要歷史分鐘線回測 |
+  | B. 僅存最近 N 天        | 成本低、效能佳   | 無法回測長期策略 | 只做日內交易    |
+  | C. 日線 + 分鐘線混合      | 平衡成本與功能   | 架構較複雜    | 推薦方案 ✅    |
+
+  🚀 實作優先順序
+
+  Phase 1：基礎設施（1-2 週）
+
+  1. ✅ 建立 stock_minute_prices TimescaleDB hypertable
+  2. ✅ 實作 Shioaji API 客戶端（app/services/shioaji_client.py）
+  3. ✅ 新增 Alembic 遷移腳本
+
+  Phase 2：資料同步（2-3 週）
+
+  4. ✅ 實作歷史分鐘線批次同步任務
+  5. ✅ 實作即時分鐘線同步任務（Celery Beat）
+  6. ✅ 設定資料保留政策（保留 90 天）
+
+  Phase 3：回測整合（2-3 週）
+
+  7. ✅ 將分鐘線匯出為 Qlib v2 格式
+  8. ✅ 支援分鐘線回測（Backtrader + Qlib）
+  9. ✅ 前端新增「時間粒度」選擇器
+
+  Phase 4：最佳化（選配）
+
+  10. ⭐ TimescaleDB 壓縮（節省 90% 空間）
+  11. ⭐ 即時 WebSocket 推送（交易時段）
+  12. ⭐ 分鐘線技術指標快取
+
+  💡 關鍵決策建議
+
+  1. 存儲策略：使用 TimescaleDB 自動分區 + 壓縮 + 保留政策
+  2. 同步策略：歷史批次 + 即時增量（僅熱門股）
+  3. 資料保留：分鐘線保留 3-6 個月，日線永久保留
+  4. 回測引擎：Qlib 支援日線/分鐘線切換
+  5. 監控重點：TimescaleDB 磁碟用量、Shioaji API 配額
+
+  需要我協助實作哪個部分嗎？例如：
+  - 建立資料表遷移腳本
+  - 實作 Shioaji API 客戶端
+  - 設定 Celery 同步任務

@@ -339,16 +339,67 @@
 
             <!-- Metrics Display -->
             <div v-if="industryMetrics">
-              <div class="metrics-info-badge">
-                <span class="info-item">
-                  <span class="info-icon">📅</span>
-                  <span class="info-text">數據日期: <strong>{{ industryMetrics.date }}</strong></span>
-                </span>
-                <span class="divider">|</span>
-                <span class="info-item">
-                  <span class="info-icon">📈</span>
-                  <span class="info-text">計算基礎: <strong>{{ industryMetrics.stocks_count }} 檔股票</strong></span>
-                </span>
+              <!-- Enhanced Data Info Card -->
+              <div class="metrics-info-card">
+                <div class="info-card-header">
+                  <div class="header-icon">📊</div>
+                  <div class="header-text">
+                    <div class="header-title">數據概況</div>
+                    <div class="header-subtitle">Industry Metrics Overview</div>
+                  </div>
+                </div>
+
+                <div class="info-stats-grid">
+                  <!-- 數據日期 -->
+                  <div class="info-stat-item date">
+                    <div class="stat-icon-wrapper">
+                      <span class="stat-icon">📅</span>
+                    </div>
+                    <div class="stat-content">
+                      <div class="stat-label">數據日期</div>
+                      <div class="stat-value">{{ industryMetrics.date }}</div>
+                      <div class="stat-desc">Data Period</div>
+                    </div>
+                  </div>
+
+                  <!-- 計算基礎 -->
+                  <div class="info-stat-item stocks">
+                    <div class="stat-icon-wrapper">
+                      <span class="stat-icon">🏢</span>
+                    </div>
+                    <div class="stat-content">
+                      <div class="stat-label">產業規模</div>
+                      <div class="stat-value">{{ industryMetrics.stocks_count }} 檔</div>
+                      <div class="stat-desc">Total Stocks</div>
+                    </div>
+                  </div>
+
+                  <!-- 有效樣本 -->
+                  <div class="info-stat-item samples">
+                    <div class="stat-icon-wrapper">
+                      <span class="stat-icon">📊</span>
+                    </div>
+                    <div class="stat-content">
+                      <div class="stat-label">有效樣本</div>
+                      <div class="stat-value">{{ industryMetrics.stocks_with_data_count }} 檔</div>
+                      <div class="stat-desc">Valid Samples</div>
+                    </div>
+                  </div>
+
+                  <!-- 數據完整度 -->
+                  <div class="info-stat-item coverage">
+                    <div class="stat-icon-wrapper">
+                      <span class="stat-icon">✅</span>
+                    </div>
+                    <div class="stat-content">
+                      <div class="stat-label">數據完整度</div>
+                      <div class="stat-value">
+                        {{ ((industryMetrics.stocks_with_data_count / industryMetrics.stocks_count) * 100).toFixed(1) }}%
+                      </div>
+                      <div class="stat-desc">Data Coverage</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <!-- Radar Chart -->
@@ -2147,6 +2198,244 @@ svg.w-16 {
   height: 4rem !important;
   flex-shrink: 0;
 }
+
+/* ========== Enhanced Metrics Info Card ========== */
+.metrics-info-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 2px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.metrics-info-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Card Header */
+.info-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.header-icon {
+  font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  animation: pulse-icon 2s ease-in-out infinite;
+}
+
+@keyframes pulse-icon {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+  }
+}
+
+.header-text {
+  flex: 1;
+}
+
+.header-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.header-subtitle {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+/* Stats Grid */
+.info-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 1024px) {
+  .info-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .info-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Individual Stat Item */
+.info-stat-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 2px solid;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.info-stat-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.info-stat-item:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.info-stat-item:hover::before {
+  opacity: 0.05;
+}
+
+/* Stat Item - Date (藍色主題) */
+.info-stat-item.date {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: #93c5fd;
+}
+
+.info-stat-item.date::before {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.info-stat-item.date .stat-icon-wrapper {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+}
+
+/* Stat Item - Stocks (綠色主題) */
+.info-stat-item.stocks {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #86efac;
+}
+
+.info-stat-item.stocks::before {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+}
+
+.info-stat-item.stocks .stat-icon-wrapper {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  box-shadow: 0 4px 8px rgba(34, 197, 94, 0.25);
+}
+
+/* Stat Item - Samples (紫色主題) */
+.info-stat-item.samples {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  border-color: #c084fc;
+}
+
+.info-stat-item.samples::before {
+  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+}
+
+.info-stat-item.samples .stat-icon-wrapper {
+  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
+  box-shadow: 0 4px 8px rgba(168, 85, 247, 0.25);
+}
+
+/* Stat Item - Coverage (橙色主題) */
+.info-stat-item.coverage {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: #fdba74;
+}
+
+.info-stat-item.coverage::before {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+}
+
+.info-stat-item.coverage .stat-icon-wrapper {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  box-shadow: 0 4px 8px rgba(249, 115, 22, 0.25);
+}
+
+/* Icon Wrapper */
+.stat-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.info-stat-item:hover .stat-icon-wrapper {
+  transform: scale(1.1) rotate(5deg);
+}
+
+.stat-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* Stat Content */
+.stat-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  line-height: 1.2;
+}
+
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+  margin-bottom: 0.125rem;
+}
+
+.stat-desc {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
+}
+
+/* ========== End Enhanced Metrics Info Card ========== */
 
 /* Enhanced Metric Cards */
 .metric-card {

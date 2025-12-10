@@ -6,6 +6,7 @@ from celery import Task
 from app.core.celery_app import celery_app
 from app.services.finlab_client import FinLabClient
 from app.utils.cache import cache
+from app.utils.task_history import record_task_history
 from app.db.session import SessionLocal
 from app.repositories.stock import StockRepository
 from app.repositories.stock_price import StockPriceRepository
@@ -18,6 +19,7 @@ import pandas as pd
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_stock_list")
+@record_task_history
 def sync_stock_list(self: Task) -> dict:
     """
     Sync stock list from FinLab API to database
@@ -103,6 +105,7 @@ def sync_stock_list(self: Task) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_daily_prices")
+@record_task_history
 def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict:
     """
     Sync daily price data for stocks
@@ -200,6 +203,7 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_ohlcv_data")
+@record_task_history
 def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
     """
     Sync OHLCV data for stocks to database
@@ -313,6 +317,7 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_latest_prices")
+@record_task_history
 def sync_latest_prices(self: Task, stock_ids: list = None) -> dict:
     """
     Sync latest prices for stocks
@@ -383,6 +388,7 @@ def sync_latest_prices(self: Task, stock_ids: list = None) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.cleanup_old_cache")
+@record_task_history
 def cleanup_old_cache(self: Task) -> dict:
     """
     Clean up old cache entries

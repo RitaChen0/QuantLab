@@ -61,6 +61,9 @@ class SyncTaskInfo(BaseModel):
     schedule: str
     last_run: Optional[datetime] = None
     next_run: Optional[datetime] = None
+    last_run_status: Optional[str] = None  # success, failed, pending, running
+    last_run_result: Optional[str] = None  # Result message
+    error_message: Optional[str] = None  # Error message if failed
     status: str  # active, paused, error
 
 

@@ -142,7 +142,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-celery-beat
     restart: unless-stopped
-    command: celery -A app.core.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    command: celery -A app.core.celery_app beat --loglevel=debug --schedule=/tmp/celerybeat-schedule
     volumes:
       - ./backend:/app
       - /data/qlib:/data/qlib  # Qlib 數據持久化
