@@ -1,0 +1,119 @@
+
+
+
+18 個財務指標清單
+
+  1️⃣ 獲利能力指標（6 個）
+
+  - ROE稅後 - 稅後股東權益報酬率
+  - ROA稅後息前 - 稅後息前資產報酬率
+  - 營業毛利率 - Operating Gross Margin
+  - 營業利益率 - Operating Profit Margin
+  - 稅前淨利率 - Pre-tax Net Profit Margin
+  - 稅後淨利率 - After-tax Net Profit Margin
+
+  2️⃣ 成長性指標（3 個）
+
+  - 營收成長率 - Revenue Growth Rate
+  - 稅前淨利成長率 - Pre-tax Net Profit Growth Rate
+  - 稅後淨利成長率 - After-tax Net Profit Growth Rate
+
+  3️⃣ 經營效率指標（3 個）
+
+  - 應收帳款週轉率 - Accounts Receivable Turnover
+  - 存貨週轉率 - Inventory Turnover
+  - 總資產週轉次數 - Total Asset Turnover
+
+  4️⃣ 財務結構指標（3 個）
+
+  - 負債比率 - Debt Ratio
+  - 流動比率 - Current Ratio
+  - 速動比率 - Quick Ratio
+
+  5️⃣ 每股指標（3 個）
+
+  - 每股稅後淨利 - Earnings Per Share (EPS)
+  - 每股營業額 - Revenue Per Share
+  - 每股現金流量 - Cash Flow Per Share
+
+
+
+建立台灣股票市場的資料庫
+
+1.定義資料庫的格式？
+2.定義會有多少種資料庫？
+3.使用 FinMind 取得基本面資料，建立資料庫 
+
+FinLab 也可以拿到個股的基本資料
+
+| 功能     | Shioaji | FinMind | TEJ | TWSE/TPEx |
+  |--------|---------|---------|-----|-----------|
+  | 即時行情   | ✅       | ✅       | ❌   | ❌         |
+  | 歷史價格   | ✅       | ✅       | ✅   | ✅         |
+  | 下單交易   | ✅       | ❌       | ❌   | ❌         |
+  | 財務報表   | ❌       | ✅       | ✅   | ✅         |
+  | 月營收    | ❌       | ✅       | ✅   | ✅         |
+  | 獲利指標   | ❌       | ✅       | ✅   | ✅         |
+  | 費用     | 免費      | 免費      | 付費  | 免費        |
+  | API 限制 | 有       | 600/hr  | 依方案 | 有         |
+
+  1. ❌ TWSE Open API（只有最新資料）
+
+  - 網址: https://openapi.twse.com.tw/
+  - 只保留最新/當日資料
+  - 政府資料開放平台上的資料集
+  - 無法取得歷史資料
+
+  2. ✅ TWSE 網頁版 API（可取得歷史資料）
+
+  - 網址: https://www.twse.com.tw/exchangeReport/
+  - 可以指定日期參數取得歷史資料
+  - 每次請求回傳一個月的資料
+  - 這就是大家實際在用的方式！
+
+  | 來源            | 優點            | 缺點          | 建議       |
+  |---------------|---------------|-------------|----------|
+  | TWSE 網頁版 API  | 免費、官方、完整      | 需控制頻率、需自己累積 | ✅ 推薦     |
+  | FinMind       | 免費、有歷史、API 友善 | 600次/hr 限制  | ✅ 推薦     |
+  | Yahoo Finance | 免費、國際資料       | 台股資料可能不完整   | ⚠️ 備用    |
+  | 富果 Fugle API  | 資料品質好         | 需付費         | ⚠️ 商用可考慮 |
+  | TEJ API       | 最完整、最專業       | 較貴          | ⚠️ 專業需求  |
+
+
+根據資料庫模型，目前 QuantLab 有以下資料庫表：
+
+  📊 股票數據類
+
+  1. stocks - 股票基本資料（代碼、名稱、產業、市場別）
+  2. stock_prices - 股票歷史價格（OHLCV 數據，使用 TimescaleDB 優化）
+  3. fundamental_data - 基本面財務資料（季度資料，18 個指標）
+
+  🏢 產業分類類
+
+  4. industries - TWSE 台證所產業分類（3 層階層：大類/中類/小類）
+  5. stock_industries - 股票-產業映射表（1,935 筆）
+  6. industry_chains - FinMind 產業鏈分類
+  7. stock_industry_chains - 股票-產業鏈映射表
+  8. custom_industry_categories - 自定義產業分類（用戶可自行創建）
+  9. stock_custom_categories - 股票-自定義分類映射
+  10. industry_metrics_cache - 產業指標快取（7 個聚合指標）
+
+  🎯 交易策略與回測類
+
+  11. strategies - 交易策略（代碼、參數、狀態）
+  12. backtests - 回測記錄
+  13. backtest_results - 回測績效指標（報酬率、勝率、夏普比率等）
+  14. trades - 交易明細記錄（買賣點、價格、數量）
+
+  👤 用戶系統類
+
+  15. users - 用戶帳戶（認證、權限）
+
+  ---
+  總結：目前有 15 個主要資料表，涵蓋：
+  - ✅ 股價數據（歷史 OHLCV）
+  - ✅ 基本面數據（季度財報）
+  - ✅ 產業分類（3 種分類體系：TWSE、FinMind、自定義）
+  - ✅ 交易策略與回測系統
+  - ✅ 用戶管理系統
+

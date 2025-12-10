@@ -1,0 +1,866 @@
+<template>
+  <div class="rdagent-page">
+    <!-- 頂部導航欄 -->
+    <header class="dashboard-header">
+      <div class="header-content">
+        <div class="logo-section">
+          <h1 class="logo">QuantLab</h1>
+          <span class="badge">量化交易實驗室</span>
+        </div>
+
+        <nav class="nav-links">
+          <NuxtLink to="/dashboard" class="nav-link">
+            <span class="icon">📊</span>
+            儀表板
+          </NuxtLink>
+          <NuxtLink to="/strategies" class="nav-link">
+            <span class="icon">📈</span>
+            策略管理
+          </NuxtLink>
+          <NuxtLink to="/backtest" class="nav-link">
+            <span class="icon">🔬</span>
+            回測中心
+          </NuxtLink>
+          <NuxtLink to="/data" class="nav-link">
+            <span class="icon">💹</span>
+            數據瀏覽
+          </NuxtLink>
+          <NuxtLink to="/industry" class="nav-link">
+            <span class="icon">🏭</span>
+            產業分析
+          </NuxtLink>
+          <NuxtLink to="/rdagent" class="nav-link active">
+            <span class="icon">🤖</span>
+            自動研發
+          </NuxtLink>
+          <NuxtLink to="/docs" class="nav-link">
+            <span class="icon">📚</span>
+            API 文檔
+          </NuxtLink>
+        </nav>
+
+        <div class="user-section">
+          <div class="user-info">
+            <span class="user-name">{{ username || '用戶' }}</span>
+          </div>
+          <button @click="handleLogout" class="btn-logout">
+            <span class="icon">🚪</span>
+            登出
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-header">
+      <h1>🤖 自動研發</h1>
+      <p>使用 AI 自動生成交易因子與優化策略</p>
+    </div>
+
+    <div class="tabs">
+      <button
+        :class="['tab', { active: activeTab === 'factor-mining' }]"
+        @click="activeTab = 'factor-mining'"
+      >
+        因子挖掘
+      </button>
+      <button
+        :class="['tab', { active: activeTab === 'tasks' }]"
+        @click="activeTab = 'tasks'"
+      >
+        任務列表
+      </button>
+      <button
+        :class="['tab', { active: activeTab === 'factors' }]"
+        @click="activeTab = 'factors'"
+      >
+        生成的因子
+      </button>
+    </div>
+
+    <!-- 因子挖掘表單 -->
+    <div v-if="activeTab === 'factor-mining'" class="section">
+      <h2>✨ 自動因子挖掘</h2>
+      <form @submit.prevent="submitFactorMining" class="mining-form">
+        <div class="form-group">
+          <label>研究目標</label>
+          <textarea
+            v-model="miningForm.research_goal"
+            placeholder="例如：尋找能預測未來5日報酬率的動量因子，結合成交量指標..."
+            rows="4"
+            required
+          ></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>最多生成因子數</label>
+            <input type="number" v-model.number="miningForm.max_factors" min="1" max="20" />
+          </div>
+
+          <div class="form-group">
+            <label>LLM 模型</label>
+            <select v-model="miningForm.llm_model">
+              <option value="gpt-4">GPT-4</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              <option value="claude-3-opus">Claude 3 Opus</option>
+              <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>最大迭代次數</label>
+            <input type="number" v-model.number="miningForm.max_iterations" min="1" max="10" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" :disabled="isSubmitting">
+          {{ isSubmitting ? '提交中...' : '🚀 開始挖掘' }}
+        </button>
+      </form>
+    </div>
+
+    <!-- 任務列表 -->
+    <div v-if="activeTab === 'tasks'" class="section">
+      <h2>📋 任務列表</h2>
+      <div v-if="tasks.length === 0" class="empty-state">
+        尚無任務記錄
+      </div>
+      <div v-else class="tasks-grid">
+        <div v-for="task in tasks" :key="task.id" class="task-card">
+          <div class="task-header">
+            <span class="task-id">#{{ task.id }}</span>
+            <span :class="['status', task.status]">{{ getStatusLabel(task.status) }}</span>
+          </div>
+          <div class="task-body">
+            <p><strong>類型：</strong>{{ getTypeLabel(task.task_type) }}</p>
+            <p><strong>創建時間：</strong>{{ formatDate(task.created_at) }}</p>
+            <p v-if="task.llm_cost"><strong>LLM 成本：</strong>${{ task.llm_cost.toFixed(2) }}</p>
+          </div>
+          <div class="task-actions">
+            <button @click="viewTaskDetail(task.id)" class="btn-view">查看詳情</button>
+            <button @click="deleteTask(task.id)" class="btn-delete">🗑️ 刪除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 生成的因子 -->
+    <div v-if="activeTab === 'factors'" class="section">
+      <h2>🧬 生成的因子</h2>
+      <div v-if="factors.length === 0" class="empty-state">
+        尚無生成的因子
+      </div>
+      <div v-else class="factors-grid">
+        <div v-for="factor in factors" :key="factor.id" class="factor-card">
+          <div class="factor-header">
+            <div v-if="editingFactorId === factor.id" class="factor-name-edit">
+              <input
+                v-model="editingFactorName"
+                type="text"
+                class="factor-name-input"
+                @keyup.enter="saveFactorName(factor.id)"
+                @keyup.esc="cancelEditFactorName"
+              />
+              <div class="factor-edit-actions">
+                <button @click="saveFactorName(factor.id)" class="btn-save">✓</button>
+                <button @click="cancelEditFactorName" class="btn-cancel">✕</button>
+              </div>
+            </div>
+            <div v-else class="factor-name-display">
+              <h3>{{ factor.name }}</h3>
+              <button @click="startEditFactorName(factor)" class="btn-edit-factor">✏️</button>
+            </div>
+          </div>
+          <p class="factor-description">{{ factor.description }}</p>
+          <div class="factor-formula">
+            <strong>公式：</strong>
+            <code>{{ factor.formula }}</code>
+          </div>
+          <div v-if="factor.ic" class="factor-metrics">
+            <span>IC: {{ factor.ic.toFixed(3) }}</span>
+            <span v-if="factor.sharpe_ratio">Sharpe: {{ factor.sharpe_ratio.toFixed(2) }}</span>
+          </div>
+          <div v-if="factor.code" class="factor-code-section">
+            <button
+              type="button"
+              @click="toggleFactorCode(factor.id)"
+              class="btn-toggle-code"
+            >
+              {{ expandedFactors.has(factor.id) ? '隱藏代碼 ▲' : '查看代碼 ▼' }}
+            </button>
+            <div v-show="expandedFactors.has(factor.id)" class="factor-code">
+              <pre><code>{{ factor.code }}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+
+const config = useRuntimeConfig()
+const router = useRouter()
+const activeTab = ref('factor-mining')
+const isSubmitting = ref(false)
+const username = ref('')
+
+// 登出處理
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  router.push('/login')
+}
+
+const miningForm = ref({
+  research_goal: '',
+  max_factors: 5,
+  llm_model: 'gpt-4',
+  max_iterations: 3
+})
+
+const tasks = ref([])
+const factors = ref([])
+const expandedFactors = ref(new Set())
+const editingFactorId = ref(null)
+const editingFactorName = ref('')
+
+// 切換因子代碼顯示
+const toggleFactorCode = (factorId: number) => {
+  if (expandedFactors.value.has(factorId)) {
+    expandedFactors.value.delete(factorId)
+  } else {
+    expandedFactors.value.add(factorId)
+  }
+  // 強制更新視圖
+  expandedFactors.value = new Set(expandedFactors.value)
+}
+
+// 開始編輯因子名稱
+const startEditFactorName = (factor: any) => {
+  editingFactorId.value = factor.id
+  editingFactorName.value = factor.name
+}
+
+// 取消編輯因子名稱
+const cancelEditFactorName = () => {
+  editingFactorId.value = null
+  editingFactorName.value = ''
+}
+
+// 儲存因子名稱
+const saveFactorName = async (factorId: number) => {
+  if (!editingFactorName.value.trim()) {
+    alert('因子名稱不能為空')
+    return
+  }
+
+  try {
+    const token = localStorage.getItem('access_token')
+    await $fetch(`${config.public.apiBase}/api/v1/rdagent/factors/${factorId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: {
+        name: editingFactorName.value
+      }
+    })
+
+    // 更新成功，刷新因子列表
+    await loadFactors()
+    cancelEditFactorName()
+  } catch (error: any) {
+    alert('更新失敗：' + (error.data?.detail || error.message))
+  }
+}
+
+// 提交因子挖掘
+const submitFactorMining = async () => {
+  isSubmitting.value = true
+  try {
+    const token = localStorage.getItem('access_token')  // ✅ 修正：使用正確的 key
+    const response = await $fetch(`${config.public.apiBase}/api/v1/rdagent/factor-mining`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: miningForm.value
+    })
+
+    alert('因子挖掘任務已提交！任務 ID: ' + response.id)
+    activeTab.value = 'tasks'
+    loadTasks()
+  } catch (error: any) {
+    alert('提交失敗：' + (error.data?.detail || error.message))
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+// 載入任務列表
+const loadTasks = async () => {
+  try {
+    const token = localStorage.getItem('access_token')  // ✅ 修正：使用正確的 key
+    tasks.value = await $fetch(`${config.public.apiBase}/api/v1/rdagent/tasks`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+  } catch (error) {
+    console.error('Failed to load tasks:', error)
+  }
+}
+
+// 載入因子列表
+const loadFactors = async () => {
+  try {
+    const token = localStorage.getItem('access_token')  // ✅ 修正：使用正確的 key
+    factors.value = await $fetch(`${config.public.apiBase}/api/v1/rdagent/factors`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+  } catch (error) {
+    console.error('Failed to load factors:', error)
+  }
+}
+
+// 查看任務詳情
+const viewTaskDetail = (taskId: number) => {
+  navigateTo(`/rdagent/tasks/${taskId}`)
+}
+
+// 刪除任務
+const deleteTask = async (taskId: number) => {
+  if (!confirm('確定要刪除此任務嗎？此操作無法復原。')) {
+    return
+  }
+
+  try {
+    const token = localStorage.getItem('access_token')
+    await $fetch(`${config.public.apiBase}/api/v1/rdagent/tasks/${taskId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+
+    alert('任務已成功刪除')
+    loadTasks()  // 重新載入任務列表
+  } catch (error: any) {
+    alert('刪除失敗：' + (error.data?.detail || error.message))
+  }
+}
+
+// 格式化日期
+const formatDate = (dateStr: string) => {
+  return new Date(dateStr).toLocaleString('zh-TW')
+}
+
+// 狀態標籤
+const getStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    pending: '等待中',
+    running: '執行中',
+    completed: '已完成',
+    failed: '失敗',
+    cancelled: '已取消'
+  }
+  return labels[status] || status
+}
+
+// 類型標籤
+const getTypeLabel = (type: string) => {
+  const labels: Record<string, string> = {
+    factor_mining: '因子挖掘',
+    strategy_optimization: '策略優化',
+    model_extraction: '模型提取'
+  }
+  return labels[type] || type
+}
+
+onMounted(() => {
+  loadTasks()
+  loadFactors()
+})
+</script>
+
+<style scoped lang="scss">
+.rdagent-page {
+  min-height: 100vh;
+  background: #f9fafb;
+}
+
+// 頂部導航欄樣式
+.dashboard-header {
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .logo-section {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #3b82f6;
+      margin: 0;
+    }
+
+    .badge {
+      padding: 0.25rem 0.75rem;
+      background: #dbeafe;
+      color: #1e40af;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 0.5rem;
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: #6b7280;
+      text-decoration: none;
+      border-radius: 0.5rem;
+      font-weight: 500;
+      transition: all 0.2s;
+
+      .icon {
+        font-size: 1.25rem;
+      }
+
+      &:hover {
+        background: #f3f4f6;
+        color: #111827;
+      }
+
+      &.active {
+        background: #dbeafe;
+        color: #1e40af;
+      }
+    }
+  }
+
+  .user-section {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .user-info {
+      .user-name {
+        font-weight: 500;
+        color: #374151;
+      }
+    }
+
+    .btn-logout {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #fee2e2;
+      color: #991b1b;
+      border: none;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+
+      &:hover {
+        background: #fecaca;
+      }
+    }
+  }
+}
+
+.page-header {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 2rem 1rem;
+}
+
+.page-header {
+  margin-bottom: 2rem;
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  p {
+    color: #6b7280;
+    font-size: 1rem;
+  }
+}
+
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 2px solid #e5e7eb;
+
+  .tab {
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    color: #6b7280;
+    transition: all 0.2s;
+
+    &.active {
+      color: #3b82f6;
+      border-bottom-color: #3b82f6;
+    }
+
+    &:hover {
+      color: #3b82f6;
+    }
+  }
+}
+
+.section {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 2rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.mining-form {
+  .form-group {
+    margin-bottom: 1.5rem;
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: #374151;
+    }
+
+    textarea,
+    input,
+    select {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.375rem;
+      font-size: 1rem;
+
+      &:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+    }
+
+    textarea {
+      resize: vertical;
+      font-family: inherit;
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  .btn-primary {
+    padding: 0.75rem 2rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:hover:not(:disabled) {
+      background: #2563eb;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.tasks-grid,
+.factors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.task-card,
+.factor-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  .factor-header {
+    margin-bottom: 1rem;
+  }
+
+  .factor-name-display {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    h3 {
+      margin: 0;
+      flex: 1;
+    }
+
+    .btn-edit-factor {
+      padding: 0.25rem 0.5rem;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+
+  .factor-name-edit {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+
+    .factor-name-input {
+      flex: 1;
+      padding: 0.5rem;
+      border: 2px solid #3b82f6;
+      border-radius: 0.375rem;
+      font-size: 1rem;
+      font-weight: 600;
+
+      &:focus {
+        outline: none;
+        border-color: #2563eb;
+      }
+    }
+
+    .factor-edit-actions {
+      display: flex;
+      gap: 0.25rem;
+
+      button {
+        padding: 0.5rem 0.75rem;
+        border: none;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+
+      .btn-save {
+        background: #22c55e;
+        color: white;
+
+        &:hover {
+          background: #16a34a;
+        }
+      }
+
+      .btn-cancel {
+        background: #ef4444;
+        color: white;
+
+        &:hover {
+          background: #dc2626;
+        }
+      }
+    }
+  }
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+
+  .task-id {
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+
+    &.pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    &.running {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    &.completed {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    &.failed {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+  }
+}
+
+.task-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.btn-view {
+  flex: 1;
+  padding: 0.5rem;
+  background: #f3f4f6;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #e5e7eb;
+  }
+}
+
+.btn-delete {
+  padding: 0.5rem 1rem;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #fecaca;
+    border-color: #fca5a5;
+  }
+}
+
+.factor-formula {
+  background: #f9fafb;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+
+  strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #374151;
+    font-size: 0.875rem;
+  }
+
+  code {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: #1f2937;
+  }
+}
+
+.factor-metrics {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 0.75rem;
+}
+
+.factor-code-section {
+  margin-top: 1rem;
+}
+
+.btn-toggle-code {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+
+  &:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+  }
+}
+
+.factor-code {
+  margin-top: 0.75rem;
+  background: #1f2937;
+  border-radius: 0.375rem;
+  overflow: hidden;
+
+  pre {
+    margin: 0;
+    padding: 1rem;
+    overflow-x: auto;
+
+    code {
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      color: #e5e7eb;
+    }
+  }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #9ca3af;
+}
+</style>

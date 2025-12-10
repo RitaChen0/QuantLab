@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>財務指標測試</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <h1>財務指標 API 測試</h1>
+    <div>
+        <label>股票代號: <input id="stockId" value="2330" /></label><br/>
+        <label>開始日期: <input id="startDate" type="date" value="2023-01-01" /></label><br/>
+        <label>結束日期: <input id="endDate" type="date" value="2024-12-31" /></label><br/>
+        <label>指標: <input id="indicators" value="ROE稅後,ROA稅後息前,營業毛利率" size="50" /></label><br/>
+        <button onclick="testAPI()">測試 API</button>
+    </div>
+    <hr/>
+    <div id="result" style="white-space: pre-wrap; font-family: monospace;"></div>
+    <div id="chart" style="width: 100%; height: 500px; border: 1px solid #ccc; margin-top: 20px;"></div>
+
+    <script>
+        let chartInstance = null;
+
+        async function testAPI() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                alert('請先登入！');
+                return;
+            }
+
+            const stockId = document.getElementById('stockId').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const indicatorsStr = document.getElementById('indicators').value;
+            const indicators = indicatorsStr.split(',').map(s => s.trim());
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '載入中...\n';
+
+            console.log('=== 測試開始 ===');
+            console.log('請求參數:', {
+                stockId,
+                indicators,
+                startDate,
+                endDate
+            });
+
+            try {
+                const response = await fetch(`http://localhost:8000/api/v1/data/fundamental/${stockId}/batch`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        stock_id: stockId,
+                        indicators: indicators,
+                        start_date: startDate,
+                        end_date: endDate
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                console.log('API 響應:', data);
+
+                let output = '=== API 響應 ===\n\n';
+                output += `成功獲取: ${data.count}/${data.requested_count} 個指標\n\n`;
+
+                if (data.indicators) {
+                    Object.entries(data.indicators).forEach(([ind, points]) => {
+                        output += `\n${ind}:\n`;
+                        output += `  數據點數: ${points.length}\n`;
+                        if (points.length > 0) {
+                            output += `  第一個點: ${JSON.stringify(points[0])}\n`;
+                            output += `  最後一個點: ${JSON.stringify(points[points.length - 1])}\n`;
+                        }
+                    });
+                }
+
+                resultDiv.innerHTML = output;
+
+                // 渲染圖表
+                renderChart(data.indicators, stockId);
+
+            } catch (error) {
+                console.error('錯誤:', error);
+                resultDiv.innerHTML = `錯誤: ${error.message}`;
+            }
+        }
+
+        function renderChart(indicators, stockId) {
+            if (!indicators || Object.keys(indicators).length === 0) {
+                console.log('沒有數據可渲染');
+                return;
+            }
+
+            const chartDiv = document.getElementById('chart');
+
+            if (!chartInstance) {
+                chartInstance = echarts.init(chartDiv);
+            }
+
+            // 準備數據
+            const allDates = new Set();
+            const seriesData = [];
+            const colors = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6'];
+            let colorIndex = 0;
+
+            Object.entries(indicators).forEach(([indicator, dataPoints]) => {
+                dataPoints.forEach(point => {
+                    allDates.add(point.date);
+                });
+
+                const dataMap = new Map();
+                dataPoints.forEach(point => {
+                    dataMap.set(point.date, point.value);
+                });
+
+                const sortedDates = Array.from(allDates).sort();
+                const values = sortedDates.map(date => dataMap.get(date) ?? null);
+
+                seriesData.push({
+                    name: indicator,
+                    type: 'line',
+                    data: values,
+                    smooth: true,
+                    symbol: 'circle',
+                    symbolSize: 8,
+                    lineStyle: {
+                        width: 3,
+                        color: colors[colorIndex % colors.length]
+                    },
+                    itemStyle: {
+                        color: colors[colorIndex % colors.length]
+                    }
+                });
+
+                colorIndex++;
+            });
+
+            const sortedDates = Array.from(allDates).sort();
+
+            const option = {
+                title: {
+                    text: `${stockId} 財務指標趨勢`,
+                    left: 'center'
+                },
+                tooltip: {
+                    trigger: 'axis'
+                },
+                legend: {
+                    data: Object.keys(indicators),
+                    top: 40
+                },
+                grid: {
+                    left: '5%',
+                    right: '5%',
+                    bottom: '10%',
+                    top: '20%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: sortedDates,
+                    axisLabel: {
+                        rotate: 45
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    name: '指標值 (%)'
+                },
+                series: seriesData
+            };
+
+            chartInstance.setOption(option, true);
+
+            console.log('圖表已渲染，數據點:', sortedDates.length);
+        }
+    </script>
+</body>
+</html>

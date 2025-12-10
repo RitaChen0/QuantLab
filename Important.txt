@@ -1,0 +1,121 @@
+✅ 開發階段清除所有的緩存：
+  ./scripts/quick-clean.sh
+  ./scripts/reset-rate-limit.sh
+  ./scripts/clear-frontend-cache.sh
+  docker compose restart backend celery-worker
+
+✅ 自動補齊所有缺失資料的指令
+docker compose exec backend python scripts/check_and_fill_gaps.py --auto-fix --min-records 4500
+
+✅ 監控回測 , 所有工具都已就緒，你可以隨時監控系統中正在執行的回測任務！
+  # 方法 1: 使用監控腳本（最簡單）
+  ./monitor_backtest_tasks.sh
+
+✅ 在 Monaco Editor 中編寫代碼
+  2. 測試自動完成：
+    - 輸入 self. 查看可用屬性
+    - 輸入 bt. 查看 Backtrader API
+    - 按 Ctrl+Space 手動觸發提示
+
+✅ 自動同步排程：共 7 個
+
+  1. sync-stock-list-daily - 每天 08:00（同步股票清單）
+  2. sync-daily-prices - 每天 21:00（同步每日價格）
+  3. sync-ohlcv-daily - 每天 22:00（同步 OHLCV）
+  4. sync-latest-prices-frequent - 交易日每 15 分鐘（同步最新價格）
+  5. cleanup-cache-daily - 每天 03:00（清理快取）
+  6. sync-fundamental-weekly - 每週日 04:00（完整財務同步）
+  7. sync-fundamental-latest-daily - 每天 23:00（快速財務同步）
+
+  🚀 手動執行方式
+
+  最簡單的方式（互動式選單）：
+  cd /data/CCTest/QuantLab
+  ./scripts/manual-sync.sh
+
+  快速執行特定任務：
+  # 同步財務指標（完整版 - 8檔股票）
+  ./scripts/manual-sync.sh fundamental
+
+  # 同步財務指標（快速版 - 5檔股票）  
+  ./scripts/manual-sync.sh fundamental-latest
+
+  # 執行所有同步
+  ./scripts/manual-sync.sh all
+
+  # 查看任務狀態
+  ./scripts/manual-sync.sh status
+
+  📊 監控命令
+
+  # 查看 Celery 服務狀態
+  docker compose ps celery-beat celery-worker
+
+  # 查看正在執行的任務
+  docker compose exec backend celery -A app.core.celery_app inspect active
+
+  # 即時查看日誌
+  docker compose logs -f celery-worker
+
+✅ 股票的財務指標
+  # 1. 重置進度（清除舊數據）
+  docker compose exec backend rm -f /tmp/batch_sync_progress.json
+
+  # 2. 開始批次同步
+  ./scripts/batch-sync.sh 會自動續傳
+  ./scripts/monitor-batch-sync.sh
+
+✅ 同步後重新轉換為 Qlib 格式（智慧增量同步）
+  ./scripts/sync-qlib-smart.sh
+
+git init
+git status
+git add . 
+git remote add origin http://git.dama168.com:3000/robert/QLab.git
+git commit -m "message"             
+git push origin master
+放棄修改
+git checkout .    
+
+✅ 訪問 http://localhost:3000/rdagent 測試前端介面
+  
+
+✅ 建立了一個自動化測試腳本 test_rdagent_integration.sh，它會執行以下 7 個步驟：
+
+  測試流程：
+
+  1. ✅ 檢查服務狀態 - 驗證 Docker 容器、Backend API、Celery Worker
+  2. 👤 準備測試用戶 - 註冊/登入測試帳號，獲取 JWT Token
+  3. 🚀 創建因子挖掘任務 - 通過 API 提交任務
+  4. ⏱️  監控任務執行 - 實時監控 Celery 日誌，輪詢任務狀態
+  5. 📊 檢查任務結果 - 查看生成的因子、LLM 調用、成本
+  6. 🗄️  檢查資料庫 - 驗證因子正確儲存
+  7. 📝 測試總結 - 顯示完整的測試結果
+
+✅  開發/測試時：
+  # 快速重置（推薦）
+  ./scripts/reset-rate-limit-quick.sh
+  # 或使用互動式（需要精確控制時）
+  ./scripts/reset-rate-limit.sh
+
+
+✅ 新的因子：
+  1. momentum_5d_volume_adjusted (ID: 1)
+    - 描述：5日動量經成交量調整
+    - 公式：($close / Ref($close, 5) - 1) * Log($volume / Mean($volume, 20))
+    - 分類：momentum
+  2. volatility_ratio_normalized (ID: 2)
+    - 描述：20日波動率標準化
+    - 公式：Std($close, 20) / Mean($close, 20)
+    - 分類：volatility
+
+創建因子
+尋找能預測未來五日報酬率的動量因子，結合成交量指標，跟30日，15日移動平均線，跟MACD，KD。
+
+創建因子
+我的因子靈感是：當股票在過去短期內急劇上漲**（超買），但成交量並未同步放大時，這可能是一個虛假繁榮或耗盡性買入的信號，預示著短期內將發生反轉下跌。
+
+創建因子
+My factor-based inspiration is that when a stock has risen sharply in the past short period (overbought) but the trading volume has not increased accordingly, this may be a signal of a false boom or exhaustion buying, indicating that a reversal and decline will occur in the short term.
+
+
