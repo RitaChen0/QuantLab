@@ -144,35 +144,39 @@
       <div class="grid grid-cols-12 gap-6">
         <!-- Left Panel: Industry Tree -->
         <div class="col-span-4 bg-white rounded-lg shadow-sm p-6">
-          <div class="mb-4">
-            <div class="flex items-center justify-between">
-              <h2 class="text-lg font-semibold">
+          <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="industry-list-title">
+                <span class="title-icon">{{ dataSource === 'twse' ? '🏢' : '🔗' }}</span>
                 {{ dataSource === 'twse' ? '產業分類' : '產業鏈' }}
               </h2>
               <button
                 @click="loadIndustryTree"
-                class="text-sm text-blue-600 hover:text-blue-700"
+                class="reload-btn"
                 :disabled="loading"
               >
+                <span class="reload-icon">🔄</span>
                 {{ loading ? '載入中...' : '重新載入' }}
               </button>
             </div>
-            <div v-if="dataSource === 'twse' && displayedIndustries.length > 0" class="text-xs text-gray-500 mt-1">
-              顯示 {{ displayedIndustries.length }} 個有股票的產業
+            <div v-if="dataSource === 'twse' && displayedIndustries.length > 0" class="industry-count-badge">
+              <span class="badge-icon">📊</span>
+              顯示 <strong>{{ displayedIndustries.length }}</strong> 個有股票的產業
             </div>
           </div>
 
           <!-- Level Filter (TWSE only) -->
-          <div v-if="dataSource === 'twse'" class="mb-4">
+          <div v-if="dataSource === 'twse'" class="mb-6">
+            <label class="filter-label">篩選層級</label>
             <select
               v-model="selectedLevel"
               @change="filterByLevel"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md"
+              class="level-select"
             >
-              <option :value="null">所有層級</option>
-              <option :value="1">大類產業</option>
-              <option :value="2">中類產業</option>
-              <option :value="3">小類產業</option>
+              <option :value="null">📁 所有層級</option>
+              <option :value="1">🔵 大類產業</option>
+              <option :value="2">🟢 中類產業</option>
+              <option :value="3">🟡 小類產業</option>
             </select>
           </div>
 
@@ -242,18 +246,27 @@
                 </span>
               </h2>
 
-              <div class="grid grid-cols-3 gap-4 mb-4">
-                <div>
-                  <div class="text-sm text-gray-600">產業代碼</div>
-                  <div class="font-semibold">{{ selectedIndustry.code }}</div>
+              <div class="info-cards-container">
+                <div class="info-card">
+                  <div class="info-label">
+                    <span class="info-icon">🏷️</span>
+                    產業代碼
+                  </div>
+                  <div class="info-value">{{ selectedIndustry.code }}</div>
                 </div>
-                <div>
-                  <div class="text-sm text-gray-600">產業層級</div>
-                  <div class="font-semibold">Level {{ selectedIndustry.level }}</div>
+                <div class="info-card">
+                  <div class="info-label">
+                    <span class="info-icon">📊</span>
+                    產業層級
+                  </div>
+                  <div class="info-value">Level {{ selectedIndustry.level }}</div>
                 </div>
-                <div>
-                  <div class="text-sm text-gray-600">股票數量</div>
-                  <div class="font-semibold">{{ selectedIndustry.stock_count }} 檔</div>
+                <div class="info-card">
+                  <div class="info-label">
+                    <span class="info-icon">📈</span>
+                    股票數量
+                  </div>
+                  <div class="info-value">{{ selectedIndustry.stock_count }} 檔</div>
                 </div>
               </div>
             </template>
@@ -284,9 +297,10 @@
             <button
               @click="loadIndustryStocks"
               :disabled="loadingStocks"
-              class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+              class="load-stocks-btn"
             >
-              {{ loadingStocks ? '載入中...' : '載入股票列表' }}
+              <span class="btn-icon">{{ loadingStocks ? '⏳' : '📋' }}</span>
+              <span class="btn-text">{{ loadingStocks ? '載入中...' : '載入股票列表' }}</span>
             </button>
           </div>
 
@@ -308,21 +322,33 @@
 
           <!-- Industry Metrics -->
           <div v-if="selectedIndustry" class="bg-white rounded-lg shadow-sm p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold">產業聚合指標</h3>
+            <div class="metrics-header">
+              <h3 class="metrics-title">
+                <span class="metrics-icon">📊</span>
+                產業聚合指標
+              </h3>
               <button
                 @click="loadIndustryMetrics"
                 :disabled="loadingMetrics"
-                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+                class="calculate-metrics-btn"
               >
-                {{ loadingMetrics ? '計算中...' : '計算指標' }}
+                <span class="btn-icon">{{ loadingMetrics ? '⚙️' : '🧮' }}</span>
+                <span class="btn-text">{{ loadingMetrics ? '計算中...' : '計算指標' }}</span>
               </button>
             </div>
 
             <!-- Metrics Display -->
             <div v-if="industryMetrics">
-              <div class="mb-4 text-sm text-gray-600">
-                數據日期: {{ industryMetrics.date }} | 計算基礎: {{ industryMetrics.stocks_count }} 檔股票
+              <div class="metrics-info-badge">
+                <span class="info-item">
+                  <span class="info-icon">📅</span>
+                  <span class="info-text">數據日期: <strong>{{ industryMetrics.date }}</strong></span>
+                </span>
+                <span class="divider">|</span>
+                <span class="info-item">
+                  <span class="info-icon">📈</span>
+                  <span class="info-text">計算基礎: <strong>{{ industryMetrics.stocks_count }} 檔股票</strong></span>
+                </span>
               </div>
 
               <!-- Radar Chart -->
@@ -1713,6 +1739,243 @@ onUnmounted(() => {
 
 .industry-page {
   background: #f9fafb;
+}
+
+/* Industry List Header */
+.industry-list-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+
+  .title-icon {
+    font-size: 1.5rem;
+  }
+}
+
+.reload-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+
+  .reload-icon {
+    font-size: 1rem;
+    display: inline-block;
+    transition: transform 0.3s ease;
+  }
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+    transform: translateY(-1px);
+
+    .reload-icon {
+      transform: rotate(180deg);
+    }
+  }
+
+  &:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+    box-shadow: none;
+
+    .reload-icon {
+      animation: spin 1s linear infinite;
+    }
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.industry-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  border: 1px solid #93c5fd;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #1e40af;
+
+  .badge-icon {
+    font-size: 1rem;
+  }
+
+  strong {
+    font-weight: 700;
+    color: #1e3a8a;
+  }
+}
+
+.filter-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.level-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #111827;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  &:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  option {
+    padding: 0.5rem;
+    font-weight: 500;
+  }
+}
+
+/* Industry Info Cards */
+.info-cards-container {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.info-card {
+  flex: 0 1 auto;
+  min-width: 180px;
+  max-width: 220px;
+  padding: 1rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 2px solid #e2e8f0;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+    transform: translateY(-2px);
+  }
+
+  .info-label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+
+    .info-icon {
+      font-size: 1rem;
+    }
+  }
+
+  .info-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1.2;
+  }
+}
+
+/* Load Stocks Button */
+.load-stocks-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 6px rgba(59, 130, 246, 0.25);
+
+  .btn-icon {
+    font-size: 1.25rem;
+    transition: transform 0.3s ease;
+  }
+
+  .btn-text {
+    font-weight: 600;
+  }
+
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    box-shadow: 0 6px 12px rgba(59, 130, 246, 0.35);
+    transform: translateY(-2px);
+
+    .btn-icon {
+      transform: scale(1.1);
+    }
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  &:disabled {
+    background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+    cursor: not-allowed;
+    box-shadow: none;
+
+    .btn-icon {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
 }
 
 /* Tabs */

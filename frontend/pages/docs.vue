@@ -112,7 +112,7 @@
           <span class="text-3xl">⚡</span>
           核心功能
         </h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="features-grid">
           <div class="feature-card">
             <div class="feature-icon">💻</div>
             <h3 class="font-bold text-lg mb-2">策略編輯器</h3>
@@ -168,7 +168,7 @@
                 <span class="text-xl">❓</span>
                 <span>FAQ</span>
               </NuxtLink>
-              <a href="mailto:support@quantlab.tw" class="support-link">
+              <a href="mailto:weiyu58@gmail.com" class="support-link">
                 <span class="text-xl">📧</span>
                 <span>Email</span>
               </a>
@@ -384,6 +384,23 @@ const redocUrl = `${config.public.apiBase}/redoc`
 
 .step-content {
   flex: 1;
+}
+
+/* 核心功能網格 */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 320px));
+  gap: 1.5rem;
+  justify-content: center;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+    max-width: 400px;
+  }
 }
 
 /* 核心功能卡片 */

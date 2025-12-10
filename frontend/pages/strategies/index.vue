@@ -512,6 +512,7 @@ watch(currentFilter, () => {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s;
+  text-decoration: none;
 
   .icon {
     font-size: 1.25rem;

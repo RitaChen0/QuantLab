@@ -1,5 +1,7 @@
 
 
+ssh-keygen -t ed25519 -C "112826003@cc.ncu.edu.tw"
+
 Qlib + RD_Agent 
 
   - 支援更多表達式（RSI, MACD, Bollinger Bands 等）
