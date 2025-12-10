@@ -92,6 +92,7 @@
                 <th>用戶名</th>
                 <th>Email</th>
                 <th>全名</th>
+                <th>會員等級</th>
                 <th>狀態</th>
                 <th>管理員</th>
                 <th>註冊時間</th>
@@ -105,6 +106,7 @@
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
                 <td>{{ user.full_name || '-' }}</td>
+                <td>{{ user.member_level }}</td>
                 <td>
                   <span :class="['status-badge', user.is_active ? 'active' : 'inactive']">
                     {{ user.is_active ? '啟用' : '停用' }}
@@ -277,6 +279,11 @@
           </div>
 
           <div class="form-group">
+            <label>會員等級</label>
+            <input v-model.number="editForm.member_level" type="number" min="0" required>
+          </div>
+
+          <div class="form-group">
             <label class="checkbox-label">
               <input v-model="editForm.is_active" type="checkbox">
               <span>啟用帳號</span>
@@ -360,6 +367,7 @@ const editForm = ref({
   username: '',
   email: '',
   full_name: '',
+  member_level: 0,
   is_active: true,
   is_superuser: false,
   email_verified: false,
@@ -517,6 +525,7 @@ function editUser(user: any) {
     username: user.username,
     email: user.email,
     full_name: user.full_name || '',
+    member_level: user.member_level || 0,
     is_active: user.is_active,
     is_superuser: user.is_superuser,
     email_verified: user.email_verified || false,

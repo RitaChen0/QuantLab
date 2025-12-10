@@ -27,6 +27,7 @@ export const useAuth = () => {
     full_name: string
     is_active: boolean
     is_superuser: boolean
+    member_level: number
     created_at: string
   }
 

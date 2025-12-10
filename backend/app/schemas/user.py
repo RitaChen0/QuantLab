@@ -30,6 +30,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     finlab_api_token: Optional[str] = None
     is_active: Optional[bool] = None
+    member_level: Optional[int] = Field(None, ge=0)
 
 
 # Schema for user in database (with all fields)
@@ -40,6 +41,7 @@ class UserInDB(UserBase):
     id: int
     is_active: bool
     is_superuser: bool
+    member_level: int
     finlab_api_token: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -57,6 +59,7 @@ class User(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     is_superuser: bool
+    member_level: int
     created_at: datetime
     last_login: Optional[datetime] = None
 

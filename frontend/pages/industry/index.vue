@@ -1,55 +1,7 @@
 <template>
   <div class="dashboard-container">
     <!-- 頂部導航欄 -->
-    <header class="dashboard-header">
-      <div class="header-content">
-        <div class="logo-section">
-          <h1 class="logo">QuantLab</h1>
-          <span class="badge">量化交易實驗室</span>
-        </div>
-
-        <nav class="nav-links">
-          <NuxtLink to="/dashboard" class="nav-link">
-            <span class="icon">📊</span>
-            儀表板
-          </NuxtLink>
-          <NuxtLink to="/strategies" class="nav-link">
-            <span class="icon">📈</span>
-            策略管理
-          </NuxtLink>
-          <NuxtLink to="/backtest" class="nav-link">
-            <span class="icon">🔬</span>
-            回測中心
-          </NuxtLink>
-          <NuxtLink to="/data" class="nav-link">
-            <span class="icon">💹</span>
-            數據瀏覽
-          </NuxtLink>
-          <NuxtLink to="/industry" class="nav-link active">
-            <span class="icon">🏭</span>
-            產業分析
-          </NuxtLink>
-          <NuxtLink to="/rdagent" class="nav-link">
-            <span class="icon">🤖</span>
-            自動研發
-          </NuxtLink>
-          <NuxtLink to="/docs" class="nav-link">
-            <span class="icon">📚</span>
-            API 文檔
-          </NuxtLink>
-        </nav>
-
-        <div class="user-section">
-          <div class="user-info">
-            <span class="user-name">{{ username || '用戶' }}</span>
-          </div>
-          <button @click="handleLogout" class="btn-logout">
-            <span class="icon">🚪</span>
-            登出
-          </button>
-        </div>
-      </div>
-    </header>
+    <AppHeader />
 
     <!-- 主要內容區 -->
     <main class="dashboard-main">
@@ -676,9 +628,9 @@ const METRIC_THRESHOLDS = {
 
 const router = useRouter()
 const config = useRuntimeConfig()
+const { loadUserInfo } = useUserInfo()
 
 // State
-const username = ref('')
 const activeTab = ref('basic')
 const dataSource = ref<'twse' | 'finmind'>('twse')  // 數據源選擇
 const loading = ref(false)
@@ -1705,24 +1657,9 @@ function viewStock(stockId: string) {
   router.push(`/data?stock=${stockId}`)
 }
 
-function handleLogout() {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
-  router.push('/login')
-}
-
 // Lifecycle
 onMounted(() => {
-  // Load username from localStorage or token
-  const token = localStorage.getItem('access_token')
-  if (!token) {
-    router.push('/login')
-    return
-  }
-
-  // Try to get username from localStorage
-  username.value = localStorage.getItem('username') || '用戶'
-
+  loadUserInfo()
   loadStatistics()
   loadIndustries()
 })
@@ -1765,109 +1702,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #f9fafb;
-}
-
-.dashboard-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-}
-
-.header-content {
-  max-width: 1536px;
-  margin: 0 auto;
-  padding: 1rem 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.logo-section {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.logo {
-  font-size: 1.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.badge {
-  padding: 0.25rem 0.75rem;
-  background: #eff6ff;
-  color: #1e40af;
-  font-size: 0.75rem;
-  border-radius: 9999px;
-  font-weight: 500;
-}
-
-.nav-links {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  color: #6b7280;
-  text-decoration: none;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-  font-weight: 500;
-
-  &:hover {
-    background: #f3f4f6;
-    color: #111827;
-  }
-
-  &.active {
-    background: #eff6ff;
-    color: #2563eb;
-  }
-}
-
-.user-section {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.user-name {
-  font-weight: 500;
-  color: #374151;
-}
-
-.btn-logout {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #fee2e2;
-  color: #dc2626;
-  border: none;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #fecaca;
-  }
 }
 
 .dashboard-main {

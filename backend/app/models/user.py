@@ -15,6 +15,7 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
+    member_level = Column(Integer, default=0, nullable=False)
 
     # Email Verification
     email_verified = Column(Boolean, default=False, nullable=False)

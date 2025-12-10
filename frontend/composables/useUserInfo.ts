@@ -12,6 +12,7 @@ interface CachedUserInfo {
   username: string
   fullName: string
   isSuperuser: boolean
+  memberLevel: number
   timestamp: number
 }
 
@@ -22,6 +23,7 @@ export const useUserInfo = () => {
   const username = ref('')
   const fullName = ref('')
   const isSuperuser = ref(false)
+  const memberLevel = ref(0)
   const loading = ref(false)
   const error = ref('')
   const initialized = ref(false) // 追蹤是否已初始化
@@ -61,6 +63,7 @@ export const useUserInfo = () => {
       username.value = cached.username
       fullName.value = cached.fullName
       isSuperuser.value = cached.isSuperuser || false
+      memberLevel.value = cached.memberLevel || 0
       initialized.value = true
     }
   }
@@ -76,6 +79,7 @@ export const useUserInfo = () => {
     username.value = cached.username
     fullName.value = cached.fullName
     isSuperuser.value = cached.isSuperuser || false
+    memberLevel.value = cached.memberLevel || 0
     initialized.value = true
     return true
   }
@@ -83,7 +87,7 @@ export const useUserInfo = () => {
   /**
    * 儲存用戶資訊到 localStorage 快取
    */
-  const saveToCache = (usernameVal: string, fullNameVal: string, isSuperuserVal: boolean) => {
+  const saveToCache = (usernameVal: string, fullNameVal: string, isSuperuserVal: boolean, memberLevelVal: number) => {
     if (!process.client) return
 
     try {
@@ -91,6 +95,7 @@ export const useUserInfo = () => {
         username: usernameVal,
         fullName: fullNameVal,
         isSuperuser: isSuperuserVal,
+        memberLevel: memberLevelVal,
         timestamp: Date.now()
       }
       localStorage.setItem(CACHE_KEY, JSON.stringify(data))
@@ -123,10 +128,11 @@ export const useUserInfo = () => {
         username.value = result.data.username
         fullName.value = result.data.full_name
         isSuperuser.value = result.data.is_superuser || false
+        memberLevel.value = result.data.member_level || 0
         initialized.value = true
 
         // 儲存到快取
-        saveToCache(result.data.username, result.data.full_name, result.data.is_superuser || false)
+        saveToCache(result.data.username, result.data.full_name, result.data.is_superuser || false, result.data.member_level || 0)
 
         return true
       } else {
@@ -153,6 +159,7 @@ export const useUserInfo = () => {
     username.value = ''
     fullName.value = ''
     isSuperuser.value = false
+    memberLevel.value = 0
     error.value = ''
 
     // 清除快取
@@ -166,6 +173,7 @@ export const useUserInfo = () => {
     username,
     fullName,
     isSuperuser,
+    memberLevel,
     loading,
     error,
     initialized,

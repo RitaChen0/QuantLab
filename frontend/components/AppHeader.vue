@@ -58,7 +58,7 @@
 
 <script setup lang="ts">
 const { logout } = useAuth()
-const { username, fullName, isSuperuser, loading: userLoading } = useUserInfo()
+const { username, fullName, isSuperuser, memberLevel, loading: userLoading } = useUserInfo()
 
 const handleLogout = () => {
   console.log('Logging out...')
@@ -87,22 +87,24 @@ const handleLogout = () => {
 
 .logo-section {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
 }
 
 .logo {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: white;
   margin: 0;
+  line-height: 1;
 }
 
 .badge {
-  padding: 0.25rem 0.75rem;
+  padding: 0.2rem 0.6rem;
   background: rgba(255, 255, 255, 0.2);
-  border-radius: 1rem;
-  font-size: 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.7rem;
   color: white;
   font-weight: 500;
 }
@@ -173,14 +175,20 @@ const handleLogout = () => {
 
 .user-info {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
   color: white;
+  min-width: 0;
 }
 
 .user-name {
   font-weight: 500;
   font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .admin-badge {
@@ -191,6 +199,8 @@ const handleLogout = () => {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-logout {

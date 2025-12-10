@@ -15,6 +15,8 @@ class UserListResponse(BaseModel):
     full_name: Optional[str]
     is_active: bool
     is_superuser: bool
+    member_level: int
+    email_verified: bool
     created_at: datetime
     last_login: Optional[datetime]
 
@@ -28,6 +30,8 @@ class UserUpdateAdmin(BaseModel):
     full_name: Optional[str] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
+    member_level: Optional[int] = Field(None, ge=0)
+    email_verified: Optional[bool] = None
 
 
 # System Stats Schemas

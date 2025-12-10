@@ -1,55 +1,7 @@
 <template>
   <div class="rdagent-page">
     <!-- 頂部導航欄 -->
-    <header class="dashboard-header">
-      <div class="header-content">
-        <div class="logo-section">
-          <h1 class="logo">QuantLab</h1>
-          <span class="badge">量化交易實驗室</span>
-        </div>
-
-        <nav class="nav-links">
-          <NuxtLink to="/dashboard" class="nav-link">
-            <span class="icon">📊</span>
-            儀表板
-          </NuxtLink>
-          <NuxtLink to="/strategies" class="nav-link">
-            <span class="icon">📈</span>
-            策略管理
-          </NuxtLink>
-          <NuxtLink to="/backtest" class="nav-link">
-            <span class="icon">🔬</span>
-            回測中心
-          </NuxtLink>
-          <NuxtLink to="/data" class="nav-link">
-            <span class="icon">💹</span>
-            數據瀏覽
-          </NuxtLink>
-          <NuxtLink to="/industry" class="nav-link">
-            <span class="icon">🏭</span>
-            產業分析
-          </NuxtLink>
-          <NuxtLink to="/rdagent" class="nav-link active">
-            <span class="icon">🤖</span>
-            自動研發
-          </NuxtLink>
-          <NuxtLink to="/docs" class="nav-link">
-            <span class="icon">📚</span>
-            API 文檔
-          </NuxtLink>
-        </nav>
-
-        <div class="user-section">
-          <div class="user-info">
-            <span class="user-name">{{ username || '用戶' }}</span>
-          </div>
-          <button @click="handleLogout" class="btn-logout">
-            <span class="icon">🚪</span>
-            登出
-          </button>
-        </div>
-      </div>
-    </header>
+    <AppHeader />
 
     <div class="page-header">
       <h1>🤖 自動研發</h1>
@@ -204,15 +156,9 @@ import { useRouter } from 'vue-router'
 
 const config = useRuntimeConfig()
 const router = useRouter()
+const { loadUserInfo, memberLevel } = useUserInfo()
 const activeTab = ref('factor-mining')
 const isSubmitting = ref(false)
-const username = ref('')
-
-// 登出處理
-const handleLogout = () => {
-  localStorage.removeItem('token')
-  router.push('/login')
-}
 
 const miningForm = ref({
   research_goal: '',
@@ -378,7 +324,17 @@ const getTypeLabel = (type: string) => {
   return labels[type] || type
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 強制刷新用戶資訊（跳過快取，確保獲取最新的會員等級）
+  await loadUserInfo(true)
+
+  // 檢查會員等級
+  if (memberLevel.value < 1) {
+    alert('此功能僅限會員等級 1 以上使用，請聯繫管理員升級您的會員等級。')
+    router.push('/dashboard')
+    return
+  }
+
   loadTasks()
   loadFactors()
 })
@@ -388,108 +344,6 @@ onMounted(() => {
 .rdagent-page {
   min-height: 100vh;
   background: #f9fafb;
-}
-
-// 頂部導航欄樣式
-.dashboard-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-
-  .header-content {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .logo-section {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    .logo {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #3b82f6;
-      margin: 0;
-    }
-
-    .badge {
-      padding: 0.25rem 0.75rem;
-      background: #dbeafe;
-      color: #1e40af;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      font-weight: 500;
-    }
-  }
-
-  .nav-links {
-    display: flex;
-    gap: 0.5rem;
-
-    .nav-link {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1rem;
-      color: #6b7280;
-      text-decoration: none;
-      border-radius: 0.5rem;
-      font-weight: 500;
-      transition: all 0.2s;
-
-      .icon {
-        font-size: 1.25rem;
-      }
-
-      &:hover {
-        background: #f3f4f6;
-        color: #111827;
-      }
-
-      &.active {
-        background: #dbeafe;
-        color: #1e40af;
-      }
-    }
-  }
-
-  .user-section {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    .user-info {
-      .user-name {
-        font-weight: 500;
-        color: #374151;
-      }
-    }
-
-    .btn-logout {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: #fee2e2;
-      color: #991b1b;
-      border: none;
-      border-radius: 0.375rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-
-      &:hover {
-        background: #fecaca;
-      }
-    }
-  }
 }
 
 .page-header {
