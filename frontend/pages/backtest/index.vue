@@ -323,6 +323,25 @@
               >
             </div>
 
+            <div class="form-group">
+              <label for="timeframe">時間粒度 *</label>
+              <select
+                id="timeframe"
+                v-model="newBacktest.timeframe"
+                required
+              >
+                <option value="1day">日線 (1day)</option>
+                <option value="60min">60 分鐘線</option>
+                <option value="30min">30 分鐘線</option>
+                <option value="15min">15 分鐘線</option>
+                <option value="5min">5 分鐘線</option>
+                <option value="1min">1 分鐘線</option>
+              </select>
+              <p class="field-hint">
+                ⏰ 分鐘線回測需要已匯入的分鐘級數據（目前支援 TOP 50 股票）
+              </p>
+            </div>
+
             <div class="modal-actions">
               <button
                 type="button"
@@ -396,6 +415,7 @@ const newBacktest = reactive({
   start_date: '',
   end_date: '',
   initial_capital: 1000000,
+  timeframe: '1day',
   parameters: {}
 })
 
@@ -526,6 +546,7 @@ const handleCreateBacktest = async () => {
         start_date: newBacktest.start_date,
         end_date: newBacktest.end_date,
         initial_capital: newBacktest.initial_capital,
+        timeframe: newBacktest.timeframe,
         parameters: newBacktest.parameters
       }
     })
@@ -540,6 +561,7 @@ const handleCreateBacktest = async () => {
     newBacktest.start_date = ''
     newBacktest.end_date = ''
     newBacktest.initial_capital = 1000000
+    newBacktest.timeframe = '1day'
     newBacktest.parameters = {}
 
     // 關閉 modal

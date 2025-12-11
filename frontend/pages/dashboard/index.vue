@@ -13,6 +13,16 @@
 
         <!-- 統計卡片 -->
         <div class="stats-grid">
+          <!-- 會員等級卡片 -->
+          <div class="stat-card membership-card" :class="`level-${membershipInfo.member_level}`">
+            <div class="stat-icon">{{ getMembershipIcon(membershipInfo.member_level) }}</div>
+            <div class="stat-content">
+              <div class="stat-label">會員等級</div>
+              <div class="stat-value">{{ membershipInfo.level_name || '載入中...' }}</div>
+              <div class="stat-extra">Level {{ membershipInfo.member_level }}</div>
+            </div>
+          </div>
+
           <div class="stat-card">
             <div class="stat-icon">📊</div>
             <div class="stat-content">
@@ -30,15 +40,32 @@
           <div class="stat-card">
             <div class="stat-icon">💰</div>
             <div class="stat-content">
-              <div class="stat-label">總報酬率</div>
-              <div class="stat-value">{{ stats.totalReturn }}</div>
+              <div class="stat-label">帳戶餘額</div>
+              <div class="stat-value">${{ membershipInfo.cash || '0.00' }}</div>
+              <div class="stat-extra">信用: {{ membershipInfo.credit || '0.00' }}</div>
             </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-icon">📅</div>
-            <div class="stat-content">
-              <div class="stat-label">最近活動</div>
-              <div class="stat-value">{{ stats.lastActivity }}</div>
+        </div>
+
+        <!-- Rate Limit 使用情況 -->
+        <div class="section">
+          <h2 class="section-title">API 使用情況</h2>
+          <div class="rate-limit-grid">
+            <div
+              v-for="(limit, key) in selectedRateLimits"
+              :key="key"
+              class="rate-limit-card"
+            >
+              <div class="limit-header">
+                <span class="limit-name">{{ limit.name }}</span>
+                <span class="limit-value">{{ limit.limit }}</span>
+              </div>
+              <div class="limit-bar">
+                <div class="limit-bar-fill" :style="{ width: '0%' }"></div>
+              </div>
+              <div v-if="limit.description" class="limit-description">
+                <small>{{ limit.description }}</small>
+              </div>
             </div>
           </div>
         </div>
@@ -152,9 +179,61 @@ const stats = reactive({
   lastActivity: '今天'
 })
 
+// 會員資訊
+const membershipInfo = reactive({
+  member_level: 0,
+  level_name: '載入中...',
+  cash: '0.00',
+  credit: '0.00',
+  rate_limits: {}
+})
+
+// Rate Limit 詳情
+const rateLimitDetails = ref({})
+
 // 最近策略
 const recentStrategies = ref([])
 const loading = ref(true)
+
+// 載入會員資訊
+const loadMembershipInfo = async () => {
+  try {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+
+    // 載入會員資訊
+    const membershipRes = await fetch(
+      `${config.public.apiBase}/api/v1/membership/me`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    )
+
+    if (membershipRes.ok) {
+      const data = await membershipRes.json()
+      Object.assign(membershipInfo, data)
+    }
+
+    // 載入 Rate Limit 詳情
+    const limitsRes = await fetch(
+      `${config.public.apiBase}/api/v1/membership/limits`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    )
+
+    if (limitsRes.ok) {
+      const data = await limitsRes.json()
+      rateLimitDetails.value = data.limits || {}
+    }
+  } catch (error) {
+    console.error('Failed to load membership info:', error)
+  }
+}
 
 // 載入儀表板資料
 const loadDashboardData = async () => {
@@ -200,13 +279,69 @@ const loadDashboardData = async () => {
   }
 }
 
+// 獲取會員等級圖示
+const getMembershipIcon = (level: number) => {
+  const iconMap: Record<number, string> = {
+    0: '📝',  // 註冊會員
+    1: '👤',  // 普通會員
+    2: '⭐',  // 中階會員
+    3: '💎',  // 高階會員
+    4: '👑',  // VIP會員
+    5: '🎯',  // 系統推廣會員
+    6: '🔧',  // 系統管理員1
+    7: '⚙️',  // 系統管理員2
+    8: '🛠️',  // 系統管理員3
+    9: '🚀'   // 創造者等級
+  }
+  return iconMap[level] || '📝'
+}
+
+// 篩選重要的 Rate Limit 項目
+const selectedRateLimits = computed(() => {
+  const important = ['回測執行', '策略建立', '資料查詢', '因子挖掘']
+
+  return Object.entries(rateLimitDetails.value)
+    .filter(([key]) => important.includes(key))
+    .map(([key, value]: [string, any]) => ({
+      name: key,
+      limit: value.limit || value,
+      description: value.description || `${key}限制`
+    }))
+})
+
 // 載入用戶資訊
 onMounted(() => {
   loadUserInfo()
   loadDashboardData()
+  loadMembershipInfo()
 
   console.log('Dashboard mounted')
 })
+
+// 當頁面重新激活時刷新數據（例如從其他頁面返回）
+onActivated(() => {
+  console.log('Dashboard activated, refreshing data...')
+  loadMembershipInfo()
+  loadDashboardData()
+})
+
+// 監聽頁面可見性變化，當頁面重新可見時刷新數據
+if (process.client) {
+  onMounted(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('Page became visible, refreshing data...')
+        loadMembershipInfo()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // 清理事件監聽器
+    onUnmounted(() => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    })
+  })
+}
 
 // 格式化日期
 const formatDate = (dateString: string) => {
@@ -311,6 +446,150 @@ const getStatusClass = (status: string) => {
     font-size: 1.875rem;
     font-weight: 700;
     color: #111827;
+  }
+
+  .stat-extra {
+    color: #9ca3af;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+}
+
+// 會員等級卡片樣式
+.membership-card {
+  border: 2px solid #e5e7eb;
+
+  &.level-0 {
+    border-color: #9ca3af;
+    background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+  }
+
+  &.level-1 {
+    border-color: #60a5fa;
+    background: linear-gradient(135deg, #dbeafe 0%, #ffffff 100%);
+  }
+
+  &.level-2 {
+    border-color: #34d399;
+    background: linear-gradient(135deg, #d1fae5 0%, #ffffff 100%);
+  }
+
+  &.level-3 {
+    border-color: #fbbf24;
+    background: linear-gradient(135deg, #fef3c7 0%, #ffffff 100%);
+  }
+
+  &.level-4 {
+    border-color: #f59e0b;
+    background: linear-gradient(135deg, #ffedd5 0%, #ffffff 100%);
+  }
+
+  &.level-5 {
+    border-color: #ec4899;
+    background: linear-gradient(135deg, #fce7f3 0%, #ffffff 100%);
+  }
+
+  &.level-6 {
+    border-color: #8b5cf6;
+    background: linear-gradient(135deg, #ede9fe 0%, #ffffff 100%);
+  }
+
+  &.level-7 {
+    border-color: #6366f1;
+    background: linear-gradient(135deg, #e0e7ff 0%, #ffffff 100%);
+  }
+
+  &.level-8 {
+    border-color: #3b82f6;
+    background: linear-gradient(135deg, #dbeafe 0%, #ffffff 100%);
+  }
+
+  &.level-9 {
+    border-color: #ef4444;
+    background: linear-gradient(135deg, #fee2e2 0%, #ffffff 100%);
+  }
+}
+
+// Rate Limit 區塊
+.rate-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.rate-limit-card {
+  background: white;
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  }
+}
+
+.limit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+
+  .limit-name {
+    font-weight: 600;
+    color: #111827;
+    font-size: 0.875rem;
+  }
+
+  .limit-value {
+    font-weight: 700;
+    color: #3b82f6;
+    font-size: 1rem;
+  }
+}
+
+.limit-bar {
+  width: 100%;
+  height: 0.5rem;
+  background: #e5e7eb;
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+
+  .limit-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+  }
+}
+
+.limit-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+
+  .limit-base {
+    color: #9ca3af;
+  }
+
+  .limit-multiplier {
+    color: #16a34a;
+    font-weight: 600;
+  }
+}
+
+.limit-description {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e5e7eb;
+
+  small {
+    color: #6b7280;
+    font-size: 0.75rem;
+    font-style: italic;
   }
 }
 

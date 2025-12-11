@@ -4,6 +4,7 @@ User-related Pydantic schemas for request/response validation
 
 from typing import Optional
 from datetime import datetime
+from decimal import Decimal
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 
@@ -30,7 +31,9 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     finlab_api_token: Optional[str] = None
     is_active: Optional[bool] = None
-    member_level: Optional[int] = Field(None, ge=0)
+    member_level: Optional[int] = Field(None, ge=0, le=6)
+    cash: Optional[Decimal] = Field(None, ge=0)
+    credit: Optional[Decimal] = Field(None, ge=0)
 
 
 # Schema for user in database (with all fields)
@@ -42,6 +45,8 @@ class UserInDB(UserBase):
     is_active: bool
     is_superuser: bool
     member_level: int
+    cash: Decimal
+    credit: Decimal
     finlab_api_token: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -60,6 +65,8 @@ class User(BaseModel):
     is_active: bool
     is_superuser: bool
     member_level: int
+    cash: Decimal
+    credit: Decimal
     created_at: datetime
     last_login: Optional[datetime] = None
 

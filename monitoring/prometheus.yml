@@ -1,0 +1,49 @@
+# Prometheus 配置文件
+# QuantLab 監控系統
+
+global:
+  scrape_interval: 15s      # 每 15 秒抓取 metrics
+  evaluation_interval: 15s  # 每 15 秒評估 rules
+  external_labels:
+    cluster: 'quantlab'
+    environment: 'development'
+
+# Alertmanager 配置（可選）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# 規則文件（可選）
+# rule_files:
+#   - "alerts/*.yml"
+
+# Scrape 配置
+scrape_configs:
+  # Prometheus 自身 metrics
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # FastAPI Backend metrics
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Celery Worker metrics (via celery-exporter)
+  - job_name: 'celery'
+    static_configs:
+      - targets: ['celery-exporter:9808']
+    scrape_interval: 10s
+
+  # Redis metrics (via redis-exporter, 可選)
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # PostgreSQL metrics (via postgres-exporter, 可選)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']

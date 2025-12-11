@@ -186,7 +186,8 @@ def run_backtest_async(
                             slippage=float(backtest_config.get('slippage', 0.0)),
                             position_size=backtest_config.get('position_size'),
                             max_position_pct=float(backtest_config.get('max_position_pct', 1.0)),
-                            strategy_params=params.get('strategy_params', {})
+                            strategy_params=params.get('strategy_params', {}),
+                            timeframe=backtest.timeframe
                         )
 
                     # 更新進度

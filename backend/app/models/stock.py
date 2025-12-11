@@ -23,6 +23,8 @@ class Stock(Base):
 
     # Relationships
     prices = relationship("StockPrice", back_populates="stock", cascade="all, delete-orphan")
+    # minute_prices relationship temporarily disabled to avoid Pydantic recursion during OpenAPI schema generation
+    # minute_prices = relationship("StockMinutePrice", back_populates="stock", cascade="all, delete-orphan")
     trades = relationship("Trade", back_populates="stock")
     stock_industries = relationship("StockIndustry", back_populates="stock", cascade="all, delete-orphan")
 

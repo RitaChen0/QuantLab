@@ -17,6 +17,8 @@ class UserListResponse(BaseModel):
     is_superuser: bool
     member_level: int
     email_verified: bool
+    cash: float = 0.0
+    credit: float = 0.0
     created_at: datetime
     last_login: Optional[datetime]
 
@@ -30,8 +32,10 @@ class UserUpdateAdmin(BaseModel):
     full_name: Optional[str] = None
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
-    member_level: Optional[int] = Field(None, ge=0)
+    member_level: Optional[int] = Field(None, ge=0, le=9)
     email_verified: Optional[bool] = None
+    cash: Optional[float] = Field(None, ge=0, description="現金餘額")
+    credit: Optional[float] = Field(None, ge=0, description="信用點數")
 
 
 # System Stats Schemas

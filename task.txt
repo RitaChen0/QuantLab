@@ -1,4 +1,9 @@
 
+    當會員等級是 
+    Level 0 , 免費用戶 ：基本限制 
+    Level 3 , 付費用戶 ：較寬鬆限制
+    Level 6 , VIP 用戶 ：最寬鬆限制
+    在增加 cash , credit 兩個會員欄位 
 
 Qlib + RD_Agent 
 

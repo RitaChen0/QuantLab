@@ -119,3 +119,40 @@ git checkout .
 My factor-based inspiration is that when a stock has risen sharply in the past short period (overbought) but the trading volume has not increased accordingly, this may be a signal of a false boom or exhaustion buying, indicating that a reversal and decline will occur in the short term.
 
 
+✅ 訪問各個監控介面
+  運行 ./start-monitoring.sh 體驗監控系統 
+  
+  Grafana: http://122.116.152.55:3001
+  Prometheus: http://122.116.152.55:9090
+  Backend Metrics: http://122.116.152.55:8000/metrics
+  Celery Metrics: http://122.116.152.55:9808/metrics
+
+  # 如果需要，開放端口
+  sudo ufw allow 9090/tcp
+  sudo ufw allow 9808/tcp
+
+  # 重置 密碼 為
+  docker compose exec grafana grafana cli admin reset-admin-password jsXdke82SYk.aji8
+
+    當會員等級是 
+    Level 0 , 免費用戶 ：基本限制 
+    Level 3 , 付費用戶 ：較寬鬆限制
+    Level 6 , VIP 用戶 ：最寬鬆限制
+
+會員 0 - 註冊會員
+    1 - 普通會員
+    2 - 中階會員 
+    3 - 高階會員
+    4 - Vip會員
+    5 - 系統推廣會員
+    6 - 系統管理員1
+    7 - 系統管理員2
+    8 - 系統管理員3
+    9 - 創造者等級
+
+會員改成 0 到 9 級 
+4 個 Rate Limit：
+  - 回測執行: 10/20/30/40/50/60/70/3000/3000/3000 per hour (依等級)
+  - 策略建立: 10/20/30/40/50/60/70/3000/3000/3000 per hour (依等級)
+  - 資料查詢: 100/200/300/400/500/600/700/3000/3000/3000 per minute (依等級)
+  - 因子挖掘: 0/0/0/1/2/3/6/3000/3000/3000 per hour (依等級)

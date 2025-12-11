@@ -175,6 +175,7 @@ class BacktestRepository:
             end_date=backtest_create.end_date,
             initial_capital=backtest_create.initial_capital,
             engine_type=engine_type,
+            timeframe=backtest_create.timeframe,
             status=BacktestStatus.PENDING,
         )
 

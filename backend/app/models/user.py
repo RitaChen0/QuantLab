@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -15,7 +15,11 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    member_level = Column(Integer, default=0, nullable=False)
+
+    # Member Level and Balance
+    member_level = Column(Integer, default=0, nullable=False)  # 0=免費, 3=付費, 6=VIP
+    cash = Column(Numeric(15, 2), default=0.00, nullable=False)  # 現金餘額
+    credit = Column(Numeric(15, 2), default=0.00, nullable=False)  # 信用點數
 
     # Email Verification
     email_verified = Column(Boolean, default=False, nullable=False)

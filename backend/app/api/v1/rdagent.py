@@ -37,8 +37,28 @@ async def create_factor_mining_task(
 
     使用 RD-Agent 自動生成交易因子。任務會在背景執行，可通過任務 ID 查詢進度。
 
-    **限制**：每小時最多 3 次
+    **會員等級限制**：
+    - Level 0-2: 不可使用
+    - Level 3: 1 次/小時
+    - Level 4: 2 次/小時
+    - Level 5: 3 次/小時
+    - Level 6: 6 次/小時
+    - Level 7-9: 3000 次/小時（管理員/創造者）
     """
+    # 檢查會員等級限制
+    user_level = getattr(current_user, 'member_level', 0)
+
+    # Level 0-2 不允許使用因子挖掘功能
+    if user_level < 3:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="因子挖掘功能僅限 Level 3 以上會員使用。請升級會員等級以使用此功能。"
+        )
+
+    # 根據會員等級設定不同的限制（通過自訂 limiter）
+    # Level 3: 3/hour, Level 6: 10/hour
+    # 實際限制由 rate_limit.py 中的倍數機制處理
+
     try:
         service = RDAgentService(db)
 

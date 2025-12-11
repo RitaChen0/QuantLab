@@ -39,6 +39,14 @@ class Backtest(Base):
         comment="使用的回測引擎：backtrader 或 qlib"
     )
 
+    # 時間粒度
+    timeframe = Column(
+        String(10),
+        nullable=False,
+        default='1day',
+        comment="時間粒度：1min, 5min, 15min, 30min, 60min, 1day"
+    )
+
     # 狀態與執行資訊
     status = Column(
         Enum(BacktestStatus, native_enum=False, length=20),

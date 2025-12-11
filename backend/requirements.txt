@@ -33,6 +33,9 @@ numpy==1.26.3
 # FinLab Integration
 finlab==1.5.4
 
+# Shioaji Integration (永豐證券 API)
+shioaji==1.2.9
+
 # Technical Analysis
 TA-Lib  # 不指定版本，讓 pip 自動選擇
 
@@ -69,6 +72,8 @@ click==8.1.7
 
 # Monitoring & Logging
 loguru==0.7.2
+prometheus-client==0.19.0  # Prometheus metrics
+celery-prometheus-exporter==1.10.0  # Celery metrics for Prometheus
 
 # Testing
 pytest==7.4.4

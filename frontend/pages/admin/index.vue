@@ -93,6 +93,8 @@
                 <th>Email</th>
                 <th>全名</th>
                 <th>會員等級</th>
+                <th>現金</th>
+                <th>信用</th>
                 <th>狀態</th>
                 <th>管理員</th>
                 <th>註冊時間</th>
@@ -106,7 +108,13 @@
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
                 <td>{{ user.full_name || '-' }}</td>
-                <td>{{ user.member_level }}</td>
+                <td>
+                  <span :class="['level-badge', 'level-' + user.member_level]">
+                    Level {{ user.member_level }}
+                  </span>
+                </td>
+                <td class="currency-cell">${{ formatNumber(user.cash) }}</td>
+                <td class="currency-cell">{{ formatNumber(user.credit) }}</td>
                 <td>
                   <span :class="['status-badge', user.is_active ? 'active' : 'inactive']">
                     {{ user.is_active ? '啟用' : '停用' }}
@@ -298,7 +306,30 @@
 
           <div class="form-group">
             <label>會員等級</label>
-            <input v-model.number="editForm.member_level" type="number" min="0" required>
+            <select v-model.number="editForm.member_level" required>
+              <option :value="0">Level 0 - 註冊會員</option>
+              <option :value="1">Level 1 - 普通會員</option>
+              <option :value="2">Level 2 - 中階會員</option>
+              <option :value="3">Level 3 - 高階會員</option>
+              <option :value="4">Level 4 - VIP會員</option>
+              <option :value="5">Level 5 - 系統推廣會員</option>
+              <option :value="6">Level 6 - 系統管理員1</option>
+              <option :value="7">Level 7 - 系統管理員2</option>
+              <option :value="8">Level 8 - 系統管理員3</option>
+              <option :value="9">Level 9 - 創造者等級</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>現金餘額 ($)</label>
+            <input v-model.number="editForm.cash" type="number" min="0" step="0.01" placeholder="0.00">
+            <small class="form-hint">用戶的現金餘額</small>
+          </div>
+
+          <div class="form-group">
+            <label>信用點數</label>
+            <input v-model.number="editForm.credit" type="number" min="0" step="0.01" placeholder="0.00">
+            <small class="form-hint">用戶的信用點數或獎勵積分</small>
           </div>
 
           <div class="form-group">
@@ -386,6 +417,8 @@ const editForm = ref({
   email: '',
   full_name: '',
   member_level: 0,
+  cash: 0,
+  credit: 0,
   is_active: true,
   is_superuser: false,
   email_verified: false,
@@ -544,6 +577,8 @@ function editUser(user: any) {
     email: user.email,
     full_name: user.full_name || '',
     member_level: user.member_level || 0,
+    cash: parseFloat(user.cash) || 0,
+    credit: parseFloat(user.credit) || 0,
     is_active: user.is_active,
     is_superuser: user.is_superuser,
     email_verified: user.email_verified || false,
@@ -645,6 +680,15 @@ function getStatusText(status: string) {
     'unknown': '❓ 未知'
   }
   return statusMap[status] || status
+}
+
+function formatNumber(value: any): string {
+  const num = parseFloat(value)
+  if (isNaN(num)) return '0.00'
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 }
 
 // Lifecycle
@@ -902,6 +946,71 @@ onMounted(() => {
     background: #fee2e2;
     color: #991b1b;
   }
+}
+
+.level-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+
+  &.level-0 {
+    background: #f3f4f6;  // 灰色 - 註冊會員
+    color: #6b7280;
+  }
+
+  &.level-1 {
+    background: #dbeafe;  // 淺藍 - 普通會員
+    color: #1e40af;
+  }
+
+  &.level-2 {
+    background: #d1fae5;  // 綠色 - 中階會員
+    color: #065f46;
+  }
+
+  &.level-3 {
+    background: #fef3c7;  // 金色 - 高階會員
+    color: #92400e;
+  }
+
+  &.level-4 {
+    background: #ffedd5;  // 橙色 - VIP會員
+    color: #9a3412;
+  }
+
+  &.level-5 {
+    background: #fce7f3;  // 粉紅 - 系統推廣會員
+    color: #9f1239;
+  }
+
+  &.level-6 {
+    background: #ede9fe;  // 紫色 - 系統管理員1
+    color: #6b21a8;
+  }
+
+  &.level-7 {
+    background: #e0e7ff;  // 靛色 - 系統管理員2
+    color: #3730a3;
+  }
+
+  &.level-8 {
+    background: #dbeafe;  // 藍色 - 系統管理員3
+    color: #1e3a8a;
+  }
+
+  &.level-9 {
+    background: #fee2e2;  // 紅色 - 創造者等級
+    color: #991b1b;
+  }
+}
+
+.currency-cell {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-weight: 600;
+  color: #059669;
+  text-align: right;
 }
 
 .btn-action {
@@ -1272,19 +1381,39 @@ onMounted(() => {
     }
 
     input[type="text"],
-    input[type="email"] {
+    input[type="email"],
+    input[type="number"],
+    select {
       width: 100%;
       padding: 0.625rem;
       border: 1px solid #d1d5db;
       border-radius: 0.5rem;
       font-size: 0.875rem;
       transition: border-color 0.2s;
+      background: white;
 
       &:focus {
         outline: none;
         border-color: #3b82f6;
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
       }
+    }
+
+    select {
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      padding-right: 2.5rem;
+    }
+
+    .form-hint {
+      display: block;
+      margin-top: 0.375rem;
+      font-size: 0.75rem;
+      color: #6b7280;
+      font-weight: 400;
     }
   }
 

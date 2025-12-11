@@ -24,6 +24,7 @@ from app.models.backtest import Backtest
 from app.models.backtest_result import BacktestResult
 from app.models.trade import Trade, TradeAction
 from app.models.stock_price import StockPrice
+from app.repositories.stock_minute_price import StockMinutePriceRepository
 
 
 class DailyValueAnalyzer(bt.Analyzer):
@@ -418,6 +419,124 @@ class BacktestEngine:
             logger.error(f"Error loading data for {stock_id}: {str(e)}")
             return None
 
+    def load_minute_data(
+        self,
+        stock_id: str,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        timeframe: str = '1min',
+        limit: int = 100000
+    ) -> Optional[pd.DataFrame]:
+        """
+        從資料庫載入分鐘級 OHLCV 資料
+
+        Args:
+            stock_id: 股票代碼
+            start_datetime: 開始時間
+            end_datetime: 結束時間
+            timeframe: 時間粒度 ('1min', '5min', '15min', '30min', '60min')
+            limit: 最大記錄數（防止資料量過大）
+
+        Returns:
+            包含 OHLCV 資料的 DataFrame（index 為 datetime）
+        """
+        try:
+            # 確保 datetime 類型正確
+            if isinstance(start_datetime, str):
+                start_datetime = datetime.fromisoformat(start_datetime)
+            if isinstance(end_datetime, str):
+                end_datetime = datetime.fromisoformat(end_datetime)
+
+            logger.info(
+                f"Loading minute data for {stock_id}: "
+                f"{start_datetime} to {end_datetime} ({timeframe})"
+            )
+
+            # 總是查詢 1 分鐘資料（數據庫中只存儲 1 分鐘原始數據）
+            prices = StockMinutePriceRepository.get_by_stock(
+                self.db,
+                stock_id,
+                start_datetime,
+                end_datetime,
+                '1min',  # 總是查詢 1 分鐘資料
+                limit
+            )
+
+            if not prices:
+                logger.warning(
+                    f"No minute data found for {stock_id} "
+                    f"(1min, {start_datetime} to {end_datetime})"
+                )
+                return None
+
+            # 轉換為 DataFrame
+            data = []
+            for price in prices:
+                data.append({
+                    'datetime': pd.Timestamp(price.datetime),
+                    'open': float(price.open),
+                    'high': float(price.high),
+                    'low': float(price.low),
+                    'close': float(price.close),
+                    'volume': int(price.volume),
+                })
+
+            df = pd.DataFrame(data)
+            df.set_index('datetime', inplace=True)
+
+            logger.info(
+                f"Loaded {len(df)} 1-minute bars for {stock_id}"
+            )
+
+            # 如果需要的不是 1 分鐘資料，進行重採樣
+            if timeframe != '1min':
+                df = self._resample_ohlcv(df, timeframe)
+                logger.info(
+                    f"Resampled to {len(df)} {timeframe} bars for {stock_id}"
+                )
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Error loading minute data for {stock_id}: {str(e)}")
+            return None
+
+    def _resample_ohlcv(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """
+        將 OHLCV 資料重採樣到指定時間粒度
+
+        Args:
+            df: 原始資料（index 為 datetime）
+            timeframe: 目標時間粒度 ('5min', '15min', '30min', '60min')
+
+        Returns:
+            重採樣後的 DataFrame
+        """
+        # 時間粒度映射（Pandas resample 格式）
+        timeframe_map = {
+            '1min': '1T',
+            '5min': '5T',
+            '15min': '15T',
+            '30min': '30T',
+            '60min': '60T',
+        }
+
+        if timeframe not in timeframe_map:
+            raise ValueError(f"Unsupported timeframe: {timeframe}")
+
+        rule = timeframe_map[timeframe]
+
+        # OHLCV 重採樣規則
+        resampled = df.resample(rule).agg({
+            'open': 'first',    # 開盤價取第一個
+            'high': 'max',      # 最高價取最大值
+            'low': 'min',       # 最低價取最小值
+            'close': 'last',    # 收盤價取最後一個
+            'volume': 'sum'     # 成交量加總
+        }).dropna()  # 移除空值（沒有交易的時間段）
+
+        return resampled
+
     def create_strategy_class(self, strategy_code: str, strategy_name: str = "UserStrategy") -> type:
         """
         從字符串代碼創建策略類（自動替換基類為 TrackingStrategy）
@@ -598,7 +717,8 @@ class BacktestEngine:
         slippage: float = 0.0,
         position_size: Optional[int] = None,
         max_position_pct: float = 1.0,
-        strategy_params: Optional[Dict] = None
+        strategy_params: Optional[Dict] = None,
+        timeframe: str = '1day'
     ) -> Dict[str, Any]:
         """
         執行回測
@@ -607,8 +727,8 @@ class BacktestEngine:
             backtest_id: 回測 ID
             strategy_code: 策略代碼
             stock_id: 股票代碼
-            start_date: 開始日期
-            end_date: 結束日期
+            start_date: 開始日期（日線）或開始時間（分鐘線）
+            end_date: 結束日期（日線）或結束時間（分鐘線）
             initial_cash: 初始資金
             commission: 手續費率（買賣都收取）
             tax: 交易稅率（僅賣出時收取）
@@ -616,16 +736,26 @@ class BacktestEngine:
             position_size: 每次交易的固定股數（None 表示全倉）
             max_position_pct: 最大倉位比例（0-1）
             strategy_params: 策略參數
+            timeframe: 時間粒度 ('1day', '1min', '5min', '15min', '30min', '60min')
 
         Returns:
             回測結果字典
         """
-        logger.info(f"Starting backtest {backtest_id} for {stock_id}")
+        logger.info(f"Starting backtest {backtest_id} for {stock_id} ({timeframe})")
 
-        # 1. 載入資料
-        data_df = self.load_data(stock_id, start_date, end_date)
+        # 1. 根據 timeframe 載入資料
+        if timeframe == '1day':
+            # 日線回測：使用原有的 load_data 方法
+            data_df = self.load_data(stock_id, start_date, end_date)
+        else:
+            # 分鐘線回測：使用新的 load_minute_data 方法
+            data_df = self.load_minute_data(stock_id, start_date, end_date, timeframe)
+
         if data_df is None or len(data_df) == 0:
-            raise ValueError(f"No data available for {stock_id}")
+            raise ValueError(
+                f"No data available for {stock_id} ({timeframe}, "
+                f"{start_date} to {end_date})"
+            )
 
         # 2. 創建策略類
         strategy_class = self.create_strategy_class(strategy_code)

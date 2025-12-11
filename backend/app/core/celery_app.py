@@ -32,8 +32,8 @@ celery_app.conf.update(
     # 並發控制 - 限制同時執行的回測任務數量
     task_annotations={
         'app.tasks.run_backtest_async': {
-            'rate_limit': '10/h',  # 每小時最多10個任務
-            'time_limit': 600,     # 10 分鐘硬限制
+            'rate_limit': '300/h',  # 每小時最多 300 個任務（平均每分鐘 5 個）
+            'time_limit': 600,      # 10 分鐘硬限制
             'soft_time_limit': 540,  # 9 分鐘軟限制
         }
     },

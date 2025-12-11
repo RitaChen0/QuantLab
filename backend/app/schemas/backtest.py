@@ -5,7 +5,7 @@ Backtest-related Pydantic schemas for request/response validation
 from typing import Optional, List, Dict, Any, ForwardRef
 from datetime import date as DateType, datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from enum import Enum
 
 
@@ -101,6 +101,23 @@ class BacktestBase(BaseModel):
         description="回測引擎類型（留空則繼承策略設定）：backtrader 或 qlib"
     )
 
+    # 時間粒度設定
+    timeframe: str = Field(
+        default='1day',
+        description="時間粒度：1min, 5min, 15min, 30min, 60min, 1day"
+    )
+
+    @field_validator('timeframe')
+    @classmethod
+    def validate_timeframe(cls, v: str) -> str:
+        """驗證 timeframe 是否為有效值"""
+        valid_timeframes = ['1min', '5min', '15min', '30min', '60min', '1day']
+        if v not in valid_timeframes:
+            raise ValueError(
+                f'timeframe must be one of {valid_timeframes}, got: {v}'
+            )
+        return v
+
 
 class BacktestCreate(BacktestBase):
     """Schema for creating a new backtest"""
@@ -144,6 +161,7 @@ class Backtest(BaseModel):
     initial_capital: Decimal
     status: BacktestStatus
     engine_type: str
+    timeframe: str
     created_at: datetime
     updated_at: datetime
     strategy: Optional[StrategyInBacktest] = None  # Strategy relationship

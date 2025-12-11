@@ -91,9 +91,9 @@ const handleLogin = async () => {
 
     if (result.success) {
       console.log('Login successful! Redirecting to dashboard...')
-      // 登入成功，跳轉到儀表板
-      await router.push('/dashboard')
-      console.log('Redirect complete')
+      // 登入成功，強制刷新並跳轉到儀表板
+      // 使用 window.location 而非 router.push 以確保完整重新載入
+      window.location.href = '/dashboard'
     } else {
       console.error('Login failed:', result.error)
 

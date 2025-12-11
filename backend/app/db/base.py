@@ -9,6 +9,7 @@ def import_models():
     from app.models.user import User  # noqa: F401
     from app.models.stock import Stock  # noqa: F401
     from app.models.stock_price import StockPrice  # noqa: F401
+    from app.models.stock_minute_price import StockMinutePrice  # noqa: F401
     from app.models.strategy import Strategy  # noqa: F401
     from app.models.backtest import Backtest  # noqa: F401
     from app.models.backtest_result import BacktestResult  # noqa: F401

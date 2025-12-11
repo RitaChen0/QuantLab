@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     # Broker APIs (Optional)
     SHIOAJI_API_KEY: str = ""
     SHIOAJI_SECRET_KEY: str = ""
+    SHIOAJI_PERSON_ID: str = ""  # 證券帳號（選填，用於激活憑證）
+    SHIOAJI_PASSWORD: str = ""   # 憑證密碼（選填，用於下單功能）
     FUGLE_API_KEY: str = ""
     FUGLE_SECRET_KEY: str = ""
 
