@@ -2,7 +2,7 @@
 
 > 📚 **QuantLab** 台股量化交易平台完整文檔索引
 >
-> 📅 最後更新：2025-12-09
+> 📅 最後更新：2025-12-12
 
 ---
 
@@ -13,14 +13,14 @@
 | 文檔 | 說明 | 適用對象 |
 |------|------|---------|
 | [../README.md](../README.md) | 專案介紹與快速開始 | 所有人 |
-| [../CLAUDE.md](../CLAUDE.md) | **開發指南（核心）** | 開發者 |
-| [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) | 遷移指南 | 運維人員 |
+| [../CLAUDE.md](../CLAUDE.md) | **開發指南（核心）** | 開發者、AI 助手 |
+| [../DOCUMENTATION_PLAN.md](../DOCUMENTATION_PLAN.md) | **文檔規劃原則** | 文檔維護者 |
 
 ---
 
-## 🗂️ 文檔分類
+## 🗂️ 核心文檔（長期維護）
 
-### 📊 數據庫文檔
+### 📊 資料庫文檔
 
 | 文檔 | 說明 | 重要性 |
 |------|------|--------|
@@ -51,23 +51,38 @@
 
 ---
 
-### 🔄 遷移與部署
+### 🔄 系統管理文檔
 
 | 文檔 | 說明 | 重要性 |
 |------|------|--------|
 | [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) | 完整遷移指南（跨機器/災難恢復） | ⭐⭐⭐ |
-
-**內容包含**：
-- 📦 自動備份腳本（`backup-for-migration.sh`）
-- 🚀 快速還原腳本（`restore-from-backup.sh`）
-- 🔐 安全檢查清單
-- 🧪 驗證測試步驟
-- 🔧 常見問題排查
+| [IMPROVEMENT_ROADMAP.md](IMPROVEMENT_ROADMAP.md) | 專案改進路線圖 | ⭐⭐⭐ |
 
 **適用場景**：
 - 遷移到新機器
 - 災難恢復
 - 環境複製（開發/測試/生產）
+- 專案規劃與改進
+
+---
+
+## 📋 參考文檔（待整合）
+
+> ⚠️ 以下文檔將逐步整合到 `CLAUDE.md` 或 `docs/GUIDES.md`
+
+| 文檔 | 說明 | 狀態 | 整合目標 |
+|------|------|------|----------|
+| [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | API 端點快速參考 | 📌 待整合 | CLAUDE.md |
+| [CELERY_TASKS_GUIDE.md](CELERY_TASKS_GUIDE.md) | Celery 任務管理 | 📌 待整合 | docs/GUIDES.md |
+| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | 開發規範與工作流 | 📌 待整合 | CLAUDE.md |
+| [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) | 完整操作手冊 | 📌 待整合 | docs/GUIDES.md |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 專案結構快速查找 | 📌 待整合 | CLAUDE.md |
+| [QLIB_SYNC_GUIDE.md](QLIB_SYNC_GUIDE.md) | Qlib 同步詳解 | 📌 待整合 | docs/QLIB.md |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 常見問題快速解決 | 📌 待整合 | docs/GUIDES.md |
+
+**說明**：
+- 這些文檔目前仍可使用，但未來會整合到對應的核心文檔中
+- 整合完成後將被刪除，以保持文檔結構簡潔
 
 ---
 
@@ -75,11 +90,11 @@
 
 | 文檔 | 說明 |
 |------|------|
-| [../docs/QLIB.md](../docs/QLIB.md) | Qlib 整合文檔 |
+| [../docs/QLIB.md](../docs/QLIB.md) | Qlib 引擎完整指南 |
 | [../docs/RDAGENT.md](../docs/RDAGENT.md) | RD-Agent 整合文檔 |
 | [../docs/SECURITY.md](../docs/SECURITY.md) | 安全指南 |
 | [../docs/EXTERNAL_ACCESS.md](../docs/EXTERNAL_ACCESS.md) | 外部訪問配置 |
-| [../docs/GUIDES.md](../docs/GUIDES.md) | 各類使用指南 |
+| [../docs/GUIDES.md](../docs/GUIDES.md) | 各類使用指南集合 |
 | [../docs/DOCUMENTATION_GUIDE.md](../docs/DOCUMENTATION_GUIDE.md) | 文檔撰寫指南 |
 
 ---
@@ -122,13 +137,31 @@
 
 ## 📊 文檔統計
 
-| 類別 | 文檔數量 | 總頁數（估） |
-|------|---------|-------------|
-| 數據庫 | 5 | ~50 頁 |
-| 因子評估 | 2 | ~20 頁 |
-| 遷移部署 | 1 | ~15 頁 |
-| 進階指南 | 6 | ~40 頁 |
-| **總計** | **14** | **~125 頁** |
+### 核心文檔（長期維護）
+| 類別 | 文檔數量 |
+|------|---------|
+| 資料庫 | 5 |
+| 因子評估 | 2 |
+| 系統管理 | 2 |
+| 索引 | 1 |
+| **小計** | **10** |
+
+### 參考文檔（待整合）
+| 類別 | 文檔數量 |
+|------|---------|
+| 快速索引 | 3 |
+| 使用指南 | 4 |
+| **小計** | **7** |
+
+### 總計
+| 類別 | 文檔數量 |
+|------|---------|
+| Document/ 目錄 | 17 |
+| docs/ 目錄 | 6 |
+| 根目錄 | 4 |
+| **總計** | **27** |
+
+**目標**：整合完成後減少到 **20 個文檔**
 
 ---
 
@@ -146,6 +179,8 @@
 | 配置外部訪問 | [../docs/EXTERNAL_ACCESS.md](../docs/EXTERNAL_ACCESS.md) |
 | 使用 Qlib | [../docs/QLIB.md](../docs/QLIB.md) |
 | 使用 RD-Agent | [../docs/RDAGENT.md](../docs/RDAGENT.md) |
+| 查看變更記錄 | [../CHANGELOG.md](../CHANGELOG.md) |
+| 了解文檔規劃 | [../DOCUMENTATION_PLAN.md](../DOCUMENTATION_PLAN.md) |
 
 ---
 
@@ -155,42 +190,30 @@
 
 ```bash
 # 搜尋所有文檔中的關鍵字
-grep -r "關鍵字" Document/ docs/ *.md
+grep -r "關鍵字" Document/ ../docs/ ../*.md
 
 # 搜尋特定主題
 grep -r "PostgreSQL" Document/
-grep -r "Qlib" Document/ docs/
+grep -r "Qlib" Document/ ../docs/
 grep -r "遷移" Document/
 ```
-
-### 按主題分類
-
-**數據相關**：
-- PostgreSQL, TimescaleDB, Redis
-- → `DATABASE_*.md`
-
-**策略相關**：
-- Backtrader, Qlib, 因子評估
-- → `FACTOR_EVALUATION_*.md`, `docs/QLIB.md`
-
-**AI 整合**：
-- RD-Agent, OpenAI, 因子挖掘
-- → `docs/RDAGENT.md`
-
-**運維部署**：
-- Docker, 遷移, 備份
-- → `MIGRATION_GUIDE.md`
 
 ---
 
 ## 📝 文檔貢獻
 
+### 創建新文檔前
+
+1. **閱讀規劃原則**：[DOCUMENTATION_PLAN.md](../DOCUMENTATION_PLAN.md)
+2. **檢查決策流程圖**：確認是否真的需要新文檔
+3. **優先更新現有文檔**：而非創建新文檔
+
 ### 撰寫新文檔
 
 1. **確定分類**：
-   - 數據庫相關 → `Document/DATABASE_*.md`
-   - 使用指南 → `Document/*_GUIDE.md`
-   - 技術文檔 → `docs/*.md`
+   - 資料庫相關 → `Document/DATABASE_*.md`
+   - 使用指南 → `docs/GUIDES.md`（集合文檔）
+   - 重大功能 → `docs/` 新文檔
 
 2. **遵循格式**：
    - 參考 `docs/DOCUMENTATION_GUIDE.md`
@@ -239,34 +262,6 @@ grep -r "遷移" Document/
 
 ---
 
-## 🚀 新增文檔（2025-12-09）
-
-### 改進與規劃
-| 文檔 | 說明 | 重要性 |
-|------|------|--------|
-| [IMPROVEMENT_ROADMAP.md](IMPROVEMENT_ROADMAP.md) | 專案改進路線圖 | ⭐⭐⭐ |
-| [../CHANGELOG.md](../CHANGELOG.md) | 變更日誌 | ⭐⭐⭐ |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 貢獻指南 | ⭐⭐⭐ |
-
-**IMPROVEMENT_ROADMAP.md 包含**:
-- 📊 深度分析（8 個維度）
-- 🎯 優先級分類（高/中/低）
-- 📅 實施時間表（6 週計劃）
-- 🎯 成功指標
-- 🛠️ 立即可做的改進
-
-**快速啟動改進**:
-```bash
-# 查看改進路線圖
-cat Document/IMPROVEMENT_ROADMAP.md
-
-# 查看變更日誌
-cat CHANGELOG.md
-
-# 查看貢獻指南
-cat CONTRIBUTING.md
-```
-
----
-
-**更新記錄**: 2025-12-09 - 新增改進路線圖與貢獻指南
+**更新記錄**:
+- 2025-12-12 - 重新規劃文檔結構，標示核心文檔與待整合文檔
+- 2025-12-09 - 新增改進路線圖與貢獻指南

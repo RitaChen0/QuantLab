@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import List, Optional
 from loguru import logger
 from tqdm import tqdm
+from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.db.base import import_models
@@ -41,6 +42,7 @@ import_models()
 
 
 # 預設資料路徑（容器內掛載點）
+# Docker volume: ./ShioajiData:/data/shioaji
 DEFAULT_DATA_DIR = "/data/shioaji/shioaji-stock"
 
 # 熱門股票清單（市值前 50 大）
@@ -58,22 +60,187 @@ TOP_50_STOCKS = [
 ]
 
 
+def _process_dataframe(
+    df: pd.DataFrame,
+    stock_id: str,
+    start_date: Optional[str],
+    end_date: Optional[str]
+) -> pd.DataFrame:
+    """
+    處理 DataFrame：清理、驗證、過濾
+
+    Args:
+        df: 原始 DataFrame
+        stock_id: 股票代碼
+        start_date: 起始日期
+        end_date: 結束日期
+
+    Returns:
+        處理後的 DataFrame
+    """
+    # 1. 重命名欄位
+    df = df.rename(columns={
+        'ts': 'datetime',
+        'Open': 'open',
+        'High': 'high',
+        'Low': 'low',
+        'Close': 'close',
+        'Volume': 'volume',
+        'Amount': 'amount'
+    })
+
+    # 2. 轉換時間格式
+    df['datetime'] = pd.to_datetime(df['datetime'])
+
+    # 3. 時間範圍過濾
+    if start_date:
+        start_dt = pd.to_datetime(start_date)
+        df = df[df['datetime'] >= start_dt]
+
+    if end_date:
+        end_dt = pd.to_datetime(end_date)
+        df = df[df['datetime'] <= end_dt]
+
+    # 4. 過濾無效資料
+    # 移除 OHLC 全為 0 的記錄
+    df = df[~((df['open'] == 0) & (df['high'] == 0) & (df['low'] == 0) & (df['close'] == 0))]
+
+    # 移除負數價格
+    df = df[(df['open'] > 0) & (df['high'] > 0) & (df['low'] > 0) & (df['close'] > 0)]
+
+    # 移除 OHLC 邏輯錯誤的記錄
+    df = df[
+        (df['high'] >= df['low']) &
+        (df['high'] >= df['open']) &
+        (df['high'] >= df['close']) &
+        (df['low'] <= df['open']) &
+        (df['low'] <= df['close'])
+    ]
+
+    # 5. 新增欄位
+    df['stock_id'] = stock_id
+    df['timeframe'] = '1min'
+
+    return df
+
+
+def _import_csv_chunked(
+    csv_path: Path,
+    db: Session,
+    stock_id: str,
+    repo,
+    batch_size: int,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    chunk_size: int,
+    result: dict
+) -> dict:
+    """
+    使用分塊讀取匯入 CSV（記憶體友善）
+
+    Args:
+        csv_path: CSV 檔案路徑
+        db: 資料庫會話
+        stock_id: 股票代碼
+        repo: Repository
+        batch_size: 插入批次大小
+        start_date: 起始日期
+        end_date: 結束日期
+        chunk_size: CSV 讀取分塊大小
+        result: 結果字典
+
+    Returns:
+        更新後的結果字典
+    """
+    try:
+        logger.debug(f"{stock_id}: Using chunked reading (chunk_size={chunk_size})")
+
+        for chunk in pd.read_csv(csv_path, chunksize=chunk_size):
+            result["total_rows"] += len(chunk)
+
+            # 處理分塊資料
+            df = _process_dataframe(chunk, stock_id, start_date, end_date)
+
+            if df.empty:
+                result["skipped"] += len(chunk)
+                continue
+
+            # 批次插入
+            for i in range(0, len(df), batch_size):
+                batch = df.iloc[i:i+batch_size]
+
+                # 轉換為 Pydantic Schema
+                records = []
+                for _, row in batch.iterrows():
+                    try:
+                        record = StockMinutePriceCreate(
+                            stock_id=row['stock_id'],
+                            datetime=row['datetime'],
+                            timeframe=row['timeframe'],
+                            open=float(row['open']),
+                            high=float(row['high']),
+                            low=float(row['low']),
+                            close=float(row['close']),
+                            volume=int(row['volume']) if row['volume'] > 0 else 0
+                        )
+                        records.append(record)
+                    except Exception as e:
+                        logger.debug(f"{stock_id}: Failed to parse row: {str(e)}")
+                        result["errors"] += 1
+                        continue
+
+                # 批次插入
+                if records:
+                    try:
+                        inserted = repo.create_bulk(db, records)
+                        result["inserted"] += inserted
+                    except Exception as e:
+                        logger.warning(f"{stock_id}: Bulk insert failed, trying upsert - {str(e)}")
+                        for record in records:
+                            try:
+                                repo.upsert(db, record.stock_id, record.datetime, record.timeframe, record)
+                                result["inserted"] += 1
+                            except Exception as e2:
+                                logger.debug(f"{stock_id}: Upsert failed: {str(e2)}")
+                                result["errors"] += 1
+
+        result["skipped"] = result["total_rows"] - result["inserted"] - result["errors"]
+
+        logger.info(
+            f"✅ {stock_id}: Inserted {result['inserted']:,}/{result['total_rows']:,} records "
+            f"(errors: {result['errors']}, skipped: {result['skipped']})"
+        )
+
+    except Exception as e:
+        logger.error(f"❌ {stock_id}: Chunked import failed - {str(e)}")
+        result["status"] = "failed"
+        result["errors"] += 1
+
+    return result
+
+
 def import_csv_file(
     csv_path: Path,
+    db: Session,
     batch_size: int = 10000,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    incremental: bool = False
+    incremental: bool = False,
+    use_chunks: bool = False,
+    chunk_size: int = 50000
 ) -> dict:
     """
     匯入單一 CSV 檔案
 
     Args:
         csv_path: CSV 檔案路徑
+        db: 資料庫會話（由呼叫者管理）
         batch_size: 批次大小（預設 10000）
         start_date: 起始日期（僅匯入此日期之後的資料）
         end_date: 結束日期（僅匯入此日期之前的資料）
         incremental: 是否增量匯入（檢查資料庫已有資料）
+        use_chunks: 是否使用分塊讀取（降低記憶體使用）
+        chunk_size: 分塊大小（預設 50000）
 
     Returns:
         dict: {
@@ -86,7 +253,6 @@ def import_csv_file(
         }
     """
     stock_id = csv_path.stem  # 檔名即為股票代碼
-    db = SessionLocal()
     repo = StockMinutePriceRepository
 
     result = {
@@ -108,6 +274,15 @@ def import_csv_file(
 
         # 2. 讀取 CSV
         logger.debug(f"{stock_id}: Reading CSV file...")
+
+        if use_chunks:
+            # 使用分塊讀取（記憶體友善）
+            return _import_csv_chunked(
+                csv_path, db, stock_id, repo, batch_size,
+                start_date, end_date, chunk_size, result
+            )
+
+        # 標準讀取（一次性載入）
         try:
             df = pd.read_csv(csv_path)
         except Exception as e:
@@ -118,45 +293,8 @@ def import_csv_file(
 
         result["total_rows"] = len(df)
 
-        # 3. 資料清理與驗證
-        # 重命名欄位
-        df = df.rename(columns={
-            'ts': 'datetime',
-            'Open': 'open',
-            'High': 'high',
-            'Low': 'low',
-            'Close': 'close',
-            'Volume': 'volume',
-            'Amount': 'amount'
-        })
-
-        # 轉換時間格式
-        df['datetime'] = pd.to_datetime(df['datetime'])
-
-        # 4. 時間範圍過濾
-        if start_date:
-            start_dt = pd.to_datetime(start_date)
-            df = df[df['datetime'] > start_dt]
-
-        if end_date:
-            end_dt = pd.to_datetime(end_date)
-            df = df[df['datetime'] <= end_dt]
-
-        # 5. 過濾無效資料
-        # 移除 OHLC 全為 0 的記錄
-        df = df[~((df['open'] == 0) & (df['high'] == 0) & (df['low'] == 0) & (df['close'] == 0))]
-
-        # 移除負數價格
-        df = df[(df['open'] > 0) & (df['high'] > 0) & (df['low'] > 0) & (df['close'] > 0)]
-
-        # 移除 OHLC 邏輯錯誤的記錄
-        df = df[
-            (df['high'] >= df['low']) &
-            (df['high'] >= df['open']) &
-            (df['high'] >= df['close']) &
-            (df['low'] <= df['open']) &
-            (df['low'] <= df['close'])
-        ]
+        # 3. 處理資料（清理、驗證、過濾）
+        df = _process_dataframe(df, stock_id, start_date, end_date)
 
         if df.empty:
             logger.warning(f"{stock_id}: No valid data after filtering")
@@ -164,11 +302,7 @@ def import_csv_file(
             result["skipped"] = result["total_rows"]
             return result
 
-        # 6. 新增欄位
-        df['stock_id'] = stock_id
-        df['timeframe'] = '1min'
-
-        # 7. 批次插入
+        # 4. 批次插入
         logger.debug(f"{stock_id}: Inserting {len(df):,} records...")
 
         for i in range(0, len(df), batch_size):
@@ -228,9 +362,6 @@ def import_csv_file(
         logger.error(f"❌ {stock_id}: Import failed - {str(e)}")
         result["status"] = "failed"
         result["errors"] += 1
-
-    finally:
-        db.close()
 
     return result
 
@@ -304,6 +435,17 @@ Examples:
         action='store_true',
         help='Enable verbose logging (debug level)'
     )
+    parser.add_argument(
+        '--use-chunks',
+        action='store_true',
+        help='Use chunked reading for large CSV files (reduces memory usage)'
+    )
+    parser.add_argument(
+        '--chunk-size',
+        type=int,
+        default=50000,
+        help='Chunk size for chunked reading (default: 50000)'
+    )
 
     args = parser.parse_args()
 
@@ -371,30 +513,41 @@ Examples:
     # 開始匯入
     start_time = datetime.now()
 
-    for csv_file in tqdm(csv_files, desc="Importing stocks", unit="stock"):
-        try:
-            result = import_csv_file(
-                csv_file,
-                args.batch_size,
-                args.start_date,
-                args.end_date,
-                args.incremental
-            )
+    # 建立共用資料庫連線
+    db = SessionLocal()
 
-            total_rows += result["total_rows"]
-            total_inserted += result["inserted"]
-            total_skipped += result["skipped"]
-            total_errors += result["errors"]
+    try:
+        for csv_file in tqdm(csv_files, desc="Importing stocks", unit="stock"):
+            try:
+                result = import_csv_file(
+                    csv_file,
+                    db,
+                    args.batch_size,
+                    args.start_date,
+                    args.end_date,
+                    args.incremental,
+                    args.use_chunks,
+                    args.chunk_size
+                )
 
-            if result["status"] == "success":
-                success_stocks.append(result["stock_id"])
-            else:
-                failed_stocks.append(result["stock_id"])
+                total_rows += result["total_rows"]
+                total_inserted += result["inserted"]
+                total_skipped += result["skipped"]
+                total_errors += result["errors"]
 
-        except Exception as e:
-            logger.error(f"❌ Failed to import {csv_file.stem}: {str(e)}")
-            failed_stocks.append(csv_file.stem)
-            continue
+                if result["status"] == "success":
+                    success_stocks.append(result["stock_id"])
+                else:
+                    failed_stocks.append(result["stock_id"])
+
+            except Exception as e:
+                logger.error(f"❌ Failed to import {csv_file.stem}: {str(e)}")
+                failed_stocks.append(csv_file.stem)
+                continue
+
+    finally:
+        # 確保資料庫連線正確關閉
+        db.close()
 
     # 計算執行時間
     end_time = datetime.now()

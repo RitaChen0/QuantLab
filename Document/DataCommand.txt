@@ -1,0 +1,18 @@
+資料庫相關的命令：
+
+
+
+
+# 查看台積電 (2330) 資料範圍
+  docker compose exec postgres psql -U quantlab quantlab -c \
+    "SELECT COUNT(*), MIN(datetime), MAX(datetime) 
+     FROM stock_minute_prices 
+     WHERE stock_id = '2330';"
+
+# 查看記錄數最多的前 10 檔股票
+  docker compose exec postgres psql -U quantlab quantlab -c \
+    "SELECT stock_id, COUNT(*) as records 
+     FROM stock_minute_prices 
+     GROUP BY stock_id 
+     ORDER BY records DESC 
+     LIMIT 10;"
