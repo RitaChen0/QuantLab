@@ -498,6 +498,146 @@ type: feat, fix, docs, style, refactor, test, chore
 - **ReDoc**: http://localhost:8000/redoc（閱讀優先）
 - **OpenAPI JSON**: http://localhost:8000/api/v1/openapi.json
 
+## 資料管理與備份策略
+
+### 資料存儲概覽
+
+**PostgreSQL 資料庫**（7.3 GB）：
+- 用途：所有業務資料的唯一來源（Single Source of Truth）
+- 內容：用戶、策略、回測、股票價格、基本面、法人買賣超
+- TimescaleDB：6500 萬筆 1 分鐘 K 線（5.4 GB，1,701 個 chunks）
+- 備份優先級：⭐⭐⭐⭐⭐ **最高**（必須每日/每週備份）
+
+**Shioaji 原始資料**（50 GB）：
+- 位置：`/home/ubuntu/QuantLab/ShioajiData/`
+- 內容：1,692 個股票的 1 分鐘 K 線 CSV（2018-2025，約 7 年）
+- 壓縮效率：50 GB → 5.4 GB（9.3 倍，已匯入 PostgreSQL）
+- 備份優先級：⭐⭐⭐⭐ 高（建議壓縮保留，避免重新下載）
+
+**Qlib 二進制資料**（499 MB）：
+- 位置：`/data/qlib/tw_stock_v2/`（Docker 容器內）
+- 內容：2,671 個股票的 Qlib 格式資料（6 個特徵 × 股票數）
+- 用途：加速 Qlib 策略回測（比 API 快 3-10 倍）
+- 備份優先級：⭐⭐⭐ 中（可從 PostgreSQL 重新同步，1-5 分鐘）
+
+**Redis 快取**（1.92 MB）：
+- 內容：Celery 任務元數據、產業指標快取、速率限制
+- 用途：效能優化，所有資料臨時性或可重建
+- 備份優先級：❌ 不需要（系統重啟後自動重建）
+
+### 備份命令
+
+**每日/每週備份**（PostgreSQL）：
+```bash
+# 完整備份（含 schema + data）
+docker compose exec -T postgres pg_dump -U quantlab quantlab | \
+  gzip > /home/ubuntu/QuantLab/backups/quantlab_$(date +%Y%m%d).sql.gz
+
+# 預期大小：7.3 GB → 1.5-2.5 GB（壓縮比 3-5 倍）
+# 保留最近 30 天
+find /home/ubuntu/QuantLab/backups -name "quantlab_*.sql.gz" -mtime +30 -delete
+```
+
+**一次性備份**（Shioaji 原始資料）：
+```bash
+# 壓縮 ShioajiData 目錄
+cd /home/ubuntu/QuantLab
+tar -czf backups/ShioajiData_backup_$(date +%Y%m%d).tar.gz ShioajiData/
+
+# 驗證完整性後可刪除原始目錄
+tar -tzf backups/ShioajiData_backup_*.tar.gz > /dev/null && rm -rf ShioajiData/
+
+# 預期大小：50 GB → 10-15 GB（壓縮比 70-80%）
+```
+
+**可選備份**（Qlib 資料，每月一次）：
+```bash
+# 容器內壓縮
+docker compose exec backend tar -czf /tmp/qlib.tar.gz -C /data/qlib tw_stock_v2
+
+# 複製出來
+docker compose cp backend:/tmp/qlib.tar.gz \
+  /home/ubuntu/QuantLab/backups/qlib_$(date +%Y%m%d).tar.gz
+
+# 清理
+docker compose exec backend rm /tmp/qlib.tar.gz
+
+# 預期大小：499 MB → 50-100 MB（壓縮比 5-10 倍）
+```
+
+### Qlib 資料同步
+
+**智慧增量同步**（推薦，1-5 分鐘）：
+```bash
+# 最簡單：使用包裝腳本
+bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh
+
+# 測試模式：僅同步 10 檔股票
+bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh --test
+
+# 同步指定股票
+bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh --stock 2330
+```
+
+**完整重新導出**（30-60 分鐘，通常不需要）：
+```bash
+docker compose exec backend python /app/scripts/export_to_qlib_v2.py \
+  --output-dir /data/qlib/tw_stock_v2 \
+  --stocks all
+```
+
+**智慧同步原理**：
+- 檢查 Qlib 資料最後日期（例如：2024-12-06）
+- 檢查資料庫最新日期（例如：2024-12-13）
+- 只同步新增日期範圍（2024-12-07 ~ 2024-12-13）
+- 跳過已是最新的股票（節省 95%+ 時間）
+
+### Celery 時區配置
+
+**重要**：`/backend/app/core/celery_app.py` 的時區設定必須正確：
+
+```python
+celery_app.conf.update(
+    timezone="Asia/Taipei",
+    enable_utc=False,  # ✅ 必須為 False，讓 crontab 使用本地時區
+    ...
+)
+```
+
+**常見問題**：如果 `enable_utc=True`，所有 crontab 時間會被視為 UTC，導致任務執行時間偏移 8 小時。
+
+**驗證配置**：
+```bash
+docker compose exec backend python3 -c "
+import sys
+sys.path.insert(0, '/app')
+from app.core.celery_app import celery_app
+print(f'Timezone: {celery_app.conf.timezone}')
+print(f'Enable UTC: {celery_app.conf.enable_utc}')
+"
+# 預期輸出：Timezone: Asia/Taipei, Enable UTC: False
+```
+
+### 法人買賣超資料
+
+**資料表**：`institutional_investors`（16,895 筆記錄）
+- 15 個股票（主要為 ETF）
+- 248 個交易日（2024-12-02 ~ 2025-12-12）
+- 5 種法人類型（外資、投信、自營商等）
+
+**前端頁面**：http://localhost:3000/institutional
+- 股票搜尋、日期範圍選擇、法人類型篩選
+- ECharts 趨勢圖表、數據表格、統計摘要
+
+**定時同步**：每天 21:00 自動同步（Top 100 股票，近 7 天）
+```python
+"sync-institutional-investors-daily": {
+    "task": "app.tasks.sync_top_stocks_institutional",
+    "schedule": crontab(hour=21, minute=0),
+    "kwargs": {"limit": 100, "days": 7}
+}
+```
+
 ## 重要設計決策
 
 ### 1. 為何選擇 FastAPI？

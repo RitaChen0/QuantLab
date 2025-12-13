@@ -73,7 +73,7 @@ click==8.1.7
 # Monitoring & Logging
 loguru==0.7.2
 prometheus-client==0.19.0  # Prometheus metrics
-celery-prometheus-exporter==1.10.0  # Celery metrics for Prometheus
+celery-prometheus-exporter==1.7.0  # Celery metrics for Prometheus
 
 # Testing
 pytest==7.4.4
@@ -85,3 +85,4 @@ httpx==0.26.0
 black==23.12.1
 flake8==7.0.0
 mypy==1.8.0
+shioaji>=1.2.9

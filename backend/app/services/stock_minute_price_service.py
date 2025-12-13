@@ -118,13 +118,13 @@ class StockMinutePriceService:
         limit: int = 10000
     ) -> Dict:
         """
-        獲取分鐘級 OHLCV 數據
+        獲取分鐘級 OHLCV 數據（支援即時聚合）
 
         Args:
             stock_id: 股票代碼
             start_datetime: 開始時間（可選）
             end_datetime: 結束時間（可選）
-            timeframe: 時間粒度
+            timeframe: 時間粒度 (1min/5min/15min/30min/60min)
             limit: 最大筆數
 
         Returns:
@@ -135,8 +135,9 @@ class StockMinutePriceService:
                 "count": int
             }
         """
+        # 資料庫只有 1min 資料，先取得所有 1 分鐘資料
         prices = self.repo.get_by_stock(
-            self.db, stock_id, start_datetime, end_datetime, timeframe, limit
+            self.db, stock_id, start_datetime, end_datetime, '1min', limit
         )
 
         if not prices:
@@ -148,23 +149,78 @@ class StockMinutePriceService:
                 "count": 0
             }
 
-        # 格式化返回
-        data = {}
-        for price in prices:
-            data[price.datetime.isoformat()] = {
+        # 轉換為 DataFrame 以便聚合
+        df = pd.DataFrame([
+            {
+                "datetime": price.datetime,
                 "open": float(price.open),
                 "high": float(price.high),
                 "low": float(price.low),
                 "close": float(price.close),
                 "volume": int(price.volume)
             }
+            for price in prices
+        ])
+        df.set_index('datetime', inplace=True)
+
+        # 如果需要聚合（5min/15min/30min/60min）
+        if timeframe in ['5min', '15min', '30min', '60min']:
+            df = self._aggregate_to_timeframe(df, timeframe)
+            logger.info(f"Aggregated {len(prices)} 1min bars to {len(df)} {timeframe} bars for {stock_id}")
+
+        # 格式化返回
+        data = {}
+        for idx, row in df.iterrows():
+            data[idx.isoformat()] = {
+                "open": float(row['open']),
+                "high": float(row['high']),
+                "low": float(row['low']),
+                "close": float(row['close']),
+                "volume": int(row['volume'])
+            }
 
         return {
             "stock_id": stock_id,
             "timeframe": timeframe,
             "data": data,
-            "count": len(prices)
+            "count": len(df)
         }
+
+    def _aggregate_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+        """
+        聚合 1 分鐘資料到指定粒度
+
+        Args:
+            df: 1 分鐘 OHLCV DataFrame (index: datetime)
+            timeframe: 目標粒度 (5min/15min/30min/60min)
+
+        Returns:
+            聚合後的 DataFrame
+        """
+        # 時間粒度映射（Pandas resample 格式）
+        freq_map = {
+            '5min': '5T',   # 5 分鐘
+            '15min': '15T', # 15 分鐘
+            '30min': '30T', # 30 分鐘
+            '60min': '60T'  # 60 分鐘
+        }
+
+        if timeframe not in freq_map:
+            logger.warning(f"Unsupported timeframe: {timeframe}, returning 1min data")
+            return df
+
+        freq = freq_map[timeframe]
+
+        # 使用 Pandas resample 聚合
+        aggregated = df.resample(freq).agg({
+            'open': 'first',   # 第一筆的開盤價
+            'high': 'max',     # 最高價
+            'low': 'min',      # 最低價
+            'close': 'last',   # 最後一筆的收盤價
+            'volume': 'sum'    # 成交量總和
+        }).dropna()  # 移除沒有資料的時間區間
+
+        return aggregated
 
     def get_latest_price(
         self,

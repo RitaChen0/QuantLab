@@ -1,21 +1,21 @@
 ✅ 開發階段清除所有的緩存：
-  ./scripts/quick-clean.sh
-  ./scripts/reset-rate-limit.sh
-  ./scripts/clear-frontend-cache.sh
-  docker compose restart backend celery-worker
+./scripts/quick-clean.sh
+./scripts/reset-rate-limit.sh
+./scripts/clear-frontend-cache.sh
+docker compose restart backend celery-worker
 
 ✅ 自動補齊所有缺失資料的指令
 docker compose exec backend python scripts/check_and_fill_gaps.py --auto-fix --min-records 4500
 
 ✅ 監控回測 , 所有工具都已就緒，你可以隨時監控系統中正在執行的回測任務！
-  # 方法 1: 使用監控腳本（最簡單）
-  ./monitor_backtest_tasks.sh
+# 方法 1: 使用監控腳本（最簡單）
+./monitor_backtest_tasks.sh
 
 ✅ 在 Monaco Editor 中編寫代碼
-  2. 測試自動完成：
-    - 輸入 self. 查看可用屬性
-    - 輸入 bt. 查看 Backtrader API
-    - 按 Ctrl+Space 手動觸發提示
+2. 測試自動完成：
+  - 輸入 self. 查看可用屬性
+  - 輸入 bt. 查看 Backtrader API
+  - 按 Ctrl+Space 手動觸發提示
 
 ✅ 自動同步排程：共 7 個
 
@@ -141,3 +141,41 @@ My factor-based inspiration is that when a stock has risen sharply in the past s
   app/scripts/import_shioaji_csv.py
   監控
   ./scripts/monitor_shioaji_import.sh
+
+
+✅ 智慧增量轉換 , 將 PostgreSQL 的分鐘線轉換到 qlib 底下
+  docker compose exec backend python scripts/export_minute_to_qlib.py \
+      --output-dir /data/qlib/tw_stock_minute \
+      --smart
+
+✅ 連線 Shioaji API , 補齊 PostgreSql & qlib 底下的所有一分鐘線資料 
+sync_shioaji_to_qlib.py
+nohup docker compose exec -T backend python /app/scripts/sync_shioaji_to_qlib.py --smart > /tmp/shioaji_sync.log 2>&1 &
+
+✅ 備份資料庫 PostgreSQL
+docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubuntu/QuantLab/backups/quantlab_$(date +%Y%m%d).sql.gz
+
+✅ 如何重新同步 Qlib 資料
+  # 智慧同步所有股票（1-5 分鐘）
+  bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh
+
+  # 刪除舊資料（謹慎！）
+  docker compose exec backend rm -rf /data/qlib/tw_stock_v2/*
+
+  # 完整導出所有股票
+  docker compose exec backend python /app/scripts/export_to_qlib_v2.py \
+    --output-dir /data/qlib/tw_stock_v2 \
+    --stocks all
+
+  # 從容器複製出來並壓縮
+  docker compose cp backend:/data/qlib/tw_stock_v2 /tmp/qlib_backup
+  tar -czf /home/ubuntu/QuantLab/backups/qlib_data_$(date +%Y%m%d).tar.gz -C /tmp qlib_backup
+  rm -rf /tmp/qlib_backup
+
+  🔄 從備份還原
+  # 解壓縮
+  tar -xzf /home/ubuntu/QuantLab/backups/qlib_data_20241213.tar.gz -C /tmp/
+  # 複製回容器
+  docker compose cp /tmp/qlib_backup/tw_stock_v2 backend:/data/qlib/
+  # 驗證
+  docker compose exec backend ls -lh /data/qlib/tw_stock_v2/

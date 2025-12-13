@@ -59,17 +59,15 @@ class StockMinutePriceRepository:
             stock_id: 股票代碼
             start_datetime: 開始時間（可選）
             end_datetime: 結束時間（可選）
-            timeframe: 時間粒度
+            timeframe: 時間粒度（僅用於相容性，資料庫只有 1min）
             limit: 最大筆數（預設 10000）
 
         Returns:
             StockMinutePrice 列表，按時間升序排列
         """
+        # 資料庫只有 1min 資料，移除 timeframe 過濾條件
         query = db.query(StockMinutePrice).filter(
-            and_(
-                StockMinutePrice.stock_id == stock_id,
-                StockMinutePrice.timeframe == timeframe
-            )
+            StockMinutePrice.stock_id == stock_id
         )
 
         if start_datetime:

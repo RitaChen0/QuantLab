@@ -173,44 +173,38 @@ class ShioajiClient:
         if not contract:
             return None
 
-        # 時間粒度映射（Shioaji 格式）
-        timeframe_map = {
-            '1min': '1',
-            '5min': '5',
-            '15min': '15',
-            '30min': '30',
-            '60min': '60',
-            '1day': 'D'
-        }
-
-        kbar_type = timeframe_map.get(timeframe, '1')
-
+        # 注意：新版 Shioaji API (v1.2.9+) 的 kbars 方法只返回 1 分鐘數據
+        # 不再支援 kbar_type 參數
         try:
             logger.info(f"Fetching {timeframe} kbars for {stock_id} "
                        f"from {start_datetime} to {end_datetime}")
 
-            # 調用 Shioaji API
+            # 調用 Shioaji API（新版僅支援 1min，其他粒度需後處理）
             kbars = self._api.kbars(
                 contract=contract,
-                start=start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
-                end=end_datetime.strftime('%Y-%m-%d %H:%M:%S'),
-                kbar_type=kbar_type
+                start=start_datetime.strftime('%Y-%m-%d'),
+                end=end_datetime.strftime('%Y-%m-%d'),
+                timeout=30000
             )
 
-            if not kbars:
+            if not kbars or len(kbars.ts) == 0:
                 logger.warning(f"No kbars data returned for {stock_id}")
                 return None
 
-            # 轉換為 DataFrame
+            # 轉換為 DataFrame（新版 Shioaji API 返回 Kbars 物件，有 ts/Open/High/Low/Close/Volume 列表）
             data = []
-            for k in kbars:
+            for i in range(len(kbars.ts)):
+                # ts 是 nano秒時間戳，需要轉換為 datetime
+                timestamp_ns = kbars.ts[i]
+                dt = pd.to_datetime(timestamp_ns, unit='ns')
+
                 data.append({
-                    'datetime': k.ts,
-                    'open': float(k.Open),
-                    'high': float(k.High),
-                    'low': float(k.Low),
-                    'close': float(k.Close),
-                    'volume': int(k.Volume)
+                    'datetime': dt,
+                    'open': float(kbars.Open[i]),
+                    'high': float(kbars.High[i]),
+                    'low': float(kbars.Low[i]),
+                    'close': float(kbars.Close[i]),
+                    'volume': int(kbars.Volume[i])
                 })
 
             df = pd.DataFrame(data)
