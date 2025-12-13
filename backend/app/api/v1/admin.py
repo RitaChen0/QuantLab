@@ -266,6 +266,10 @@ async def list_sync_tasks(
         "app.tasks.cleanup_old_cache": "清理過期快取",
         "app.tasks.sync_fundamental_data": "同步財務指標（完整）",
         "app.tasks.sync_fundamental_latest": "同步財務指標（快速）",
+        "app.tasks.sync_top_stocks_institutional": "同步法人買賣超（Top 100）",
+        "app.tasks.sync_institutional_investors": "同步法人買賣超",
+        "app.tasks.sync_single_stock_institutional": "同步單一股票法人買賣超",
+        "app.tasks.cleanup_old_institutional_data": "清理過期法人數據",
     }
 
     for name, config in schedule.items():

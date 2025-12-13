@@ -133,3 +133,11 @@ My factor-based inspiration is that when a stock has risen sharply in the past s
 
   # 重置後台 grafana admin 的密碼 為
   docker compose exec grafana grafana cli admin reset-admin-password jsXdke82SYk.aji8
+
+✅ 主要是執行 ./start_shioaji_import.sh incremental
+  會去執行
+  ./scripts/import_all_shioaji.sh $INCREMENTAL_FLAG &
+  再去執行
+  app/scripts/import_shioaji_csv.py
+  監控
+  ./scripts/monitor_shioaji_import.sh

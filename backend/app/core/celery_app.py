@@ -15,7 +15,7 @@ celery_app.conf.update(
     accept_content=["json"],
     result_serializer="json",
     timezone="Asia/Taipei",
-    enable_utc=True,
+    enable_utc=False,  # 使用本地時區，讓 crontab 使用 Asia/Taipei 時間
     task_track_started=True,
     task_time_limit=30 * 60,  # 30 minutes
     task_soft_time_limit=25 * 60,  # 25 minutes
@@ -102,6 +102,22 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.sync_fundamental_latest",
         "schedule": crontab(hour=23, minute=0),
         "options": {"expires": 7200},  # Expire after 2 hours
+    },
+
+    # Sync institutional investors data (top 100 stocks) once per day at 21:00
+    "sync-institutional-investors-daily": {
+        "task": "app.tasks.sync_top_stocks_institutional",
+        "schedule": crontab(hour=21, minute=0),
+        "kwargs": {"limit": 100, "days": 7},
+        "options": {"expires": 7200},  # Expire after 2 hours
+    },
+
+    # Cleanup old institutional data once per week on Sunday at 2:00 AM
+    "cleanup-institutional-data-weekly": {
+        "task": "app.tasks.cleanup_old_institutional_data",
+        "schedule": crontab(hour=2, minute=0, day_of_week='sunday'),
+        "kwargs": {"days_to_keep": 365},
+        "options": {"expires": 3600},  # Expire after 1 hour
     },
 }
 

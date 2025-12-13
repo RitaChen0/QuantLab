@@ -285,7 +285,7 @@ class FinMindClient:
             法人買賣超數據
         """
         return self._make_request(
-            dataset="TaiwanStockInstitutionalInvestors",
+            dataset="TaiwanStockInstitutionalInvestorsBuySell",
             data_id=stock_id,
             start_date=start_date,
             end_date=end_date

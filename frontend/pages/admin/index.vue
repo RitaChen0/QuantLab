@@ -92,6 +92,8 @@
                 <th>用戶名</th>
                 <th>Email</th>
                 <th>全名</th>
+                <th>Telegram ID</th>
+                <th>TG 頻道</th>
                 <th>會員等級</th>
                 <th>現金</th>
                 <th>信用</th>
@@ -108,6 +110,8 @@
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
                 <td>{{ user.full_name || '-' }}</td>
+                <td>{{ user.telegram_id || '-' }}</td>
+                <td>{{ user.telegram_channel_id || '-' }}</td>
                 <td>
                   <span :class="['level-badge', 'level-' + user.member_level]">
                     Level {{ user.member_level }}
@@ -305,6 +309,18 @@
           </div>
 
           <div class="form-group">
+            <label>Telegram ID</label>
+            <input v-model="editForm.telegram_id" type="text" placeholder="@username 或 數字 ID">
+            <small class="form-hint">用戶的 Telegram 用戶名或數字 ID</small>
+          </div>
+
+          <div class="form-group">
+            <label>Telegram 頻道 ID</label>
+            <input v-model="editForm.telegram_channel_id" type="text" placeholder="頻道或群組 ID">
+            <small class="form-hint">用戶加入的 Telegram 頻道/群組 ID</small>
+          </div>
+
+          <div class="form-group">
             <label>會員等級</label>
             <select v-model.number="editForm.member_level" required>
               <option :value="0">Level 0 - 註冊會員</option>
@@ -416,6 +432,8 @@ const editForm = ref({
   username: '',
   email: '',
   full_name: '',
+  telegram_id: '',
+  telegram_channel_id: '',
   member_level: 0,
   cash: 0,
   credit: 0,
@@ -576,6 +594,8 @@ function editUser(user: any) {
     username: user.username,
     email: user.email,
     full_name: user.full_name || '',
+    telegram_id: user.telegram_id || '',
+    telegram_channel_id: user.telegram_channel_id || '',
     member_level: user.member_level || 0,
     cash: parseFloat(user.cash) || 0,
     credit: parseFloat(user.credit) || 0,

@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     FINLAB_API_TOKEN: str = ""
     FINLAB_API_BASE_URL: str = "https://api.finlab.tw"
 
+    # FinMind
+    FINMIND_API_TOKEN: str = ""
+
     # OpenAI (Optional)
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4"

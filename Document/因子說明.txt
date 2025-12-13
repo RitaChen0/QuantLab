@@ -1,0 +1,307 @@
+● 根據系統探索，我為你整理了 QuantLab 目前可用的因子和資料指標全覽：
+
+  📊 系統整體概況
+
+  QuantLab 提供了 300+ 個可用因子和指標，分為以下幾大類：
+
+  ---
+  🎯 1. Backtrader 技術指標（20個策略範本）
+
+  常用技術指標
+
+  - 均線類: SMA, EMA, Triple MA
+  - 震盪指標: RSI, KDJ, Williams %R, CCI, Stochastic
+  - 趨勢指標: MACD, ADX, DI+/DI-
+  - 波動指標: Bollinger Bands, ATR, StdDev
+  - 通道指標: Donchian Channel
+  - 成交量: Volume SMA, Volume Breakout
+  - 其他: CrossOver, Highest, Lowest, Momentum
+
+  ---
+  🧠 2. Qlib 表達式因子
+
+  基礎欄位（6個）
+
+  $open    # 開盤價
+  $high    # 最高價
+  $low     # 最低價
+  $close   # 收盤價
+  $volume  # 成交量
+  $factor  # 調整因子
+
+  表達式函數（15+ 種）
+
+  Mean($close, 20)    # 移動平均
+  Std($close, 20)     # 標準差
+  Sum($volume, 5)     # 求和
+  Max($high, 10)      # 最大值
+  Min($low, 10)       # 最小值
+  EMA($close, 12)     # 指數移動平均
+  Ref($close, 5)      # N天前的值
+
+  支援的策略（9個範本）
+
+  - 均線交叉、動量因子、布林通道、Z-Score 均值回歸、成交量動量等
+
+  ---
+  🌟 3. Alpha158 因子庫（158個 - 業界標準）
+
+  這是 Microsoft Qlib 標準因子庫，分為 4 大類：
+
+  A. KBar 因子（9個）- K線形態
+
+  KMID, KLEN, KMID2, KUP, KUP2, KLOW, KLOW2, KSFT, KSFT2
+  分析 K 線實體、影線、收盤位置等形態特徵
+
+  B. Price 因子（20個）- 歷史價格
+
+  OPEN0-4, HIGH0-4, LOW0-4, CLOSE0-4, VWAP0-4
+  最近 5 天的 OHLC 價格
+
+  C. Volume 因子（5個）- 成交量
+
+  VOLUME0, VOLUME1, VOLUME2, VOLUME3, VOLUME4
+
+  D. Rolling 因子（124個）- 滾動計算
+
+  25 個技術指標 × 5 個時間窗口（5/10/20/30/60天）
+
+  核心指標包括：
+  - ROC - 變化率
+  - MA - 移動平均
+  - STD - 標準差
+  - BETA - 線性回歸斜率
+  - RSQR - R² 值
+  - MAX/MIN - 極值
+  - RSV - 相對強弱值
+  - CORR - 相關性
+  - CNTP/CNTN - 漲跌天數統計
+  - VMA/VSTD - 成交量統計
+
+  ---
+  🤖 4. RD-Agent AI 生成因子
+
+  評估指標
+
+  - IC - Information Coefficient（因子與收益相關性）
+  - ICIR - IC 信息比率
+  - Rank IC/ICIR - 排名相關性
+  - Sharpe Ratio - 夏普比率
+  - Annual Return - 年化報酬率
+  - Max Drawdown - 最大回撤
+  - Win Rate - 勝率
+
+  因子類型
+
+  - Momentum（動量）
+  - Value（價值）
+  - Quality（品質）
+  - 自定義 Qlib 表達式組合
+
+  ---
+  📈 5. 資料庫數據欄位
+
+  A. 日線數據（stock_prices）
+
+  open, high, low, close, volume, adj_close
+
+  B. 分鐘線數據（stock_minute_prices）
+
+  datetime, open, high, low, close, volume
+  資料範圍: 2018-12-07 ~ 2025-12-10（7年）
+
+  C. 基本面數據（fundamental_data）
+
+  季度/年度財務指標（透過 FinLab API 同步）
+
+  ---
+  🏭 6. 產業聚合指標（7個）
+
+  avg_ROE稅後            # 股東權益報酬率
+  avg_ROA稅後息前         # 資產報酬率
+  avg_營業毛利率         # 毛利率
+  avg_營業利益率         # 營業利益率
+  avg_每股稅後淨利       # EPS
+  avg_營收成長率         # 營收成長率
+  avg_稅後淨利成長率     # 淨利成長率
+
+  覆蓋: 41個產業、1,935個股票
+
+  ---
+  📊 7. 回測績效指標（20+）
+
+  收益指標
+
+  annual_return, total_return, monthly_return, daily_return
+
+  風險指標
+
+  sharpe_ratio, max_drawdown, volatility, calmar_ratio, sortino_ratio, var_95
+
+  交易指標
+
+  total_trades, win_rate, avg_win, avg_loss,
+  avg_holding_days, profit_factor, expectancy
+
+  ---
+  🚀 使用建議
+
+  1. 初學者: 使用 Backtrader 策略範本（20個現成策略）
+  2. 進階用戶: 使用 Qlib 表達式（靈活組合因子）
+  3. 專業研究: 使用 Alpha158 因子庫（158個標準因子）
+  4. AI 自動化: 使用 RD-Agent 自動生成和優化因子
+
+  📁 關鍵文件位置
+
+  - Backtrader 範本: frontend/components/StrategyTemplates.vue
+  - Qlib 範本: frontend/components/QlibStrategyTemplates.vue
+  - Alpha158 計算器: backend/app/services/alpha158_factors.py
+  - 因子範本: frontend/components/FactorStrategyTemplates.vue
+
+  ---
+  總結: 系統提供從基礎技術指標到進階 ML 因子的完整覆蓋，支援 Backtrader、Qlib 雙引擎，以及 AI 自動因子挖掘功能。你可以根據需求選擇合適的工具和因子進行量化策略開發！
+
+
+✅ 已有實際資料的部分（現成可用）
+
+  1. 原始市場數據（最重要！）
+
+  ✅ 股票日線數據: 12,230,549 筆記錄
+     - open, high, low, close, volume, adj_close
+     - 涵蓋 2,671 檔股票
+     - 最新數據: 2025-12-11
+
+  ✅ 1分鐘K線數據: 148,911,163 筆記錄  
+     - 來源: Shioaji (永豐證券)
+     - 時間範圍: 2018-12-07 ~ 2025-12-10
+
+  ✅ Qlib 二進制數據: 2,671 檔股票
+     - 6 個基礎欄位: $open, $high, $low, $close, $volume, $factor
+     - 格式: /data/qlib/tw_stock_v2/features/{股票代號}/*.day.bin
+
+  2. 基本面財務數據（1,880,982 筆記錄）
+
+  ✅ 18 個財務指標（已存在資料庫）:
+     - ROA稅後息前
+     - ROE稅後
+     - 存貨週轉率
+     - 應收帳款週轉率
+     - 每股營業額
+     - 每股現金流量
+     - 每股稅後淨利
+     - 流動比率
+     - 營收成長率
+     - 營業利益率
+     - 營業毛利率
+     - 稅前淨利成長率
+     - 稅前淨利率
+     - 稅後淨利成長率
+     - 稅後淨利率
+     - 總資產週轉次數
+     - 負債比率
+     - 速動比率
+
+  3. 產業分類數據
+
+  ✅ 41 個產業分類（TWSE）
+  ✅ 1,935 筆股票-產業映射關係
+
+  4. AI 生成因子（7 個範例因子）
+
+  ✅ 已有 7 個 RD-Agent 生成的因子
+     - 例如: 20DaySMA, 10日成交量加權平均價格動量
+     - 包含 Qlib 表達式和 Python 代碼
+
+  ---
+  ⚙️ 需要實時計算的部分（範本/引擎）
+
+  1. 技術指標（Backtrader/Qlib）
+
+  ❌ 不是預先計算好的
+  ✅ 但可以用上面的原始數據實時計算
+
+  例如：
+  - RSI, MACD, KDJ → 需要用 stock_prices 數據計算
+  - 均線、布林通道 → 需要實時計算
+
+  2. Alpha158 因子庫（158個）
+
+  ❌ 不是預先存儲的
+  ✅ 有計算引擎 (alpha158_factors.py)
+  ✅ 可以用原始數據實時計算
+
+  計算方式:
+  from app.services.alpha158_factors import Alpha158Calculator
+  calculator = Alpha158Calculator()
+  factors = calculator.calculate_all_factors(df)  # df 是 OHLCV 數據
+
+  3. 策略範本（29個）
+
+  ❌ 不是預先計算的因子
+  ✅ 是可執行的策略代碼範本
+
+  - Backtrader 範本: 20 個
+  - Qlib 範本: 9 個
+
+  ---
+  📊 實際使用流程
+
+  情境 1: 使用 Qlib 表達式
+
+  # ✅ 這些數據已經存在
+  $close        # 來自 Qlib 二進制數據
+  $open, $high, $low, $volume  # 同上
+
+  # ⚙️ 這些需要實時計算
+  Mean($close, 20)      # 20日均線
+  Std($close, 20)       # 20日標準差
+  Ref($close, 5)        # 5天前的收盤價
+
+  情境 2: 使用基本面因子
+
+  # ✅ 這些指標已經在資料庫中
+  fundamental_data 表:
+  - ROE稅後, ROA稅後息前, 營業毛利率等 18 個指標
+  - 可直接查詢使用
+
+  情境 3: 使用 Alpha158 因子
+
+  # ❌ 不是預先存儲的
+  # ✅ 但有現成的計算引擎
+
+  # 步驟：
+  1. 從 stock_prices 讀取 OHLCV 數據
+  2. 調用 Alpha158Calculator 計算 158 個因子
+  3. 得到計算結果（實時）
+
+  ---
+  🎯 總結對照表
+
+  | 類別            | 是否有資料  | 數量                  | 使用方式                  |
+  |-----------------|-------------|-----------------------|---------------------------|
+  | 原始股價數據    | ✅ 有       | 12.2M 筆              | 直接查詢資料庫            |
+  | 分鐘線數據      | ✅ 有       | 148.9M 筆             | 直接查詢資料庫            |
+  | Qlib 二進制數據 | ✅ 有       | 2,671 檔股票 × 6 欄位 | Qlib 引擎讀取             |
+  | 基本面指標      | ✅ 有       | 18 個指標 × 多季度    | 直接查詢資料庫            |
+  | 產業分類        | ✅ 有       | 41 個產業             | 直接查詢資料庫            |
+  | 技術指標        | ❌ 無       | -                     | 用原始數據實時計算        |
+  | Alpha158 因子   | ❌ 無       | 158 個                | 用計算引擎生成            |
+  | AI 生成因子     | ✅ 有範例   | 7 個                  | 資料庫查詢或執行 RD-Agent |
+  | 策略範本        | ❌ 代碼範本 | 29 個                 | 執行回測時計算            |
+
+  ---
+  💡 關鍵理解
+
+  1. 有"數據" ≠ 有"因子值"
+    - 系統有豐富的原始數據（股價、財務指標）
+    - 但技術指標和 Alpha158 因子是按需計算的
+  2. 計算成本很低
+    - Qlib 二進制格式讀取速度快 3-10 倍
+    - Alpha158 計算引擎優化過
+    - 一次性計算可快取結果
+  3. 彈性更高
+    - 不預先計算因子 = 可以自由調整參數
+    - 例如：可以算 MA(10), MA(20), MA(50) 任意組合
+
+  ---
+  簡單說：你有完整的原始數據（2,671 檔股票、7 年歷史），可以用這些數據實時計算任何技術指標或因子。系統提供了計算引擎和範本，讓你不用從零開始寫代碼！

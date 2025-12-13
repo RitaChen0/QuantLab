@@ -20,6 +20,7 @@ def import_models():
     from app.models.industry_metrics_cache import IndustryMetricsCache  # noqa: F401
     from app.models.industry_chain import IndustryChain, StockIndustryChain, CustomIndustryCategory, StockCustomCategory  # noqa: F401
     from app.models.rdagent import RDAgentTask, GeneratedFactor, FactorEvaluation  # noqa: F401
+    from app.models.institutional_investor import InstitutionalInvestor  # noqa: F401
 
 # Note: import_models() is called in alembic/env.py for migrations
 # Don't auto-import to avoid circular dependencies in application code

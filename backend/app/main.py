@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.rate_limit import limiter, get_rate_limit_error_handler
 from app.middleware.request_size_limit import RequestSizeLimitMiddleware, StrategyCodeSizeLimitMiddleware
 from app.middleware.monitoring import MonitoringMiddleware
-from app.api.v1 import auth, users, strategies, backtest, data, trading, ai, industry, industry_chain, admin, rdagent, factor_evaluation, intraday, metrics, membership
+from app.api.v1 import auth, users, strategies, backtest, data, trading, ai, industry, industry_chain, admin, rdagent, factor_evaluation, intraday, metrics, membership, institutional
 
 # Create FastAPI application
 app = FastAPI(
@@ -139,6 +139,12 @@ app.include_router(
     membership.router,
     prefix=settings.API_PREFIX,
     tags=["會員管理"]
+)
+
+app.include_router(
+    institutional.router,
+    prefix=settings.API_PREFIX,
+    tags=["法人買賣超"]
 )
 
 # Include metrics router (no prefix, accessed at root /metrics)

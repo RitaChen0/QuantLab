@@ -30,15 +30,26 @@ from datetime import datetime
 from typing import List, Optional
 from loguru import logger
 from tqdm import tqdm
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.session import SessionLocal
+from app.core.config import settings
 from app.db.base import import_models
 from app.repositories.stock_minute_price import StockMinutePriceRepository
 from app.schemas.stock_minute_price import StockMinutePriceCreate
 
 # 導入所有模型以避免 ORM mapper 錯誤
 import_models()
+
+# 創建專用於導入的 Session（關閉 SQL echo 避免日誌膨脹）
+engine_silent = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    echo=False,  # 關閉 SQL 日誌記錄
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_silent)
 
 
 # 預設資料路徑（容器內掛載點）
@@ -95,7 +106,8 @@ def _process_dataframe(
     # 3. 時間範圍過濾
     if start_date:
         start_dt = pd.to_datetime(start_date)
-        df = df[df['datetime'] >= start_dt]
+        # 增量模式：使用 > 避免重複最後一筆記錄
+        df = df[df['datetime'] > start_dt]
 
     if end_date:
         end_dt = pd.to_datetime(end_date)
@@ -297,7 +309,10 @@ def import_csv_file(
         df = _process_dataframe(df, stock_id, start_date, end_date)
 
         if df.empty:
-            logger.warning(f"{stock_id}: No valid data after filtering")
+            if incremental:
+                logger.info(f"{stock_id}: ✅ Already up-to-date, no new data")
+            else:
+                logger.warning(f"{stock_id}: No valid data after filtering")
             result["status"] = "success"
             result["skipped"] = result["total_rows"]
             return result
@@ -337,6 +352,8 @@ def import_csv_file(
                 except Exception as e:
                     # 如果批次插入失敗，嘗試逐筆 upsert
                     logger.warning(f"{stock_id}: Bulk insert failed, trying upsert - {str(e)}")
+                    # 🔧 Rollback before trying individual upserts
+                    db.rollback()
                     for record in records:
                         try:
                             repo.upsert(
@@ -362,6 +379,8 @@ def import_csv_file(
         logger.error(f"❌ {stock_id}: Import failed - {str(e)}")
         result["status"] = "failed"
         result["errors"] += 1
+        # 🔧 Rollback session to allow subsequent imports to continue
+        db.rollback()
 
     return result
 

@@ -27,6 +27,7 @@ class Stock(Base):
     # minute_prices = relationship("StockMinutePrice", back_populates="stock", cascade="all, delete-orphan")
     trades = relationship("Trade", back_populates="stock")
     stock_industries = relationship("StockIndustry", back_populates="stock", cascade="all, delete-orphan")
+    institutional_investors = relationship("InstitutionalInvestor", back_populates="stock", cascade="all, delete-orphan")
 
     # Indexes for better query performance
     __table_args__ = (

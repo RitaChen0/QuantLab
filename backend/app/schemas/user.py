@@ -30,6 +30,8 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     finlab_api_token: Optional[str] = None
+    telegram_id: Optional[str] = Field(None, max_length=255)
+    telegram_channel_id: Optional[str] = Field(None, max_length=255)
     is_active: Optional[bool] = None
     member_level: Optional[int] = Field(None, ge=0, le=6)
     cash: Optional[Decimal] = Field(None, ge=0)
@@ -47,6 +49,8 @@ class UserInDB(UserBase):
     member_level: int
     cash: Decimal
     credit: Decimal
+    telegram_id: Optional[str] = None
+    telegram_channel_id: Optional[str] = None
     finlab_api_token: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -67,6 +71,8 @@ class User(BaseModel):
     member_level: int
     cash: Decimal
     credit: Decimal
+    telegram_id: Optional[str] = None
+    telegram_channel_id: Optional[str] = None
     created_at: datetime
     last_login: Optional[datetime] = None
 

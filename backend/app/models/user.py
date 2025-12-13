@@ -21,6 +21,10 @@ class User(Base):
     cash = Column(Numeric(15, 2), default=0.00, nullable=False)  # 現金餘額
     credit = Column(Numeric(15, 2), default=0.00, nullable=False)  # 信用點數
 
+    # Telegram Integration
+    telegram_id = Column(String(255), nullable=True, index=True)  # Telegram 用戶 ID 或用戶名
+    telegram_channel_id = Column(String(255), nullable=True)  # TG 頻道/群組 ID
+
     # Email Verification
     email_verified = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(255), nullable=True, unique=True)

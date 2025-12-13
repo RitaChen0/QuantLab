@@ -22,6 +22,12 @@ from app.tasks.factor_evaluation_tasks import (
     batch_evaluate_factors,
     update_factor_metrics,
 )
+from app.tasks.institutional_investor_sync import (
+    sync_institutional_investors,
+    sync_single_stock_institutional,
+    sync_top_stocks_institutional,
+    cleanup_old_institutional_data,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -38,4 +44,8 @@ __all__ = [
     "evaluate_factor_async",
     "batch_evaluate_factors",
     "update_factor_metrics",
+    "sync_institutional_investors",
+    "sync_single_stock_institutional",
+    "sync_top_stocks_institutional",
+    "cleanup_old_institutional_data",
 ]
