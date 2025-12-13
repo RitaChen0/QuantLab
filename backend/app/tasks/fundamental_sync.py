@@ -94,8 +94,10 @@ def sync_fundamental_data(
 
     except Exception as e:
         logger.error(f"同步任務失敗: {str(e)}")
-        # 重試 3 次，每次間隔 5 分鐘
-        raise self.retry(exc=e, countdown=300, max_retries=3)
+        # 使用指數退避：5m, 10m, 20m
+        retry_count = self.request.retries
+        countdown = 300 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
 
     finally:
         db.close()
@@ -163,7 +165,10 @@ def sync_fundamental_latest(self: Task) -> dict:
 
     except Exception as e:
         logger.error(f"快速同步失敗: {str(e)}")
-        raise self.retry(exc=e, countdown=180, max_retries=3)
+        # 使用指數退避：3m, 6m, 12m
+        retry_count = self.request.retries
+        countdown = 180 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
 
     finally:
         db.close()

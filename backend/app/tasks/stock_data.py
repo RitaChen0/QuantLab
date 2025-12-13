@@ -99,7 +99,10 @@ def sync_stock_list(self: Task) -> dict:
     except Exception as e:
         logger.error(f"Failed to sync stock list: {str(e)}")
         db.rollback()
-        raise self.retry(exc=e, countdown=300, max_retries=3)
+        # 使用指數退避：5m, 10m, 20m（300 * 2^retry_count）
+        retry_count = self.request.retries
+        countdown = 300 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
     finally:
         db.close()
 
@@ -199,7 +202,10 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
 
     except Exception as e:
         logger.error(f"Failed to sync daily prices: {str(e)}")
-        raise self.retry(exc=e, countdown=300, max_retries=3)
+        # 使用指數退避：5m, 10m, 20m
+        retry_count = self.request.retries
+        countdown = 300 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_ohlcv_data")
@@ -311,7 +317,10 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
     except Exception as e:
         logger.error(f"Failed to sync OHLCV data: {str(e)}")
         db.rollback()
-        raise self.retry(exc=e, countdown=300, max_retries=3)
+        # 使用指數退避：5m, 10m, 20m
+        retry_count = self.request.retries
+        countdown = 300 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
     finally:
         db.close()
 
@@ -384,7 +393,10 @@ def sync_latest_prices(self: Task, stock_ids: list = None) -> dict:
 
     except Exception as e:
         logger.error(f"Failed to sync latest prices: {str(e)}")
-        raise self.retry(exc=e, countdown=60, max_retries=5)
+        # 使用指數退避：1m, 2m, 4m, 8m, 16m
+        retry_count = self.request.retries
+        countdown = 60 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=5)
 
 
 @celery_app.task(bind=True, name="app.tasks.cleanup_old_cache")

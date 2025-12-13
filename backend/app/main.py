@@ -218,6 +218,16 @@ async def shutdown_event():
     """應用關閉事件"""
     print(f"👋 {settings.APP_NAME} 正在關閉...")
 
+    # 清理 Shioaji 全局連接（防止連接泄漏）
+    try:
+        from app.services.shioaji_client import _shioaji_client_instance
+        if _shioaji_client_instance is not None:
+            print("🔌 正在關閉 Shioaji 客戶端連接...")
+            _shioaji_client_instance.__exit__(None, None, None)
+            print("✅ Shioaji 客戶端已關閉")
+    except Exception as e:
+        print(f"⚠️  關閉 Shioaji 客戶端時發生錯誤: {e}")
+
 
 if __name__ == "__main__":
     import uvicorn

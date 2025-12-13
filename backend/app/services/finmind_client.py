@@ -10,6 +10,7 @@ import pandas as pd
 from typing import Optional, Dict, Any, List
 from datetime import datetime, date
 from loguru import logger
+from app.utils.error_handler import get_safe_error_message
 
 
 class FinMindClient:
@@ -121,7 +122,8 @@ class FinMindClient:
                 raise Exception(f"FinMind API 請求失敗（HTTP {e.response.status_code}）")
         except requests.exceptions.RequestException as e:
             logger.error(f"FinMind API request failed: {str(e)}")
-            raise Exception(f"FinMind API 請求失敗：{str(e)}")
+            safe_message = get_safe_error_message(e, "FinMind API 請求")
+            raise Exception(safe_message)
         except Exception as e:
             logger.error(f"FinMind API error: {str(e)}")
             raise

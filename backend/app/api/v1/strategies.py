@@ -318,9 +318,12 @@ async def clone_strategy(
             description=original.description,
             code=original.code,
             parameters=original.parameters,
+            engine_type=original.engine_type,  # 複製引擎類型（確保驗證正確）
             status=StrategyStatus.DRAFT
         )
 
+        # create_strategy 會自動驗證代碼安全性
+        # 即使原策略代碼包含後來被禁止的函數，克隆時會重新驗證
         cloned = service.create_strategy(
             user_id=current_user.id,
             strategy_create=strategy_create

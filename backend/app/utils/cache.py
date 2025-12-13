@@ -316,10 +316,17 @@ def cached_method(
             if key_func:
                 cache_key = f"{key_prefix}:{key_func(*args, **kwargs)}"
             else:
-                # Default: use function args as key (excluding self)
-                key_parts = [str(arg) for arg in args]
-                key_parts.extend([f"{k}={v}" for k, v in sorted(kwargs.items())])
-                cache_key = f"{key_prefix}:{'_'.join(key_parts)}"
+                # 使用 JSON + 哈希確保唯一性，避免鍵衝突
+                import hashlib
+                import json
+
+                key_data = {
+                    'args': [repr(arg) for arg in args],
+                    'kwargs': {k: repr(v) for k, v in sorted(kwargs.items())}
+                }
+                key_json = json.dumps(key_data, sort_keys=True)
+                key_hash = hashlib.md5(key_json.encode()).hexdigest()[:16]
+                cache_key = f"{key_prefix}:{key_hash}"
 
             # Try to get from cache
             cached_value = cache.get(cache_key)

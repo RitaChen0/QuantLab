@@ -291,8 +291,10 @@ def run_backtest_async(
             # 鎖獲取失敗
             logger.warning(f"Failed to acquire lock for backtest {backtest_id}: {str(e)}")
 
-            # 重試此任務
-            raise self.retry(exc=e, countdown=60, max_retries=5)
+            # 使用指數退避：1m, 2m, 4m, 8m, 16m
+            retry_count = self.request.retries
+            countdown = 60 * (2 ** retry_count)
+            raise self.retry(exc=e, countdown=countdown, max_retries=5)
 
     except Exception as e:
         # 其他未預期錯誤
@@ -310,8 +312,10 @@ def run_backtest_async(
         except Exception as db_error:
             logger.error(f"Failed to update backtest status: {str(db_error)}")
 
-        # 重試
-        raise self.retry(exc=e, countdown=300, max_retries=3)
+        # 使用指數退避：5m, 10m, 20m
+        retry_count = self.request.retries
+        countdown = 300 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
 
     finally:
         db.close()

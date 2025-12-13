@@ -413,17 +413,25 @@ class StockMinutePriceService:
         Returns:
             tuple: (start_datetime, end_datetime)
         """
+        from datetime import timezone as tz
+
         # 檢查現有數據
         date_range = self.repo.get_date_range(self.db, stock_id, timeframe)
 
-        end_datetime = datetime.now()
+        # 明確使用 UTC 時間
+        end_datetime = datetime.now(tz.utc)
 
         if date_range and date_range["max_date"]:
-            # 從最後一筆數據開始（避免重複）
-            start_datetime = date_range["max_date"]
+            # 從最後一筆數據的下一分鐘開始（避免重複）
+            start_datetime = date_range["max_date"] + timedelta(minutes=1)
+
+            # 確保 timezone-aware
+            if start_datetime.tzinfo is None:
+                start_datetime = start_datetime.replace(tzinfo=tz.utc)
+
             logger.info(
                 f"Incremental sync for {stock_id}: "
-                f"from {start_datetime} (last record)"
+                f"from {start_datetime} (last record + 1min)"
             )
         else:
             # 無數據，從 days_back 天前開始

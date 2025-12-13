@@ -398,18 +398,35 @@ class StrategyService:
 
         # Dangerous function names (blacklist)
         dangerous_functions = {
+            # 執行相關
             'eval', 'exec', 'compile', '__import__',
-            'open', 'file', 'input',
+            # 文件操作
+            'open', 'file', 'input', 'raw_input',
+            # 反射與內省
             'globals', 'locals', 'vars', 'dir',
             'getattr', 'setattr', 'delattr', 'hasattr',
+            # 類型與對象操作（可用於反射攻擊）
+            'type', 'object', 'super',
+            # 調試與控制流
             'breakpoint', 'exit', 'quit',
+            # 動態類創建
+            '__build_class__',
         }
 
         # Dangerous attribute patterns
         dangerous_attributes = {
+            # 基礎危險屬性
             '__globals__', '__code__', '__builtins__',
             '__dict__', '__class__', '__bases__',
             '__subclasses__', '__import__',
+            # 反射相關（可繞過黑名單）
+            '__getattribute__', '__setattr__', '__delattr__',
+            # Pickle 反序列化攻擊
+            '__reduce__', '__reduce_ex__',
+            # Python 2 兼容屬性
+            'func_globals', 'func_code', 'im_func', 'im_class',
+            # 其他危險屬性
+            '__loader__', '__spec__', '__package__',
         }
 
         for node in ast.walk(tree):
@@ -519,7 +536,12 @@ class StrategyService:
 
     def _check_strategy_quota(self, user_id: int) -> None:
         """
-        Check if user has exceeded strategy quota
+        Check if user has exceeded strategy quota (based on membership level)
+
+        Quota by membership level:
+        - Level 0 (Free): 10 strategies
+        - Level 3 (Paid): 50 strategies
+        - Level 6 (VIP): 200 strategies
 
         Args:
             user_id: User ID
@@ -527,11 +549,33 @@ class StrategyService:
         Raises:
             HTTPException: If quota exceeded
         """
+        from app.repositories.user import UserRepository
+
+        # 獲取用戶資訊
+        user = UserRepository.get_by_id(self.db, user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # 根據會員等級設定配額
+        quota_map = {
+            0: 10,   # 免費會員
+            3: 50,   # 付費會員
+            6: 200,  # VIP 會員
+        }
+
+        # 獲取用戶配額（默認使用系統設定）
+        user_quota = quota_map.get(user.member_level, settings.MAX_STRATEGIES_PER_USER)
+
         current_count = self.repo.count_by_user(self.db, user_id)
 
-        if current_count >= settings.MAX_STRATEGIES_PER_USER:
+        if current_count >= user_quota:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Strategy quota exceeded. Maximum {settings.MAX_STRATEGIES_PER_USER} strategies allowed per user. "
-                       f"Current count: {current_count}. Please delete some strategies before creating new ones."
+                detail=f"Strategy quota exceeded. "
+                       f"Your membership level ({user.member_level}) allows maximum {user_quota} strategies. "
+                       f"Current count: {current_count}. "
+                       f"Please delete some strategies or upgrade your membership."
             )

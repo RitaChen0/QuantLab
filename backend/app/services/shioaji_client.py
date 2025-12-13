@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 from loguru import logger
 from app.core.config import settings
+from app.core.trading_hours import filter_trading_hours
 
 
 class ShioajiClient:
@@ -216,12 +217,9 @@ class ShioajiClient:
             # 確保 datetime 為 datetime 類型
             df['datetime'] = pd.to_datetime(df['datetime'])
 
-            # 過濾交易時段外數據（09:00-13:30）
-            df = df[
-                (df['datetime'].dt.hour >= 9) &
-                (df['datetime'].dt.hour < 14) &
-                ~((df['datetime'].dt.hour == 13) & (df['datetime'].dt.minute > 30))
-            ]
+            # 使用配置化交易時段過濾（日盤 09:00-13:30）
+            # 如需支持夜盘（期货），可传入 include_night=True
+            df = filter_trading_hours(df, datetime_column='datetime', include_night=False)
 
             logger.info(f"✅ Fetched {len(df)} kbars for {stock_id} ({timeframe})")
             return df

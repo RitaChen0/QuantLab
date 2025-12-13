@@ -4,13 +4,36 @@ from sqlalchemy.exc import SQLAlchemyError
 from contextlib import contextmanager
 from loguru import logger
 from app.core.config import settings
+import multiprocessing
+import os
+
+# 動態計算連接池大小
+# FastAPI workers（默認 = CPU 核心數）+ Celery workers（從環境變數讀取，默認 4）
+cpu_count = multiprocessing.cpu_count()
+celery_workers = int(os.getenv('CELERY_WORKERS', '4'))
+fastapi_workers = int(os.getenv('FASTAPI_WORKERS', str(cpu_count)))
+
+# 每個 worker 平均需要 2-3 個連接
+# pool_size = workers * 2（基礎連接）
+# max_overflow = pool_size * 2（高峰時的額外連接）
+calculated_pool_size = max(10, (fastapi_workers + celery_workers) * 2)
+calculated_max_overflow = calculated_pool_size * 2
+
+logger.info(
+    f"Database connection pool: "
+    f"pool_size={calculated_pool_size}, "
+    f"max_overflow={calculated_max_overflow} "
+    f"(FastAPI workers: {fastapi_workers}, Celery workers: {celery_workers})"
+)
 
 # Create SQLAlchemy engine
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=calculated_pool_size,
+    max_overflow=calculated_max_overflow,
+    pool_timeout=30,  # 等待連接的最大秒數
+    pool_recycle=3600,  # 1 小時後回收連接（防止連接過期）
     echo=settings.DEBUG,
 )
 

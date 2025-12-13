@@ -1,9 +1,7 @@
 
-    當會員等級是 
-    Level 0 , 免費用戶 ：基本限制 
-    Level 3 , 付費用戶 ：較寬鬆限制
-    Level 6 , VIP 用戶 ：最寬鬆限制
-    在增加 cash , credit 兩個會員欄位 
+TELEGRAM_ADMIN_CHAT_ID=185458695
+TELEGRAM_ADMIN_CHAT_NAME=Robert9
+TELEGRAM_QUANTLABID_TOKEN=6907570593:AAFT4aD0E7JFYwQt6a9MDPsV3UyQsaPYtO8
 
 Qlib + RD_Agent 
 

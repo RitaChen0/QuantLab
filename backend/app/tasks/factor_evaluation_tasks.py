@@ -80,8 +80,10 @@ def evaluate_factor_async(
         logger.error(f"[Task {self.request.id}] Factor evaluation failed: {str(e)}")
         logger.exception(e)
 
-        # 重試 3 次，每次間隔 60 秒
-        raise self.retry(exc=e, countdown=60, max_retries=3)
+        # 使用指數退避：1m, 2m, 4m
+        retry_count = self.request.retries
+        countdown = 60 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)
 
     finally:
         db.close()

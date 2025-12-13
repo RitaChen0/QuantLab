@@ -25,6 +25,7 @@ from app.models.backtest_result import BacktestResult
 from app.models.trade import Trade, TradeAction
 from app.models.stock_price import StockPrice
 from app.repositories.stock_minute_price import StockMinutePriceRepository
+from app.utils.error_handler import get_safe_error_message
 
 
 class DailyValueAnalyzer(bt.Analyzer):
@@ -329,7 +330,8 @@ class BacktestEngine:
                 elif isinstance(start_date, datetime):
                     start_date = start_date.date()
                 elif not isinstance(start_date, date):
-                    raise ValueError(f"Invalid start_date type: {type(start_date)}")
+                    error = TypeError(f"Invalid start_date type: {type(start_date)}")
+                    raise ValueError(get_safe_error_message(error, "日期參數驗證"))
 
             if end_date is not None:
                 if isinstance(end_date, str):
@@ -337,7 +339,8 @@ class BacktestEngine:
                 elif isinstance(end_date, datetime):
                     end_date = end_date.date()
                 elif not isinstance(end_date, date):
-                    raise ValueError(f"Invalid end_date type: {type(end_date)}")
+                    error = TypeError(f"Invalid end_date type: {type(end_date)}")
+                    raise ValueError(get_safe_error_message(error, "日期參數驗證"))
 
             # 先查詢該股票在資料庫中的實際日期範圍
             date_range = self.db.query(
@@ -522,7 +525,8 @@ class BacktestEngine:
         }
 
         if timeframe not in timeframe_map:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
+            error = ValueError(f"Unsupported timeframe: {timeframe}, supported: {list(timeframe_map.keys())}")
+            raise ValueError(get_safe_error_message(error, "時間週期驗證"))
 
         rule = timeframe_map[timeframe]
 
@@ -648,7 +652,8 @@ class BacktestEngine:
 
         except Exception as e:
             logger.error(f"Error creating strategy class: {str(e)}")
-            raise ValueError(f"Invalid strategy code: {str(e)}")
+            safe_message = get_safe_error_message(e, "策略代碼編譯")
+            raise ValueError(safe_message)
 
     def _validate_strategy_code_security(self, code: str) -> None:
         """
@@ -666,24 +671,42 @@ class BacktestEngine:
 
         # 危險函數黑名單
         dangerous_functions = {
+            # 執行相關
             'eval', 'exec', 'compile', '__import__',
-            'open', 'file', 'input',
+            # 文件操作
+            'open', 'file', 'input', 'raw_input',
+            # 反射與內省
             'globals', 'locals', 'vars', 'dir',
             'getattr', 'setattr', 'delattr', 'hasattr',
+            # 類型與對象操作（可用於反射攻擊）
+            'type', 'object', 'super',
+            # 調試與控制流
             'breakpoint', 'exit', 'quit',
+            # 動態類創建
+            '__build_class__',
         }
 
         # 危險屬性黑名單
         dangerous_attributes = {
+            # 基礎危險屬性
             '__globals__', '__code__', '__builtins__',
             '__dict__', '__class__', '__bases__',
             '__subclasses__', '__import__',
+            # 反射相關（可繞過黑名單）
+            '__getattribute__', '__setattr__', '__delattr__',
+            # Pickle 反序列化攻擊
+            '__reduce__', '__reduce_ex__',
+            # Python 2 兼容屬性
+            'func_globals', 'func_code', 'im_func', 'im_class',
+            # 其他危險屬性
+            '__loader__', '__spec__', '__package__',
         }
 
         try:
             tree = ast.parse(code)
         except SyntaxError as e:
-            raise ValueError(f"策略代碼語法錯誤: {str(e)}")
+            safe_message = get_safe_error_message(e, "策略代碼語法檢查")
+            raise ValueError(safe_message)
 
         # 檢查 AST 節點
         for node in ast.walk(tree):
@@ -806,7 +829,8 @@ class BacktestEngine:
             strategy_instance = results[0]
         except Exception as e:
             logger.error(f"Backtest execution failed: {str(e)}")
-            raise ValueError(f"Backtest execution failed: {str(e)}")
+            safe_message = get_safe_error_message(e, "回測執行")
+            raise ValueError(safe_message)
 
         # 12. 記錄最終資金
         final_value = self.cerebro.broker.getvalue()
@@ -1205,7 +1229,8 @@ class BacktestEngine:
             # 2. 獲取 Backtest 記錄以取得 stock_id
             backtest = self.db.query(Backtest).filter(Backtest.id == backtest_id).first()
             if not backtest:
-                raise ValueError(f"Backtest {backtest_id} not found")
+                error = ValueError(f"Backtest {backtest_id} not found")
+                raise ValueError(get_safe_error_message(error, "回測資料查詢"))
 
             stock_id = backtest.symbol
 

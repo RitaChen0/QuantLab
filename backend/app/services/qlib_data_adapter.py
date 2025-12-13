@@ -67,7 +67,13 @@ class QlibDataAdapter:
             logger.debug(f"Failed to check Qlib data for {symbol}: {e}")
             return False
 
-    @cached_method(key_prefix="qlib_ohlcv", expiry=3600)
+    @cached_method(
+        key_prefix="qlib_ohlcv",
+        expiry=3600,
+        key_func=lambda symbol, start_date, end_date, fields=None: (
+            f"{symbol}:{start_date.isoformat()}:{end_date.isoformat()}:UTC"
+        )
+    )
     def get_qlib_ohlcv(
         self,
         symbol: str,
