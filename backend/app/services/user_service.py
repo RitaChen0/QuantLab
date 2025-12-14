@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from loguru import logger
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate, Token
+from app.schemas.user import UserCreate, UserUpdate, Token, PasswordUpdate
 from app.repositories.user import UserRepository
-from app.core.security import verify_password, create_access_token, create_refresh_token
+from app.core.security import verify_password, create_access_token, create_refresh_token, get_password_hash
 from app.core.config import settings
 from app.utils.email import EmailService
 
@@ -309,3 +309,32 @@ class UserService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send verification email",
             )
+
+    def update_password(self, user: User, password_update: PasswordUpdate) -> User:
+        """
+        Update user password
+
+        Args:
+            user: Current user object
+            password_update: Password update data
+
+        Returns:
+            Updated user object
+
+        Raises:
+            HTTPException: If current password is incorrect
+        """
+        # Verify current password
+        if not verify_password(password_update.current_password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect",
+            )
+
+        # Hash new password
+        user.hashed_password = get_password_hash(password_update.new_password)
+        self.db.commit()
+        self.db.refresh(user)
+
+        logger.info(f"Password updated for user {user.email}")
+        return user

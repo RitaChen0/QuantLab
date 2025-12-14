@@ -91,6 +91,9 @@ services:
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-QuantLab}
       SMTP_TLS: ${SMTP_TLS:-true}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Telegram Bot
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-QuantLabBot}
     depends_on:
       postgres:
         condition: service_healthy
@@ -259,22 +262,23 @@ services:
       - redis
       - celery-worker
 
-  # Nginx (Optional - for production)
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: quantlab-nginx
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./deployment/nginx/ssl:/etc/nginx/ssl:ro
-  #   depends_on:
-  #     - frontend
-  #     - backend
-  #   networks:
-  #     - quantlab-network
+  # Nginx - Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: quantlab-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - quantlab-network
 
 volumes:
   postgres_data:

@@ -1,699 +1,494 @@
 # CLAUDE.md
 
-> 專案描述文件，提供 QuantLab 專案的整體概覽與架構說明，專為 AI 助手和開發者設計。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 📖 文檔導航指南
+> QuantLab 台股量化交易平台 - 開發指南
 
-### 快速導航
+## 🚀 常用開發命令
 
-| 需求 | 文檔 | 位置 |
-|------|------|------|
-| 📚 **快速啟動** | [README.md](README.md) | 根目錄 |
-| 🤖 **開發架構** | [CLAUDE.md](CLAUDE.md) | 根目錄（本文件） |
-| 📋 **文檔規劃** | [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md) | 根目錄 |
-| 📊 **資料庫架構** | [Document/DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) | Document/ |
-| ✅ **資料庫變更** | [Document/DATABASE_CHANGE_CHECKLIST.md](Document/DATABASE_CHANGE_CHECKLIST.md) | Document/ |
-| 🔄 **系統遷移** | [Document/MIGRATION_GUIDE.md](Document/MIGRATION_GUIDE.md) | Document/ |
-| 📈 **Qlib 引擎** | [docs/QLIB.md](docs/QLIB.md) | docs/ |
-| 🧠 **RD-Agent** | [docs/RDAGENT.md](docs/RDAGENT.md) | docs/ |
-| 🔒 **安全指南** | [docs/SECURITY.md](docs/SECURITY.md) | docs/ |
-| 📚 **使用指南** | [docs/GUIDES.md](docs/GUIDES.md) | docs/ |
-| 📁 **文檔索引** | [Document/README.md](Document/README.md) | Document/ |
+### Docker 容器管理
 
-### 建議閱讀順序
+```bash
+# 啟動所有服務（6 個容器）
+docker compose up -d
 
-1. **README.md** - 快速上手（5 分鐘）
-2. **CLAUDE.md** - 理解架構（15 分鐘）- 本文件
-3. **DOCUMENTATION_PLAN.md** - 了解文檔組織（10 分鐘）
-4. **需要時查閱專項文檔**（Database、Qlib、RD-Agent 等）
+# 重啟特定服務（代碼變更後）
+docker compose restart backend
+docker compose restart celery-worker celery-beat
 
-### 📋 文檔組織原則
+# 查看日誌（即時追蹤）
+docker compose logs -f backend
+docker compose logs -f celery-worker
 
-> ⚠️ **重要**：本章節定義文檔管理規範，完整版請參閱 [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md)
-
-#### 文檔結構
-
-```
-QuantLab/
-├── README.md, CLAUDE.md, CHANGELOG.md, CONTRIBUTING.md  # 4 個核心文檔
-├── docs/                       # 專題技術文檔（6 個）
-│   ├── QLIB.md                 # Qlib 引擎完整指南
-│   ├── RDAGENT.md              # RD-Agent 完整指南
-│   ├── SECURITY.md             # 安全文檔
-│   ├── GUIDES.md               # 使用指南集合
-│   ├── EXTERNAL_ACCESS.md      # 外部訪問配置
-│   └── DOCUMENTATION_GUIDE.md  # 文檔撰寫指南
-└── Document/                   # 資料庫與系統文檔（17 個）
-    ├── DATABASE_*.md           # 5 個資料庫文檔（核心）
-    ├── FACTOR_EVALUATION_*.md  # 2 個因子評估文檔（核心）
-    ├── MIGRATION_GUIDE.md      # 系統遷移指南（核心）
-    ├── IMPROVEMENT_ROADMAP.md  # 改進路線圖（核心）
-    └── *_GUIDE.md              # 7 個待整合文檔
+# 進入容器執行命令
+docker compose exec backend bash
+docker compose exec postgres psql -U quantlab quantlab
 ```
 
-#### ❌ 絕對不應該提交的文檔類型
+### 資料庫操作
 
-**1. 開發過程記錄**
-- `*_FIX.md`（如 `DASHBOARD_REFRESH_FIX.md`）
-- `*_IMPLEMENTATION.md`
-- `*_TROUBLESHOOTING.md`（特定問題的排查過程）
-- `*_ISSUE_RESOLVED.md`
+```bash
+# 執行遷移（部署新版本時必須）
+docker compose exec backend alembic upgrade head
 
-**原因**：一次性問題解決記錄，對未來沒有參考價值
+# 創建新遷移（修改 models/ 後）
+docker compose exec backend alembic revision --autogenerate -m "描述變更"
 
-**替代方案**：
-- 重要修復 → 加入 `CHANGELOG.md`
-- 通用故障排查 → 加入 `docs/GUIDES.md`
-- 架構決策 → 加入 `CLAUDE.md`
+# 查看遷移歷史
+docker compose exec backend alembic history
 
-**2. 遷移/升級記錄**
-- `*_MIGRATION.md`（如 `MEMBER_LEVELS_0_9_MIGRATION.md`）
-- `*_UPGRADE.md`
-
-**原因**：遷移完成後就過時了
-
-**替代方案**：
-- 遷移步驟 → 加入 `Document/MIGRATION_GUIDE.md`（通用流程）
-- 版本變更 → 加入 `CHANGELOG.md`
-
-**3. 臨時性文檔**
-- `TODO.md`、`NOTES.md`、`TEST_RESULTS.md`、會議記錄
-
-**原因**：短期資訊，不應進入版本控制
-
-**替代方案**：使用 GitHub Issues 或保留本地
-
-#### 📝 創建新文檔的決策流程
-
-```
-需要記錄資訊？
-    │
-    ├─ 是一次性問題修復？ → ❌ 不創建 .md，加入 CHANGELOG.md
-    ├─ 是臨時性資訊？     → ❌ 不提交，使用 Issues
-    ├─ 是小型功能說明？   → ✅ 加入 docs/GUIDES.md
-    ├─ 是現有文檔的補充？ → ✅ 更新現有文檔（QLIB.md、RDAGENT.md 等）
-    ├─ 是資料庫相關？     → ✅ 加入 Document/DATABASE_*.md
-    ├─ 是重大新功能？     → ✅ 在 docs/ 創建新文檔（> 1000 行代碼）
-    └─ 其他情況          → ⚠️ 再次考慮是否真的需要
+# 直接查詢資料庫
+docker compose exec postgres psql -U quantlab quantlab -c "SELECT COUNT(*) FROM users;"
 ```
 
-#### 🔄 文檔更新規則
+### Qlib 數據同步
 
-**創建新文檔前**：
-1. 檢查是否可以加入現有文檔
-2. 參考 [DOCUMENTATION_PLAN.md](DOCUMENTATION_PLAN.md) 的完整決策流程
-3. 優先更新現有文檔，避免文檔碎片化
+```bash
+# 智慧增量同步（日線資料，1-5 分鐘）
+bash scripts/sync-qlib-smart.sh
 
-**日常維護**：
-- 每季度審查文檔，刪除過時內容
-- 問題修復後，更新相關故障排查章節，不要創建新文檔
-- 功能完成後，更新 CHANGELOG.md 和相關技術文檔
+# 測試模式（僅同步 10 檔股票）
+bash scripts/sync-qlib-smart.sh --test
 
-## 專案定位
+# 手動完整重新導出（30-60 分鐘，少用）
+docker compose exec backend python /app/scripts/export_to_qlib_v2.py \
+  --output-dir /data/qlib/tw_stock_v2 --stocks all
+```
 
-QuantLab 是一個開源的台股量化交易平台，專注於提供完整的量化研究與策略開發環境。
+### Shioaji 分鐘線同步
 
-## 技術架構
+```bash
+# 定時任務（每天 15:00 自動執行）
+# 位置：backend/app/core/celery_app.py "sync-shioaji-minute-daily"
 
-### 核心技術棧
+# 手動觸發同步
+docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart
 
-**前端技術**：
-- Nuxt.js 3 (Vue 3 + TypeScript)
-- Pinia (狀態管理)
-- ECharts (圖表視覺化)
+# 測試模式（5 檔股票）
+docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart --test
+```
 
-**後端技術**：
-- FastAPI (Python 3.11)
-- SQLAlchemy 2.0 (ORM)
-- Pydantic (數據驗證)
+### Celery 任務管理
 
-**數據存儲**：
-- PostgreSQL 15 (主數據庫)
-- TimescaleDB (時序數據)
-- Redis 7 (快取與消息隊列)
+```bash
+# 查看已註冊任務
+docker compose exec backend celery -A app.core.celery_app inspect registered
 
-**任務系統**：
-- Celery (異步任務處理)
-- Celery Beat (定時任務調度)
+# 查看定時任務清單
+docker compose exec backend celery -A app.core.celery_app inspect scheduled
 
-**量化引擎**：
-- Qlib (Microsoft - ML 量化平台)
-- Backtrader (技術指標回測)
-- TA-Lib (技術指標計算)
-- PyTorch (深度學習)
+# 手動觸發任務
+docker compose exec backend celery -A app.core.celery_app call app.tasks.sync_stock_list
 
-**數據來源**：
-- FinLab API (台股歷史數據、基本面)
-- Shioaji (永豐證券 - 1 分鐘 K 線)
-- FinMind (產業分類、財務指標)
+# 清空任務隊列（開發環境）
+docker compose exec redis redis-cli FLUSHDB
+```
 
-### 系統架構
+### 開發工具
 
-**多容器架構**（6 個 Docker 容器）：
-1. `postgres` - TimescaleDB 主數據庫 + 時序數據存儲
-2. `redis` - 緩存層 + Celery 消息代理
-3. `backend` - FastAPI 應用（端口 8000）
-4. `frontend` - Nuxt.js 應用（端口 3000）
-5. `celery-worker` - 異步任務處理器
-6. `celery-beat` - 定時任務調度器
+```bash
+# Python 代碼格式化
+docker compose exec backend black app/
+docker compose exec backend flake8 app/ --max-line-length=88
 
-**容器通信**：通過 `quantlab-network` 橋接網絡，服務名稱作為主機名。
+# 前端 Linting
+docker compose exec frontend npm run lint
+docker compose exec frontend npm run lint:fix
 
-## 後端架構設計
+# 清理前端快取（更新後無變化時）
+bash scripts/quick-clean.sh
+docker compose restart frontend
+```
 
-### 四層分層架構
+### 速率限制重置
+
+```bash
+# 開發時重置速率限制
+bash scripts/reset-rate-limit.sh
+
+# 或手動清除 Redis
+docker compose exec redis redis-cli --scan --pattern "slowapi:*" | xargs docker compose exec -T redis redis-cli del
+```
+
+---
+
+## 🏗️ 高層架構
+
+### 系統概覽
+
+**定位**：台股量化交易平台（雙引擎 Backtrader + Qlib）
+
+**核心特色**：
+- 雙量化引擎（技術指標 + 機器學習）
+- AI 因子挖掘（RD-Agent + LLM）
+- 完整數據管道（日線 + 分鐘線）
+
+### 容器架構（6 個服務）
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  frontend (3000)      ←→   backend (8000)               │
+│  Nuxt.js 3                  FastAPI + SQLAlchemy       │
+└─────────────────────────────────────────────────────────┘
+           ↓                         ↓
+    ┌──────────────┐         ┌──────────────┐
+    │   postgres   │         │    redis     │
+    │ TimescaleDB  │         │ Cache + MQ   │
+    └──────────────┘         └──────────────┘
+                                     ↓
+                         ┌──────────────────────┐
+                         │  celery-worker       │
+                         │  celery-beat         │
+                         │  定時任務 + 異步處理  │
+                         └──────────────────────┘
+```
+
+### 後端四層架構
+
+**關鍵原則**：嚴格分層，禁止跨層調用
 
 ```
 app/
-├── api/v1/          # API 路由層
-├── services/        # 業務邏輯層
-├── repositories/    # 數據訪問層
-├── models/          # ORM 模型
-├── schemas/         # Pydantic Schemas
-├── core/            # 核心配置
-├── db/              # 數據庫會話
-├── utils/           # 工具模組
-└── tasks/           # Celery 任務
+├── api/v1/          # 🌐 HTTP 路由層
+│   ├── strategies.py      - 調用 StrategyService
+│   └── backtests.py       - 調用 BacktestService
+│   （職責：請求處理、依賴注入、錯誤處理）
+│   （禁止：業務邏輯、直接查詢資料庫）
+│
+├── services/        # 💼 業務邏輯層
+│   ├── strategy_service.py    - 策略驗證、配額檢查
+│   └── backtest_service.py    - 回測執行、結果計算
+│   （職責：業務邏輯、數據驗證、調用 Repository）
+│   （禁止：直接操作 ORM、HTTP 處理）
+│
+├── repositories/    # 🗄️ 資料訪問層
+│   ├── strategy.py        - CRUD、查詢建構
+│   └── backtest.py        - 事務管理
+│   （職責：資料庫操作、查詢優化）
+│   （禁止：業務邏輯）
+│
+├── models/          # 📊 ORM 模型（SQLAlchemy）
+├── schemas/         # 📋 API Schema（Pydantic）
+├── tasks/           # ⚙️ Celery 異步任務
+└── core/            # 🔧 核心配置
 ```
 
-### 層級職責
+**新增功能時的正確流程**：
+1. 定義 `models/` 和 `schemas/`
+2. 實作 `repositories/` 的資料訪問方法
+3. 實作 `services/` 的業務邏輯
+4. 實作 `api/v1/` 的路由端點
+5. 執行 `alembic revision --autogenerate`
 
-**API 層** (`app/api/v1/`)：
-- 處理 HTTP 請求與響應
-- 依賴注入（database session, current user）
-- 調用 Service 層
-- 統一錯誤處理與日誌記錄
-- 不包含業務邏輯
+### 雙引擎數據架構
 
-**Service 層** (`app/services/`)：
-- 實作核心業務邏輯
-- 數據驗證與轉換
-- 配額檢查與速率限制
-- 調用 Repository 層
-- 不直接操作資料庫
+**關鍵設計**：PostgreSQL 為單一真實來源，Qlib 為高效能快取
 
-**Repository 層** (`app/repositories/`)：
-- 資料庫 CRUD 操作
-- 查詢建構與執行
-- 事務管理
-- 不包含業務邏輯
-
-### 關鍵設計原則
-
-- **關注點分離**：每層職責明確，互不越界
-- **依賴注入**：使用 FastAPI 的 Depends 機制
-- **環境變數管理**：使用 Pydantic Settings
-- **結構化日誌**：使用 contextvars 追蹤上下文
-- **速率限制**：使用 slowapi 套件
-- **錯誤處理**：環境感知（開發/生產模式）
-
-## 前端架構設計
-
-### 目錄結構
+#### 日線資料流
 
 ```
-frontend/
-├── pages/           # 頁面組件（路由）
-│   ├── dashboard/   # 儀表板
-│   ├── strategies/  # 策略管理
-│   ├── backtest/    # 回測管理
-│   ├── data/        # 數據瀏覽
-│   ├── industry/    # 產業分析
-│   ├── rdagent/     # AI 因子挖掘
-│   └── admin/       # 後台管理
-├── components/      # 通用組件
-├── stores/          # Pinia 狀態管理
-├── composables/     # 組合式函數
-└── assets/          # 靜態資源
+FinLab API → PostgreSQL (stock_prices) → Qlib 二進制
+                ↓                            ↓
+           永久保存                    快 3-10 倍
+        (2007 至今)                  (智慧增量同步)
 ```
 
-### 策略範本系統
+**同步邏輯**（export_to_qlib_v2.py）：
+- ✅ 只檢查 Qlib 最後日期
+- ✅ 從 PostgreSQL 讀取缺失範圍
+- ✅ 單向同步：PG → Qlib
 
-**三個核心組件**：
-1. `StrategyTemplates.vue` - Backtrader 策略範本（20 個）
-2. `QlibStrategyTemplates.vue` - Qlib ML 策略範本（9 個）
-3. `FactorStrategyTemplates.vue` - RD-Agent AI 因子範本（跨引擎）
+#### 分鐘線資料流
 
-**範本整合模式**：
-- 替換策略：完全覆蓋現有代碼
-- 插入因子：智慧合併到現有策略（推薦）
-- 追加代碼：在末尾追加參考資訊
-
-## 核心功能模組
-
-### 1. 雙引擎量化系統
-
-**Backtrader 引擎**：
-- 定位：輕量級技術指標策略框架
-- 適用：個人交易者、技術分析策略
-- 特點：簡單易用、文檔完整、學習曲線平緩
-
-**Qlib 引擎**：
-- 定位：企業級 ML 量化研究平台
-- 適用：機構投資者、機器學習策略
-- 特點：原生 ML 支援、表達式引擎、高效能
-
-**設計理念**：兩者互補而非競爭，滿足不同需求層次。
-
-### 2. Qlib 數據適配器
-
-**核心機制**：
-- 優先使用本地 Qlib 二進制數據（快 3-10 倍）
-- Fallback 機制自動降級到 FinLab API
-- 智慧同步自動判斷增量/完整/跳過
-- 支援 Qlib 表達式計算技術指標
-
-**數據格式**：
-- 使用 Qlib v2 官方格式 (`FileFeatureStorage` API)
-- 目錄結構：`features/{stock}/{feature}.day.bin`
-- 6 個特徵欄位：open, high, low, close, volume, factor
-
-### 3. RD-Agent AI 因子挖掘
-
-**功能定位**：
-- Microsoft Research 開源的 AI 驅動量化研究助手
-- 使用 LLM 自動生成 Qlib 表達式因子
-- 基於回測結果迭代改進策略
-
-**架構設計**：
-- API 層：接收用戶請求，創建任務
-- Service 層：配置 RD-Agent scenarios
-- Task 層：Celery 異步執行因子挖掘
-- 數據層：`rdagent_tasks`, `generated_factors` 表
-
-**跨引擎整合**：
-- Backtrader：自動轉換為 Backtrader indicators
-- Qlib：直接插入 `QLIB_FIELDS` 陣列
-
-### 4. 產業分析系統
-
-**雙資料來源**：
-1. TWSE 台證所分類（3 層階層：大類/中類/小類）
-   - 資料表：`industries` (41 個產業)
-   - 映射表：`stock_industries` (1,935 筆)
-   - 來源：FinLab `company_basic_info`
-
-2. FinMind 產業鏈（扁平化分類）
-   - 來源：FinMind API `TaiwanStockIndustryChain`
-   - 需付費會員權限
-
-**產業指標計算**：
-- 7 個聚合指標：ROE、ROA、毛利率、營業利益率、EPS、營收成長率、淨利成長率
-- 數據來源：`fundamental_data` 表（使用季度字串如 "2024-Q4"）
-- 快取策略：30 天
-
-### 5. Celery 定時任務系統
-
-**已實作任務**：
-- `sync_stock_list` - 每天 8:00 AM（股票清單，快取 24 小時）
-- `sync_daily_prices` - 每天 9:00 PM（每日價格，快取 10 分鐘）
-- `sync_ohlcv_data` - 每天 10:00 PM（OHLCV 數據，快取 10 分鐘）
-- `sync_latest_prices` - 交易時段每 15 分鐘（即時價格，快取 5 分鐘）
-- `cleanup_old_cache` - 每天 3:00 AM（清理過期快取）
-
-**任務特性**：
-- 自動重試機制（3-5 次）
-- 詳細日誌記錄（使用 loguru）
-- 結構化返回結果
-- 錯誤處理與重試延遲
-
-## 資料庫設計
-
-### 核心資料表
-
-**用戶與認證**：
-- `users` - 用戶資料表
-- `strategies` - 交易策略表（含代碼、參數、引擎類型）
-- `backtests` - 回測記錄表
-- `backtest_results` - 回測結果表（績效指標）
-- `trades` - 交易記錄表
-
-**數據存儲**：
-- `stock_prices` - 股票日線數據（TimescaleDB hypertable）
-- `stock_minute_prices` - 1 分鐘 K 線數據（Shioaji）
-- `fundamental_data` - 基本面資料（季度數據）
-
-**產業分類**：
-- `industries` - 產業分類表（TWSE 3 層階層）
-- `stock_industries` - 股票-產業映射表
-- `industry_metrics_cache` - 產業指標快取表
-
-**AI 研發**：
-- `rdagent_tasks` - RD-Agent 任務記錄
-- `generated_factors` - AI 生成的因子
-
-### TimescaleDB 優化
-
-- `stock_prices` 使用 hypertable（按 `date` 分區）
-- `stock_minute_prices` 使用 hypertable（按 `datetime` 分區）
-- 自動壓縮策略（7 天後壓縮）
-- 索引優化（複合索引、部分索引）
-
-## 安全機制
-
-### 認證與授權
-
-- **JWT Token 管理**：access token (30 分鐘) + refresh token (7 天)
-- **密碼加密**：bcrypt (cost factor 12)
-- **權限控制**：基於角色的訪問控制（RBAC）
-- **API 保護**：所有端點預設需認證
-
-### 策略代碼安全
-
-- **AST 解析驗證**：白名單模組、黑名單危險函數
-- **沙盒執行**：隔離策略代碼執行環境
-- **資源限制**：超時控制、內存限制
-
-### 速率限制與配額
-
-**速率限制**（使用 slowapi）：
-- 策略建立：10 requests/hour
-- 策略更新：30 requests/hour
-- 回測建立：10 requests/hour
-- RD-Agent 因子挖掘：3 requests/hour
-
-**配額系統**：
-- 每用戶最大策略數：50
-- 每用戶最大回測數：200
-- 每策略最大回測數：50
-
-## 效能優化
-
-### 快取策略
-
-**Redis 快取層**：
-- 股票清單：24 小時快取
-- 每日價格：10 分鐘快取
-- 最新價格：5 分鐘快取
-- 使用 pickle 序列化 DataFrame
-
-### Qlib 效能優化
-
-- 本地二進制存儲（讀取速度快 3-10 倍）
-- 智慧同步機制（節省 95%+ 時間）
-- Fallback 確保可靠性
-
-### Celery 效能配置
-
-- `worker_prefetch_multiplier=1`（避免長任務阻塞）
-- 任務時間限制：硬限制 30 分鐘、軟限制 25 分鐘
-- 結果過期時間：1 小時
-
-## 數據來源整合
-
-### FinLab API
-
-- 台股歷史數據（2,671 檔股票）
-- 基本面資料（季度更新）
-- 公司基本資訊
-- API Token 管理
-
-### Shioaji 數據
-
-- 1 分鐘 K 線數據
-- 資料範圍：2018-12-07 ~ 2025-12-10（約 7 年）
-- 資料量：1,692 個 CSV 檔案
-- 資料表：`stock_minute_prices`（60-120M 筆記錄）
-
-### FinMind 數據
-
-- 產業鏈分類
-- 財務指標
-- 需付費會員權限
-
-## 開發規範
-
-### 代碼風格
-
-**Python**：
-- Black (自動格式化)
-- Flake8 (Linting，行寬 88)
-- mypy (類型檢查)
-
-**TypeScript/Vue**：
-- ESLint (Linting)
-- 組件名稱使用 PascalCase
-- 使用 Composition API
-
-### Git 工作流
-
-**分支策略**：
-- `master` - 生產環境
-- `develop` - 開發環境
-- `feature/*` - 功能分支
-- `fix/*` - 修復分支
-
-**Commit Message 規範**：
 ```
-<type>(<scope>): <subject>
-
-type: feat, fix, docs, style, refactor, test, chore
+                    Shioaji API
+                         ↓
+         ┌───────────────┴───────────────┐
+         ↓                               ↓
+    PostgreSQL                         Qlib
+(stock_minute_prices)          (tw_stock_minute/)
+  保留 6 個月                      保留 7 年
+ (TimescaleDB)                   (18 GB 二進制)
 ```
 
-## 環境變數配置
+**同步邏輯**（sync_shioaji_to_qlib.py）：
+- ✅ 檢查 PostgreSQL 和 Qlib 最後日期
+- ✅ 取較早日期作為起點（確保兩邊最終一致）
+- ✅ 雙向同步：API → [PG, Qlib]
 
-### 必填變數
+**定時任務**：每天 15:00 執行（`sync-shioaji-minute-daily`）
 
-- `DATABASE_URL` - PostgreSQL 連接字串
-- `REDIS_URL` - Redis 連接字串
-- `JWT_SECRET` - JWT 簽名密鑰（至少 32 字元）
-- `FINLAB_API_TOKEN` - FinLab API Token
-- `CELERY_BROKER_URL` - Celery 消息代理
-- `CELERY_RESULT_BACKEND` - Celery 結果後端
+### Qlib 數據格式
 
-### 選填變數
+**位置**：
+- 日線：`/data/qlib/tw_stock_v2/`
+- 分鐘線：`/data/qlib/tw_stock_minute/`
 
-- `OPENAI_API_KEY` - RD-Agent 因子挖掘
-- `ANTHROPIC_API_KEY` - Claude API
-- `SHIOAJI_API_KEY` - 永豐證券
-- `FUGLE_API_KEY` - 富果證券
-- `ALLOWED_ORIGINS` - CORS 配置
-
-## 文檔體系
-
-### 主文檔
-- **README.md** - 快速開始與核心操作命令
-- **CLAUDE.md** - 專案概述與架構說明（本文件）
-
-### 快速索引（Document 目錄）
-- **PROJECT_STRUCTURE.md** - 專案結構索引（快速定位關鍵文件與目錄職責）
-- **TROUBLESHOOTING.md** - 故障排查快速索引（常見問題與解決方案）
-- **API_QUICK_REFERENCE.md** - API 快速參考（所有端點總覽與代碼位置）
-
-### 操作指南（Document 目錄）
-- **OPERATIONS_GUIDE.md** - 完整操作手冊（Docker、資料庫、開發工具）
-- **QLIB_SYNC_GUIDE.md** - Qlib 數據同步詳解（智慧同步、效能優化）
-- **CELERY_TASKS_GUIDE.md** - Celery 任務管理指南（定時任務、監控）
-- **DEVELOPMENT_GUIDE.md** - 開發規範與工作流（架構、測試、Git）
-
-### 資料庫文檔（Document 目錄）
-- **DATABASE_SCHEMA_REPORT.md** - 16 個資料表詳細說明
-- **DATABASE_CHANGE_CHECKLIST.md** - 56 項變更檢查清單
-- **DATABASE_ER_DIAGRAM.md** - ER 圖視覺化
-- **DATABASE_MAINTENANCE.md** - 備份與維護指南
-
-## API 文檔
-
-- **Swagger UI**: http://localhost:8000/docs（互動測試）
-- **ReDoc**: http://localhost:8000/redoc（閱讀優先）
-- **OpenAPI JSON**: http://localhost:8000/api/v1/openapi.json
-
-## 資料管理與備份策略
-
-### 資料存儲概覽
-
-**PostgreSQL 資料庫**（7.3 GB）：
-- 用途：所有業務資料的唯一來源（Single Source of Truth）
-- 內容：用戶、策略、回測、股票價格、基本面、法人買賣超
-- TimescaleDB：6500 萬筆 1 分鐘 K 線（5.4 GB，1,701 個 chunks）
-- 備份優先級：⭐⭐⭐⭐⭐ **最高**（必須每日/每週備份）
-
-**Shioaji 原始資料**（50 GB）：
-- 位置：`/home/ubuntu/QuantLab/ShioajiData/`
-- 內容：1,692 個股票的 1 分鐘 K 線 CSV（2018-2025，約 7 年）
-- 壓縮效率：50 GB → 5.4 GB（9.3 倍，已匯入 PostgreSQL）
-- 備份優先級：⭐⭐⭐⭐ 高（建議壓縮保留，避免重新下載）
-
-**Qlib 二進制資料**（499 MB）：
-- 位置：`/data/qlib/tw_stock_v2/`（Docker 容器內）
-- 內容：2,671 個股票的 Qlib 格式資料（6 個特徵 × 股票數）
-- 用途：加速 Qlib 策略回測（比 API 快 3-10 倍）
-- 備份優先級：⭐⭐⭐ 中（可從 PostgreSQL 重新同步，1-5 分鐘）
-
-**Redis 快取**（1.92 MB）：
-- 內容：Celery 任務元數據、產業指標快取、速率限制
-- 用途：效能優化，所有資料臨時性或可重建
-- 備份優先級：❌ 不需要（系統重啟後自動重建）
-
-### 備份命令
-
-**每日/每週備份**（PostgreSQL）：
-```bash
-# 完整備份（含 schema + data）
-docker compose exec -T postgres pg_dump -U quantlab quantlab | \
-  gzip > /home/ubuntu/QuantLab/backups/quantlab_$(date +%Y%m%d).sql.gz
-
-# 預期大小：7.3 GB → 1.5-2.5 GB（壓縮比 3-5 倍）
-# 保留最近 30 天
-find /home/ubuntu/QuantLab/backups -name "quantlab_*.sql.gz" -mtime +30 -delete
+**目錄結構**（Qlib v2 官方格式）：
+```
+features/
+├── 2330/
+│   ├── open.day.bin       # float32 陣列
+│   ├── high.day.bin
+│   ├── low.day.bin
+│   ├── close.day.bin
+│   ├── volume.day.bin
+│   └── factor.day.bin
+└── calendars/
+    └── day.txt            # 交易日曆
 ```
 
-**一次性備份**（Shioaji 原始資料）：
-```bash
-# 壓縮 ShioajiData 目錄
-cd /home/ubuntu/QuantLab
-tar -czf backups/ShioajiData_backup_$(date +%Y%m%d).tar.gz ShioajiData/
-
-# 驗證完整性後可刪除原始目錄
-tar -tzf backups/ShioajiData_backup_*.tar.gz > /dev/null && rm -rf ShioajiData/
-
-# 預期大小：50 GB → 10-15 GB（壓縮比 70-80%）
-```
-
-**可選備份**（Qlib 資料，每月一次）：
-```bash
-# 容器內壓縮
-docker compose exec backend tar -czf /tmp/qlib.tar.gz -C /data/qlib tw_stock_v2
-
-# 複製出來
-docker compose cp backend:/tmp/qlib.tar.gz \
-  /home/ubuntu/QuantLab/backups/qlib_$(date +%Y%m%d).tar.gz
-
-# 清理
-docker compose exec backend rm /tmp/qlib.tar.gz
-
-# 預期大小：499 MB → 50-100 MB（壓縮比 5-10 倍）
-```
-
-### Qlib 資料同步
-
-**智慧增量同步**（推薦，1-5 分鐘）：
-```bash
-# 最簡單：使用包裝腳本
-bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh
-
-# 測試模式：僅同步 10 檔股票
-bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh --test
-
-# 同步指定股票
-bash /home/ubuntu/QuantLab/scripts/sync-qlib-smart.sh --stock 2330
-```
-
-**完整重新導出**（30-60 分鐘，通常不需要）：
-```bash
-docker compose exec backend python /app/scripts/export_to_qlib_v2.py \
-  --output-dir /data/qlib/tw_stock_v2 \
-  --stocks all
-```
-
-**智慧同步原理**：
-- 檢查 Qlib 資料最後日期（例如：2024-12-06）
-- 檢查資料庫最新日期（例如：2024-12-13）
-- 只同步新增日期範圍（2024-12-07 ~ 2024-12-13）
-- 跳過已是最新的股票（節省 95%+ 時間）
-
-### Celery 時區配置
-
-**重要**：`/backend/app/core/celery_app.py` 的時區設定必須正確：
-
+**使用 FileFeatureStorage API**（確保格式正確）：
 ```python
+from qlib.data.storage.file_storage import FileFeatureStorage
+
+storage = FileFeatureStorage(instrument="2330", field="close", freq="day")
+storage.write(data)  # numpy array
+```
+
+### Celery 定時任務（Celery Beat）
+
+**時區配置**（⚠️ 關鍵）：
+```python
+# backend/app/core/celery_app.py
 celery_app.conf.update(
     timezone="Asia/Taipei",
-    enable_utc=False,  # ✅ 必須為 False，讓 crontab 使用本地時區
-    ...
+    enable_utc=False,  # 必須 False，否則時間偏移 8 小時
 )
 ```
 
-**常見問題**：如果 `enable_utc=True`，所有 crontab 時間會被視為 UTC，導致任務執行時間偏移 8 小時。
+**任務清單**（按時間排序）：
+| 時間 | 任務 | 用途 |
+|------|------|------|
+| 03:00 | `cleanup_old_cache` | 清理 Redis 過期快取 |
+| 08:00 | `sync_stock_list` | 更新股票清單（FinLab） |
+| 09:00-13:30 每 15 分 | `sync_latest_prices` | 即時價格（交易時段） |
+| 15:00 | **`sync_shioaji_minute_data`** | **Shioaji 分鐘線（Top 50）** |
+| 21:00 | `sync_daily_prices` | 每日價格（FinLab） |
+| 21:00 | `sync_top_stocks_institutional` | 法人買賣超（Top 100） |
+| 22:00 | `sync_ohlcv_data` | OHLCV 數據 |
+| 23:00 | `sync_fundamental_latest` | 基本面（增量） |
+| 週日 02:00 | `cleanup_old_institutional_data` | 清理舊法人資料 |
+| 週日 04:00 | `sync_fundamental_data` | 基本面（完整） |
 
-**驗證配置**：
-```bash
-docker compose exec backend python3 -c "
-import sys
-sys.path.insert(0, '/app')
-from app.core.celery_app import celery_app
-print(f'Timezone: {celery_app.conf.timezone}')
-print(f'Enable UTC: {celery_app.conf.enable_utc}')
-"
-# 預期輸出：Timezone: Asia/Taipei, Enable UTC: False
-```
-
-### 法人買賣超資料
-
-**資料表**：`institutional_investors`（16,895 筆記錄）
-- 15 個股票（主要為 ETF）
-- 248 個交易日（2024-12-02 ~ 2025-12-12）
-- 5 種法人類型（外資、投信、自營商等）
-
-**前端頁面**：http://localhost:3000/institutional
-- 股票搜尋、日期範圍選擇、法人類型篩選
-- ECharts 趨勢圖表、數據表格、統計摘要
-
-**定時同步**：每天 21:00 自動同步（Top 100 股票，近 7 天）
+**新增定時任務**：
 ```python
-"sync-institutional-investors-daily": {
-    "task": "app.tasks.sync_top_stocks_institutional",
-    "schedule": crontab(hour=21, minute=0),
-    "kwargs": {"limit": 100, "days": 7}
+# backend/app/core/celery_app.py
+celery_app.conf.beat_schedule = {
+    "task-name": {
+        "task": "app.tasks.your_task",
+        "schedule": crontab(hour=15, minute=0),  # 每天 15:00
+        "options": {"expires": 3600},
+    },
 }
 ```
 
-## 重要設計決策
+### TimescaleDB 優化
 
-### 1. 為何選擇 FastAPI？
+**Hypertable**（自動分區）：
+- `stock_prices` - 按 `date` 分區
+- `stock_minute_prices` - 按 `datetime` 分區
 
-- 現代化的 Python Web 框架
-- 原生支援異步操作
-- 自動生成 OpenAPI 文檔
-- Pydantic 數據驗證
-- 高效能（與 Node.js 相當）
+**保留策略**（自動刪除舊資料）：
+```sql
+-- stock_minute_prices: 6 個月後自動刪除
+SELECT add_retention_policy('stock_minute_prices', INTERVAL '6 months');
 
-### 2. 為何使用 TimescaleDB？
+-- 查看策略
+SELECT * FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention';
+```
 
-- PostgreSQL 的時序數據擴展
-- 自動分區管理
-- 壓縮策略節省存儲
-- 保留 PostgreSQL 生態系統
+**壓縮策略**（節省空間）：
+```sql
+-- 7 天後壓縮
+SELECT add_compression_policy('stock_minute_prices', INTERVAL '7 days');
+```
 
-### 3. 為何支援雙引擎？
+### RD-Agent 架構
 
-- Backtrader：降低學習門檻，適合初學者
-- Qlib：提供企業級 ML 能力，滿足進階需求
-- 兩者互補，覆蓋更廣泛的用戶群
+**流程**：
+```
+用戶請求 → API 層 → Service 配置 RD-Agent
+                      ↓
+                Celery 異步執行
+                      ↓
+            生成 Qlib 表達式因子
+                      ↓
+         存入 generated_factors 表
+                      ↓
+         前端獲取結果並插入策略
+```
 
-### 4. 為何使用 Celery？
+**跨引擎整合**：
+- **Backtrader**：自動轉換為 `bt.indicators`
+- **Qlib**：直接插入 `QLIB_FIELDS` 陣列
 
-- 成熟的分散式任務系統
-- 支援定時任務調度
-- 可靠的重試機制
-- 與 Python 生態系統整合良好
+**表結構**：
+- `rdagent_tasks` - 任務記錄
+- `generated_factors` - AI 生成的因子
 
-### 5. 為何採用四層架構？
+---
 
-- 關注點分離，提高可維護性
-- 業務邏輯與數據訪問解耦
-- 便於單元測試
-- 支援未來擴展（如微服務化）
+## 🔑 關鍵設計決策
 
-## 已知限制與未來規劃
+### 為何使用四層架構？
 
-### 目前限制
+**問題**：早期代碼將業務邏輯寫在 API 路由中，難以測試和重用
 
-- 僅支援台股市場
-- 回測引擎尚未完整實作
-- 缺少實盤交易功能
-- AI 因子挖掘需 OpenAI API（付費）
+**解決**：
+- API 層只處理 HTTP，不含邏輯
+- Service 層可被 API 和 Celery Task 共用
+- Repository 層統一資料訪問，便於切換資料庫
 
-### 未來規劃
+**影響**：
+- 新增功能時必須依序實作 Repository → Service → API
+- 禁止 API 直接調用 Repository（會觸發 code review 警告）
 
-- 支援美股、港股市場
-- 完善回測引擎（滑價、交易成本模擬）
-- 整合更多券商 API
-- 策略社群分享平台
-- 雲端部署方案
+### 為何需要雙引擎？
 
-## 授權與貢獻
+**Backtrader**：
+- 目標：技術指標策略（MA、RSI、MACD）
+- 優勢：簡單易學、文檔完整
+- 用戶：個人交易者
 
-- **授權**：MIT License
-- **貢獻**：歡迎提交 Issue 和 Pull Request
-- **免責聲明**：本軟體僅供教育與研究用途，不構成投資建議
+**Qlib**：
+- 目標：機器學習策略（GBDT、MLP、Transformer）
+- 優勢：原生 ML 支援、表達式引擎
+- 用戶：機構投資者
+
+**互補而非競爭**：滿足不同需求層次
+
+### 為何 Qlib 數據同步邏輯不同？
+
+**日線**（export_to_qlib_v2.py）：
+- PostgreSQL 永遠是最新（FinLab API 每日更新）
+- Qlib 只是「匯出快照」
+- 單向同步：PG → Qlib
+
+**分鐘線**（sync_shioaji_to_qlib.py）：
+- Shioaji API 是唯一來源
+- PostgreSQL 和 Qlib 都是「同步目標」
+- 需確保兩邊最終一致
+- 雙向同步：API → [PG, Qlib]
+
+---
+
+## 📋 資料庫變更檢查清單
+
+**修改 models/ 後必須執行**：
+
+1. ✅ 創建遷移：`alembic revision --autogenerate -m "描述"`
+2. ✅ 檢查生成的遷移檔案（`alembic/versions/`）
+3. ✅ 測試遷移：`alembic upgrade head`
+4. ✅ 測試回滾：`alembic downgrade -1`
+5. ✅ 更新 `Document/DATABASE_SCHEMA_REPORT.md`
+
+**完整檢查清單**：[Document/DATABASE_CHANGE_CHECKLIST.md](Document/DATABASE_CHANGE_CHECKLIST.md)（56 項）
+
+---
+
+## 🐛 常見開發陷阱
+
+### 1. Celery 時區錯誤
+
+**症狀**：定時任務執行時間偏移 8 小時
+
+**原因**：`enable_utc=True` 會將 crontab 視為 UTC
+
+**解決**：
+```python
+# backend/app/core/celery_app.py
+celery_app.conf.update(
+    timezone="Asia/Taipei",
+    enable_utc=False,  # ✅ 必須 False
+)
+```
+
+### 2. 前端快取未更新
+
+**症狀**：修改代碼後前端無變化
+
+**解決**：
+```bash
+bash scripts/quick-clean.sh
+docker compose restart frontend
+```
+
+### 3. Qlib 同步速度慢
+
+**錯誤做法**：使用完整重新導出（30-60 分鐘）
+
+**正確做法**：使用智慧增量同步（1-5 分鐘）
+```bash
+bash scripts/sync-qlib-smart.sh
+```
+
+### 4. 速率限制阻擋開發
+
+**症狀**：API 返回 429 Too Many Requests
+
+**解決**：
+```bash
+bash scripts/reset-rate-limit.sh
+```
+
+### 5. TimescaleDB 資料被自動刪除
+
+**症狀**：`stock_minute_prices` 只有 6 個月資料
+
+**原因**：設定了保留策略（預設行為）
+
+**檢查**：
+```sql
+SELECT * FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention';
+```
+
+---
+
+## 📚 文檔導航
+
+**快速開始**：[README.md](README.md)
+
+**詳細操作**：
+- [OPERATIONS_GUIDE.md](Document/OPERATIONS_GUIDE.md) - 完整操作手冊
+- [QLIB_SYNC_GUIDE.md](Document/QLIB_SYNC_GUIDE.md) - Qlib 同步詳解
+- [CELERY_TASKS_GUIDE.md](Document/CELERY_TASKS_GUIDE.md) - Celery 任務管理
+
+**資料庫**：
+- [DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) - 16 個資料表
+- [DATABASE_CHANGE_CHECKLIST.md](Document/DATABASE_CHANGE_CHECKLIST.md) - 變更檢查清單
+
+**技術專題**：
+- [docs/QLIB.md](docs/QLIB.md) - Qlib 引擎完整指南
+- [docs/RDAGENT.md](docs/RDAGENT.md) - RD-Agent 完整指南
+- [docs/SECURITY.md](docs/SECURITY.md) - 安全機制
+
+**API 文檔**：
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+
+---
+
+## 🔧 環境變數
+
+**必填**：
+```bash
+DATABASE_URL=postgresql://quantlab:quantlab2025@postgres:5432/quantlab
+REDIS_URL=redis://redis:6379/0
+JWT_SECRET=<至少 32 字元的隨機字串>
+FINLAB_API_TOKEN=<從 https://ai.finlab.tw/ 取得>
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/1
+```
+
+**選填**（AI 功能）：
+```bash
+OPENAI_API_KEY=<RD-Agent 因子挖掘>
+ANTHROPIC_API_KEY=<Claude API>
+SHIOAJI_API_KEY=<永豐證券>
+```
+
+---
+
+**文檔版本**：2025-12-14
+**維護者**：開發團隊

@@ -43,14 +43,32 @@
       </nav>
 
       <div class="user-section">
-        <div class="user-info">
-          <span class="user-name">{{ userLoading ? '載入中...' : (fullName || username || '用戶') }}</span>
-          <span v-if="isSuperuser" class="admin-badge">管理者</span>
+        <div class="user-dropdown" @click="toggleDropdown" v-click-outside="closeDropdown">
+          <div class="user-info">
+            <span class="icon">👤</span>
+            <span class="user-name">{{ userLoading ? '載入中...' : (fullName || username || '用戶') }}</span>
+            <span v-if="isSuperuser" class="admin-badge">管理者</span>
+            <span class="dropdown-arrow" :class="{ active: isDropdownOpen }">▼</span>
+          </div>
+
+          <transition name="dropdown">
+            <div v-if="isDropdownOpen" class="dropdown-menu">
+              <NuxtLink to="/account/profile" class="dropdown-item" @click="closeDropdown">
+                <span class="icon">✏️</span>
+                用戶編輯
+              </NuxtLink>
+              <NuxtLink to="/account/telegram" class="dropdown-item" @click="closeDropdown">
+                <span class="icon">📱</span>
+                通知設置
+              </NuxtLink>
+              <div class="dropdown-divider"></div>
+              <button @click="handleLogout" class="dropdown-item logout-item">
+                <span class="icon">🚪</span>
+                登出
+              </button>
+            </div>
+          </transition>
         </div>
-        <button @click="handleLogout" class="btn-logout">
-          <span class="icon">🚪</span>
-          登出
-        </button>
       </div>
     </div>
   </header>
@@ -60,9 +78,35 @@
 const { logout } = useAuth()
 const { username, fullName, isSuperuser, memberLevel, loading: userLoading } = useUserInfo()
 
+const isDropdownOpen = ref(false)
+
+const toggleDropdown = () => {
+  isDropdownOpen.value = !isDropdownOpen.value
+}
+
+const closeDropdown = () => {
+  isDropdownOpen.value = false
+}
+
 const handleLogout = () => {
   console.log('Logging out...')
+  closeDropdown()
   logout()
+}
+
+// 點擊外部關閉下拉選單的指令
+const vClickOutside = {
+  mounted(el: any, binding: any) {
+    el.clickOutsideEvent = (event: Event) => {
+      if (!(el === event.target || el.contains(event.target))) {
+        binding.value()
+      }
+    }
+    document.addEventListener('click', el.clickOutsideEvent)
+  },
+  unmounted(el: any) {
+    document.removeEventListener('click', el.clickOutsideEvent)
+  }
 }
 </script>
 
@@ -170,16 +214,33 @@ const handleLogout = () => {
 .user-section {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  position: relative;
+}
+
+.user-dropdown {
+  position: relative;
+  cursor: pointer;
 }
 
 .user-info {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
   color: white;
-  min-width: 0;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .icon {
+    font-size: 1.1rem;
+  }
 }
 
 .user-name {
@@ -203,28 +264,82 @@ const handleLogout = () => {
   flex-shrink: 0;
 }
 
-.btn-logout {
+.dropdown-arrow {
+  font-size: 0.7rem;
+  transition: transform 0.2s;
+
+  &.active {
+    transform: rotate(180deg);
+  }
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  min-width: 200px;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.dropdown-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 0.5rem;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #333;
+  text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  text-align: left;
 
   .icon {
     font-size: 1.1rem;
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(255, 255, 255, 0.5);
+    background: #f5f5f5;
   }
+
+  &.logout-item {
+    color: #e74c3c;
+
+    &:hover {
+      background: #fff5f5;
+    }
+  }
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 0.25rem 0;
+}
+
+// 下拉選單動畫
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.2s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.dropdown-enter-to,
+.dropdown-leave-from {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 @media (max-width: 1200px) {
@@ -260,13 +375,16 @@ const handleLogout = () => {
     }
   }
 
-  .user-name {
-    display: none;
+  .user-info {
+    padding: 0.4rem 0.8rem;
+
+    .user-name {
+      display: none;
+    }
   }
 
-  .btn-logout {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
+  .dropdown-menu {
+    min-width: 180px;
   }
 }
 </style>

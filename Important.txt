@@ -1,3 +1,17 @@
+✅ 網絡連接診斷與修復
+# 如果無法從外部訪問 http://122.116.152.55
+# 症狀：ERR_CONNECTION_TIMED_OUT
+
+# 1. 診斷問題
+./scripts/diagnose-connection.sh
+
+# 2. 開放所有必要端口（需要 sudo 權限）
+./scripts/open-all-ports.sh
+
+# 測試帳號：
+# 用戶名：vip_user
+# 密碼：test123
+
 ✅ 開發階段清除所有的緩存：
 ./scripts/quick-clean.sh
 ./scripts/reset-rate-limit.sh
@@ -179,3 +193,6 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   docker compose cp /tmp/qlib_backup/tw_stock_v2 backend:/data/qlib/
   # 驗證
   docker compose exec backend ls -lh /data/qlib/tw_stock_v2/
+
+✅ 运行所有质量检查（快速模式）
+  docker compose exec backend python /app/scripts/run_all_tests.py --quick

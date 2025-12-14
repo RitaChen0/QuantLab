@@ -6,7 +6,7 @@ Handles user CRUD operations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.schemas.user import User, UserUpdate
+from app.schemas.user import User, UserUpdate, PasswordUpdate
 from app.services.user_service import UserService
 from app.api.dependencies import get_current_user, get_current_superuser
 from app.models.user import User as UserModel
@@ -46,6 +46,31 @@ async def update_current_user(
     """
     service = UserService(db)
     updated_user = service.update_user(current_user.id, user_update)
+    return updated_user
+
+
+@router.put("/me/password", response_model=User)
+async def update_current_user_password(
+    password_update: PasswordUpdate,
+    current_user: UserModel = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    更新當前使用者密碼
+
+    Args:
+        password_update: 密碼更新資料
+        current_user: 當前認證的使用者
+        db: 資料庫會話
+
+    Returns:
+        更新後的使用者資訊
+
+    Raises:
+        400: 目前密碼不正確
+    """
+    service = UserService(db)
+    updated_user = service.update_password(current_user, password_update)
     return updated_user
 
 

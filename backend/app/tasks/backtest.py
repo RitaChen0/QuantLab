@@ -12,6 +12,7 @@ from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 from fastapi import HTTPException
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.services.backtest_engine import BacktestEngine
 from app.services.qlib_backtest_engine import QlibBacktestEngine
@@ -20,9 +21,11 @@ from app.models.backtest import BacktestStatus
 from app.utils.logging import api_log
 from app.utils.redis_lock import backtest_execution_lock
 from app.utils.error_handler import get_safe_error_message
+from app.utils.chart_generator import backtest_chart_generator
 from loguru import logger
 from datetime import datetime
 from typing import Dict, Any
+# from app.tasks.telegram_notifications import send_telegram_notification  # 暫時註解，等待 python-telegram-bot 安裝完成
 
 
 @celery_app.task(
@@ -224,6 +227,63 @@ def run_backtest_async(
                     )
 
                     logger.info(f"Backtest {backtest_id} completed successfully")
+
+                    # 8. 發送 Telegram 通知（異步，不阻塞）
+                    try:
+                        # 構建通知消息
+                        metrics = results['metrics']
+                        total_return = metrics.get('total_return', 0)
+                        total_trades = metrics.get('total_trades', 0)
+                        win_rate = metrics.get('win_rate', 0)
+                        sharpe_ratio = metrics.get('sharpe_ratio', 0)
+                        max_drawdown = metrics.get('max_drawdown', 0)
+
+                        notification_title = f"✅ 回測完成：{backtest.name}"
+                        notification_message = f"""
+<b>回測結果摘要</b>
+
+📊 <b>績效指標</b>
+• 總收益率：<b>{total_return:.2%}</b>
+• 交易次數：{total_trades} 次
+• 勝率：{win_rate:.2%}
+• Sharpe 比率：{sharpe_ratio:.2f}
+• 最大回撤：{max_drawdown:.2%}
+
+⏰ 回測時間：{backtest.start_date.strftime('%Y-%m-%d')} ~ {backtest.end_date.strftime('%Y-%m-%d')}
+💰 初始資金：${backtest.initial_capital:,.0f}
+
+<a href="{settings.FRONTEND_URL}/backtest/{backtest_id}">📈 查看完整報告</a>
+"""
+
+                        # 生成權益曲線圖（如果有交易記錄）
+                        chart_path = None
+                        if results.get('trades') and len(results['trades']) > 0:
+                            try:
+                                chart_path = backtest_chart_generator.generate_equity_curve_from_trades(
+                                    trades_data=results['trades'],
+                                    initial_capital=float(backtest.initial_capital),
+                                    backtest_id=backtest_id
+                                )
+                                logger.info(f"權益曲線圖已生成: {chart_path}")
+                            except Exception as chart_error:
+                                logger.warning(f"生成權益曲線圖失敗: {str(chart_error)}")
+
+                        # 異步發送通知 (暫時註解，等待 python-telegram-bot 安裝完成)
+                        # send_telegram_notification.delay(
+                        #     user_id=user_id,
+                        #     notification_type="backtest_completed",
+                        #     title=notification_title,
+                        #     message=notification_message,
+                        #     image_path=chart_path,
+                        #     related_object_type="backtest",
+                        #     related_object_id=backtest_id
+                        # )
+
+                        # logger.info(f"Telegram notification queued for backtest {backtest_id}")
+
+                    except Exception as e:
+                        # 通知失敗不影響回測結果
+                        logger.warning(f"Failed to queue Telegram notification: {str(e)}")
 
                     return {
                         "status": "success",

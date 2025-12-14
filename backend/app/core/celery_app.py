@@ -119,6 +119,14 @@ celery_app.conf.beat_schedule = {
         "kwargs": {"days_to_keep": 365},
         "options": {"expires": 3600},  # Expire after 1 hour
     },
+
+    # Sync Shioaji minute data (top 50 stocks) once per day at 15:00 (3 PM)
+    # Runs after market close (13:30) to sync latest minute bars
+    "sync-shioaji-minute-daily": {
+        "task": "app.tasks.sync_shioaji_top_stocks",
+        "schedule": crontab(hour=15, minute=0, day_of_week='mon,tue,wed,thu,fri'),
+        "options": {"expires": 7200},  # Expire after 2 hours
+    },
 }
 
 if __name__ == "__main__":

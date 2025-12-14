@@ -28,6 +28,10 @@ from app.tasks.institutional_investor_sync import (
     sync_top_stocks_institutional,
     cleanup_old_institutional_data,
 )
+from app.tasks.shioaji_sync import (
+    sync_shioaji_minute_data,
+    sync_shioaji_top_stocks,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -48,4 +52,6 @@ __all__ = [
     "sync_single_stock_institutional",
     "sync_top_stocks_institutional",
     "cleanup_old_institutional_data",
+    "sync_shioaji_minute_data",
+    "sync_shioaji_top_stocks",
 ]

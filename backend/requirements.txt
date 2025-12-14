@@ -61,8 +61,11 @@ xgboost==2.0.3
 openai>=2.9.0  # Upgraded to 2.9.0 for RD-Agent compatibility (requires openai.types.beta.threads support)
 anthropic==0.8.1
 
+# Telegram Integration
+python-telegram-bot==20.7  # Telegram Bot API for notifications
+
 # HTTP Client
-httpx==0.26.0
+httpx==0.25.2  # Downgraded for python-telegram-bot compatibility
 aiohttp>=3.13.2  # Upgraded to 3.13.2 for litellm compatibility
 
 # Utilities
@@ -79,7 +82,7 @@ celery-prometheus-exporter==1.7.0  # Celery metrics for Prometheus
 pytest==7.4.4
 pytest-asyncio==0.23.3
 pytest-cov==4.1.0
-httpx==0.26.0
+httpx==0.25.2  # Must match main httpx version
 
 # Development
 black==23.12.1

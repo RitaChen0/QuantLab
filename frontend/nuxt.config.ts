@@ -30,6 +30,12 @@ export default defineNuxtConfig({
   },
 
   vite: {
+    server: {
+      allowedHosts: [
+        'localhost',
+        '122.116.152.55',
+      ]
+    },
     optimizeDeps: {
       include: ['monaco-editor']
     },

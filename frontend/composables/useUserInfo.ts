@@ -11,8 +11,11 @@ const CACHE_EXPIRY_MS = 5 * 60 * 1000 // 5 分鐘快取
 interface CachedUserInfo {
   username: string
   fullName: string
+  email: string
   isSuperuser: boolean
   memberLevel: number
+  createdAt: string | null
+  lastLoginAt: string | null
   timestamp: number
 }
 
@@ -22,8 +25,11 @@ export const useUserInfo = () => {
   // 用戶資訊狀態
   const username = ref('')
   const fullName = ref('')
+  const email = ref('')
   const isSuperuser = ref(false)
   const memberLevel = ref(0)
+  const createdAt = ref<string | null>(null)
+  const lastLoginAt = ref<string | null>(null)
   const loading = ref(false)
   const error = ref('')
   const initialized = ref(false) // 追蹤是否已初始化
@@ -62,8 +68,11 @@ export const useUserInfo = () => {
     if (cached) {
       username.value = cached.username
       fullName.value = cached.fullName
+      email.value = cached.email
       isSuperuser.value = cached.isSuperuser || false
       memberLevel.value = cached.memberLevel || 0
+      createdAt.value = cached.createdAt || null
+      lastLoginAt.value = cached.lastLoginAt || null
       initialized.value = true
     }
   }
@@ -78,8 +87,11 @@ export const useUserInfo = () => {
     // 使用快取數據
     username.value = cached.username
     fullName.value = cached.fullName
+    email.value = cached.email
     isSuperuser.value = cached.isSuperuser || false
     memberLevel.value = cached.memberLevel || 0
+    createdAt.value = cached.createdAt || null
+    lastLoginAt.value = cached.lastLoginAt || null
     initialized.value = true
     return true
   }
@@ -87,15 +99,26 @@ export const useUserInfo = () => {
   /**
    * 儲存用戶資訊到 localStorage 快取
    */
-  const saveToCache = (usernameVal: string, fullNameVal: string, isSuperuserVal: boolean, memberLevelVal: number) => {
+  const saveToCache = (
+    usernameVal: string,
+    fullNameVal: string,
+    emailVal: string,
+    isSuperuserVal: boolean,
+    memberLevelVal: number,
+    createdAtVal: string | null,
+    lastLoginAtVal: string | null
+  ) => {
     if (!process.client) return
 
     try {
       const data: CachedUserInfo = {
         username: usernameVal,
         fullName: fullNameVal,
+        email: emailVal,
         isSuperuser: isSuperuserVal,
         memberLevel: memberLevelVal,
+        createdAt: createdAtVal,
+        lastLoginAt: lastLoginAtVal,
         timestamp: Date.now()
       }
       localStorage.setItem(CACHE_KEY, JSON.stringify(data))
@@ -127,12 +150,23 @@ export const useUserInfo = () => {
       if (result.success && result.data) {
         username.value = result.data.username
         fullName.value = result.data.full_name
+        email.value = result.data.email
         isSuperuser.value = result.data.is_superuser || false
         memberLevel.value = result.data.member_level || 0
+        createdAt.value = result.data.created_at || null
+        lastLoginAt.value = result.data.last_login || null
         initialized.value = true
 
         // 儲存到快取
-        saveToCache(result.data.username, result.data.full_name, result.data.is_superuser || false, result.data.member_level || 0)
+        saveToCache(
+          result.data.username,
+          result.data.full_name,
+          result.data.email,
+          result.data.is_superuser || false,
+          result.data.member_level || 0,
+          result.data.created_at || null,
+          result.data.last_login || null
+        )
 
         return true
       } else {
@@ -158,8 +192,11 @@ export const useUserInfo = () => {
   const clearUserInfo = () => {
     username.value = ''
     fullName.value = ''
+    email.value = ''
     isSuperuser.value = false
     memberLevel.value = 0
+    createdAt.value = null
+    lastLoginAt.value = null
     error.value = ''
 
     // 清除快取
@@ -172,8 +209,11 @@ export const useUserInfo = () => {
     // 狀態
     username,
     fullName,
+    email,
     isSuperuser,
     memberLevel,
+    createdAt,
+    lastLoginAt,
     loading,
     error,
     initialized,
