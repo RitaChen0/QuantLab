@@ -39,6 +39,10 @@ celery_app.conf.update(
         'app.tasks.sync_shioaji_top_stocks': {
             'time_limit': 14400,      # 4 小時硬限制（同步所有股票）
             'soft_time_limit': 14100,  # 3 小時 55 分鐘軟限制
+        },
+        'app.tasks.sync_shioaji_futures': {
+            'time_limit': 1800,      # 30 分鐘硬限制（同步期货）
+            'soft_time_limit': 1740,  # 29 分鐘軟限制
         }
     },
 
@@ -131,6 +135,34 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.sync_shioaji_top_stocks",
         "schedule": crontab(hour=15, minute=0, day_of_week='mon,tue,wed,thu,fri'),
         "options": {"expires": 18000},  # Expire after 5 hours (task may take up to 4 hours)
+    },
+
+    # Sync Shioaji futures data (TX + MTX) once per day at 15:30 (3:30 PM)
+    # Runs after market close to sync futures minute bars
+    # Execution time: ~5-10 minutes (only 2 futures contracts)
+    "sync-shioaji-futures-daily": {
+        "task": "app.tasks.sync_shioaji_futures",
+        "schedule": crontab(hour=15, minute=30, day_of_week='mon,tue,wed,thu,fri'),
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
+
+    # Generate continuous futures contracts (TX + MTX) once per week on Saturday at 18:00
+    # Updates continuous contracts (TXCONT, MTXCONT) from monthly contract data
+    # Execution time: ~1-2 minutes
+    "generate-continuous-contracts-weekly": {
+        "task": "app.tasks.generate_continuous_contracts",
+        "schedule": crontab(hour=18, minute=0, day_of_week='saturday'),
+        "kwargs": {"symbols": ["TX", "MTX"], "days_back": 90},
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
+
+    # Register new futures contracts once per year on January 1st at 00:05
+    # Automatically registers monthly contracts for the new year
+    # Execution time: ~30 seconds
+    "register-new-futures-contracts-yearly": {
+        "task": "app.tasks.register_new_futures_contracts",
+        "schedule": crontab(hour=0, minute=5, day_of_month='1', month_of_year='1'),
+        "options": {"expires": 3600},  # Expire after 1 hour
     },
 }
 

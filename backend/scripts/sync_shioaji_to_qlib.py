@@ -269,22 +269,32 @@ class ShioajiToQlibSyncer:
         start_date = last_date
         return (start_date, user_end_date, 'incremental')
 
+    def _is_futures(self, stock_id: str) -> bool:
+        """判斷是否為期貨"""
+        return stock_id in ['TX', 'MTX']
+
+    def _get_contract_type(self, stock_id: str) -> str:
+        """獲取契約類型"""
+        return 'futures' if self._is_futures(stock_id) else 'stock'
+
     def fetch_minute_data(
         self,
         stock_id: str,
         start_date: date,
         end_date: date
-    ) -> Optional[pd.DataFrame]:
+    ) -> Optional[Tuple[pd.DataFrame, str]]:
         """
-        從 Shioaji API 獲取分鐘 K 線數據
+        從 Shioaji API 獲取分鐘 K 線數據（支持股票和期貨）
 
         Args:
-            stock_id: 股票代碼
+            stock_id: 標的代碼（股票或期貨）
             start_date: 開始日期
             end_date: 結束日期
 
         Returns:
-            DataFrame: columns=[datetime, open, high, low, close, volume]
+            (DataFrame, actual_stock_id): 數據和實際標的代碼
+            - 股票: ("2330", "2330")
+            - 期貨: ("TX", "TX202512")  ← 返回實際月份合約代碼
         """
         if not self.shioaji_client:
             self.shioaji_client = ShioajiClient()
@@ -293,17 +303,41 @@ class ShioajiToQlibSyncer:
             logger.error("❌ Shioaji 客戶端未初始化")
             return None
 
+        # 判斷契約類型
+        contract_type = self._get_contract_type(stock_id)
+        is_futures = self._is_futures(stock_id)
+
+        # 對於期貨，獲取實際月份合約代碼
+        actual_stock_id = stock_id
+        if is_futures:
+            contract_id = self.shioaji_client.get_futures_contract_id(stock_id)
+            if contract_id:
+                actual_stock_id = contract_id
+                logger.info(f"  [CONTRACT] {stock_id} → {actual_stock_id}")
+            else:
+                logger.error(f"  [CONTRACT] Failed to get contract ID for {stock_id}")
+                return None
+
         try:
-            # 設定時間範圍（包含完整交易時段）
-            start_datetime = datetime.combine(start_date, datetime.min.time().replace(hour=9, minute=0))
-            end_datetime = datetime.combine(end_date, datetime.min.time().replace(hour=13, minute=30))
+            # 設定時間範圍
+            # 期貨：08:45-次日05:00（完整日盤 + 夜盤）
+            # 股票：09:00-13:30（僅日盤）
+            if is_futures:
+                start_datetime = datetime.combine(start_date, datetime.min.time().replace(hour=8, minute=45))
+                # 期货夜盘延续到次日 05:00，因此 end_datetime 需要 +1 天
+                end_datetime = datetime.combine(end_date + timedelta(days=1), datetime.min.time().replace(hour=5, minute=0))
+                logger.debug(f"  期貨 {stock_id}: 時間範圍 {start_datetime} ~ {end_datetime}（含完整夜盤）")
+            else:
+                start_datetime = datetime.combine(start_date, datetime.min.time().replace(hour=9, minute=0))
+                end_datetime = datetime.combine(end_date, datetime.min.time().replace(hour=13, minute=30))
 
             # 調用 Shioaji API
             df = self.shioaji_client.get_kbars(
                 stock_id=stock_id,
                 start_datetime=start_datetime,
                 end_datetime=end_datetime,
-                timeframe='1min'
+                timeframe='1min',
+                contract_type=contract_type  # ⭐ 傳遞契約類型
             )
 
             if df is None or df.empty:
@@ -311,7 +345,8 @@ class ShioajiToQlibSyncer:
                 return None
 
             logger.debug(f"  ✓ {stock_id}: 獲取 {len(df)} 筆分鐘數據")
-            return df
+            # 🆕 返回 DataFrame 和實際合約 ID
+            return df, actual_stock_id
 
         except Exception as e:
             logger.error(f"  ❌ {stock_id}: 獲取數據失敗 - {e}")
@@ -455,37 +490,91 @@ class ShioajiToQlibSyncer:
             logger.error(f"  ❌ Qlib: 保存失敗 - {e}")
             return False
 
-    def generate_trading_minutes(self, start_date: date, end_date: date) -> pd.DatetimeIndex:
+    def generate_trading_minutes(
+        self,
+        start_date: date,
+        end_date: date,
+        is_futures: bool = False
+    ) -> pd.DatetimeIndex:
         """
-        生成交易分鐘索引（9:00-13:30，每分鐘）
+        生成交易分鐘索引（支持股票和期货）
 
         Args:
             start_date: 開始日期
             end_date: 結束日期
+            is_futures: 是否為期貨（True=期貨，False=股票）
 
         Returns:
             交易分鐘索引
+
+        交易時間：
+        - 股票：09:00-13:30
+        - 期貨：完整交易時段（日盤 + 夜盤）
+          - 夜盤後段：00:00-05:00
+          - 日盤：08:45-13:45
+          - 夜盤前段：15:00-23:59
         """
         minutes = []
         current_date = start_date
 
-        while current_date <= end_date:
-            # 生成當天的交易時段分鐘
-            # 上午盤：09:00-12:00
-            for hour in range(9, 12):
-                for minute in range(60):
-                    dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+        if is_futures:
+            # 期貨：完整交易時段（日盤 + 夜盤）
+            while current_date <= end_date:
+                # 1. 夜盤後段：00:00-05:00（屬於前一交易日的夜盤）
+                for hour in range(0, 5):
+                    for minute in range(60):
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
+
+                # 05:00 記錄最後一分鐘
+                dt = datetime.combine(current_date, datetime.min.time().replace(hour=5, minute=0))
+                minutes.append(dt)
+
+                # 2. 日盤：08:45-13:45
+                # 08:45-08:59 (15 分钟)
+                for minute in range(45, 60):
+                    dt = datetime.combine(current_date, datetime.min.time().replace(hour=8, minute=minute))
                     minutes.append(dt)
 
-            # 下午盤：12:00-13:30
-            for hour in range(12, 14):
-                for minute in range(60):
-                    if hour == 13 and minute > 30:
-                        break
-                    dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
-                    minutes.append(dt)
+                # 09:00-12:00
+                for hour in range(9, 12):
+                    for minute in range(60):
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
 
-            current_date += timedelta(days=1)
+                # 12:00-13:45
+                for hour in range(12, 14):
+                    for minute in range(60):
+                        if hour == 13 and minute > 45:
+                            break
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
+
+                # 3. 夜盤前段：15:00-23:59（屬於當日交易）
+                for hour in range(15, 24):
+                    for minute in range(60):
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
+
+                current_date += timedelta(days=1)
+        else:
+            # 股票：09:00-13:30
+            while current_date <= end_date:
+                # 上午盤：09:00-12:00
+                for hour in range(9, 12):
+                    for minute in range(60):
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
+
+                # 下午盤：12:00-13:30
+                for hour in range(12, 14):
+                    for minute in range(60):
+                        if hour == 13 and minute > 30:
+                            break
+                        dt = datetime.combine(current_date, datetime.min.time().replace(hour=hour, minute=minute))
+                        minutes.append(dt)
+
+                current_date += timedelta(days=1)
 
         return pd.DatetimeIndex(minutes)
 
@@ -497,10 +586,10 @@ class ShioajiToQlibSyncer:
         trading_minutes: pd.DatetimeIndex
     ) -> Tuple[int, int]:
         """
-        同步單一股票的數據
+        同步單一標的的數據（支持股票和期货）
 
         Args:
-            stock_id: 股票代碼
+            stock_id: 標的代碼（股票或期货）
             start_date: 開始日期
             end_date: 結束日期
             trading_minutes: 交易分鐘索引
@@ -509,16 +598,22 @@ class ShioajiToQlibSyncer:
             (PostgreSQL 插入數, Qlib 是否成功)
         """
         # 1. 從 Shioaji 獲取數據
-        df = self.fetch_minute_data(stock_id, start_date, end_date)
+        result = self.fetch_minute_data(stock_id, start_date, end_date)
 
-        if df is None or df.empty:
+        if result is None:
             return (0, 0)
 
-        # 2. 保存到 PostgreSQL
-        db_count = self.save_to_postgresql(stock_id, df) if not self.skip_db else 0
+        # 🆕 解包返回值：DataFrame 和實際標的代碼
+        df, actual_stock_id = result
 
-        # 3. 保存到 Qlib
-        qlib_success = self.save_to_qlib(stock_id, df, trading_minutes)
+        if df.empty:
+            return (0, 0)
+
+        # 2. 保存到 PostgreSQL（使用實際合約代碼）
+        db_count = self.save_to_postgresql(actual_stock_id, df) if not self.skip_db else 0
+
+        # 3. 保存到 Qlib（使用實際合約代碼）
+        qlib_success = self.save_to_qlib(actual_stock_id, df, trading_minutes)
 
         return (db_count, 1 if qlib_success else 0)
 
@@ -530,18 +625,18 @@ class ShioajiToQlibSyncer:
         smart_mode: bool = False
     ):
         """
-        同步所有股票的數據（支援智慧模式）
+        同步所有標的的數據（支持股票和期货，支援智慧模式）
 
         Args:
-            stock_ids: 股票代碼列表
+            stock_ids: 標的代碼列表（股票或期货）
             user_start_date: 用戶指定的開始日期（智慧模式下可為 None）
             user_end_date: 用戶指定的結束日期
             smart_mode: 是否使用智慧增量同步
         """
         logger.info(f"\n{'='*60}")
-        logger.info(f"開始同步: {len(stock_ids)} 檔股票")
+        logger.info(f"開始同步: {len(stock_ids)} 檔標的（股票/期货）")
         if smart_mode:
-            logger.info(f"🧠 智慧模式: 自動檢測每檔股票的最後日期")
+            logger.info(f"🧠 智慧模式: 自動檢測每檔標的的最後日期")
             logger.info(f"   目標日期: {user_end_date}")
         else:
             logger.info(f"日期範圍: {user_start_date} ~ {user_end_date}")
@@ -584,8 +679,9 @@ class ShioajiToQlibSyncer:
                     sync_start = user_start_date
                     sync_end = user_end_date
 
-                # 生成交易分鐘索引
-                trading_minutes = self.generate_trading_minutes(sync_start, sync_end)
+                # 生成交易分鐘索引（根據標的類型）
+                is_futures = self._is_futures(stock_id)
+                trading_minutes = self.generate_trading_minutes(sync_start, sync_end, is_futures=is_futures)
 
                 # 執行同步
                 db_count, qlib_count = self.sync_stock(

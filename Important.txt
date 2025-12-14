@@ -205,4 +205,11 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   # 停止服務
   docker compose stop telegram-bot
 
+✅ 這個都已經自動化了
+  # 1. 註冊月份合約（僅需一次）
+  docker compose exec backend python /app/scripts/register_futures_contracts.py
+  # 2. 同步數據
+  docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --stocks TX --smart
+  # 3. 生成連續合約
+  docker compose exec backend python /app/scripts/generate_continuous_contract.py --symbol TX --start-date 2025-12-01 --end-date 2025-12-31
   

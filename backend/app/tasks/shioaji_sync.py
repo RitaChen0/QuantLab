@@ -133,3 +133,32 @@ def sync_shioaji_top_stocks(self: Task) -> dict:
         retry_count = self.request.retries
         countdown = 600 * (2 ** retry_count)
         raise self.retry(exc=e, countdown=countdown, max_retries=3)
+
+
+@celery_app.task(bind=True, name="app.tasks.sync_shioaji_futures")
+@record_task_history
+def sync_shioaji_futures(self: Task) -> dict:
+    """
+    同步期货分鐘線數據（TX + MTX）
+
+    每日定時同步台指期货（TX）和小台指期货（MTX）的分鐘線數據。
+    使用智慧增量模式，只同步缺失的日期範圍。
+
+    執行時間：約 5-10 分鐘（期货仅 2 档）
+    """
+    try:
+        logger.info("Starting Shioaji futures sync (TX + MTX)...")
+
+        # 調用同步任務，僅同步期货
+        return sync_shioaji_minute_data(
+            stock_ids=['TX', 'MTX'],  # 仅期货
+            smart_mode=True,          # 智慧增量同步
+            end_date=None             # 使用今天
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to sync futures: {str(e)}")
+        # 使用指數退避：10m, 20m, 40m
+        retry_count = self.request.retries
+        countdown = 600 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=3)

@@ -279,13 +279,31 @@
 
             <div class="form-group">
               <label for="symbol">股票代碼 *</label>
-              <input
-                id="symbol"
-                v-model="newBacktest.symbol"
-                type="text"
-                placeholder="例如：2330"
-                required
-              >
+              <div class="stock-selector-wrapper">
+                <select
+                  id="symbol"
+                  v-model="newBacktest.symbol"
+                  class="stock-select"
+                  required
+                >
+                  <option value="">請選擇標的</option>
+                  <optgroup v-if="futuresStocks.length > 0" label="📈 期貨">
+                    <option v-for="stock in futuresStocks" :key="stock.stock_id" :value="stock.stock_id">
+                      {{ stock.stock_id }} - {{ stock.name }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="📊 股票">
+                    <option v-for="stock in regularStocks" :key="stock.stock_id" :value="stock.stock_id">
+                      {{ stock.stock_id }} - {{ stock.name }}
+                    </option>
+                  </optgroup>
+                </select>
+                <span v-if="selectedStockInfo?.market === 'FUTURES'" class="futures-badge">期貨</span>
+              </div>
+              <p v-if="loadingStocks" class="field-hint">載入標的列表中...</p>
+              <p v-else-if="availableStocks.length > 0" class="field-hint">
+                已載入 {{ availableStocks.length }} 個標的（期貨 {{ futuresStocks.length }} 檔）
+              </p>
             </div>
 
             <div class="form-row">
@@ -377,6 +395,8 @@ const config = useRuntimeConfig()
 // 狀態
 const backtests = ref<any[]>([])
 const availableStrategies = ref<any[]>([])
+const availableStocks = ref<any[]>([])
+const loadingStocks = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const showCreateModal = ref(false)
@@ -438,6 +458,21 @@ const filteredBacktests = computed(() => {
   }
 
   return result
+})
+
+// 分離期貨和股票
+const futuresStocks = computed(() => {
+  return availableStocks.value.filter(s => s.market === 'FUTURES')
+})
+
+const regularStocks = computed(() => {
+  return availableStocks.value.filter(s => !s.market || s.market !== 'FUTURES')
+})
+
+// 獲取選中標的的信息
+const selectedStockInfo = computed(() => {
+  if (!newBacktest.symbol) return null
+  return availableStocks.value.find(s => s.stock_id === newBacktest.symbol)
 })
 
 // 載入回測列表
@@ -517,6 +552,53 @@ const loadStrategies = async () => {
   } catch (error: any) {
     console.error('Failed to load strategies:', error)
     availableStrategies.value = []
+  }
+}
+
+// 載入可用標的（股票 + 期貨）
+const loadStocks = async () => {
+  loadingStocks.value = true
+  try {
+    const token = process.client ? localStorage.getItem('access_token') : null
+    if (!token) return
+
+    console.log('Loading stocks (including futures)...')
+    const response = await $fetch<any>(`${config.public.apiBase}/api/v1/data/stocks`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      params: {
+        skip: 0,
+        limit: 3000  // 載入所有標的（包括期貨，總共約 2676 檔）
+      },
+      cache: 'no-cache'
+    })
+
+    console.log('Stocks API response:', response)
+
+    // 處理不同的回應格式
+    if (Array.isArray(response)) {
+      availableStocks.value = response
+    } else if (response && Array.isArray(response.stocks)) {
+      availableStocks.value = response.stocks
+    } else {
+      console.warn('Unexpected stocks response format:', response)
+      availableStocks.value = []
+    }
+
+    // 排序：期貨優先，然後按 stock_id 排序
+    availableStocks.value.sort((a, b) => {
+      if (a.market === 'FUTURES' && b.market !== 'FUTURES') return -1
+      if (a.market !== 'FUTURES' && b.market === 'FUTURES') return 1
+      return a.stock_id.localeCompare(b.stock_id)
+    })
+
+    console.log(`Loaded ${availableStocks.value.length} stocks (futures: ${futuresStocks.value.length})`)
+  } catch (error: any) {
+    console.error('Failed to load stocks:', error)
+  } finally {
+    loadingStocks.value = false
   }
 }
 
@@ -867,6 +949,7 @@ onMounted(() => {
   loadUserInfo()
   loadBacktests()
   loadStrategies()
+  loadStocks()  // 載入股票和期貨列表
 })
 
 // 監聽篩選變化
@@ -1714,5 +1797,57 @@ onBeforeUnmount(() => {
 .engine-badge.qlib {
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   color: white;
+}
+
+// 股票選擇器樣式
+.stock-selector-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stock-select {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #4f46e5;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  }
+
+  optgroup {
+    font-weight: bold;
+    padding: 0.5rem;
+    background: #f9fafb;
+
+    option {
+      font-weight: normal;
+      padding: 0.5rem;
+    }
+  }
+}
+
+.futures-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  color: white;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
 }
 </style>

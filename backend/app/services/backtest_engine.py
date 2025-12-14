@@ -28,6 +28,44 @@ from app.repositories.stock_minute_price import StockMinutePriceRepository
 from app.utils.error_handler import get_safe_error_message
 
 
+# ==================== 期货交易成本配置 ====================
+
+class TXCommissionInfo(bt.CommInfoBase):
+    """
+    台指期货（TX）交易成本配置
+
+    - 合约乘数：200 元/点
+    - 保证金：184,000 元/口（23,000 * 0.08）
+    - 手续费：50 元/口（单边）
+    - 交易税：期货免征交易税
+    """
+    params = (
+        ('stocklike', False),      # 期货，非股票
+        ('commtype', bt.CommInfoBase.COMM_FIXED),  # 固定手续费
+        ('commission', 50.0),      # 50 元/口
+        ('mult', 200.0),           # 合约乘数 200 元/点
+        ('margin', 184000.0),      # 保证金 184,000 元/口
+    )
+
+
+class MTXCommissionInfo(bt.CommInfoBase):
+    """
+    小台指期货（MTX）交易成本配置
+
+    - 合约乘数：50 元/点
+    - 保证金：46,000 元/口（23,000 * 0.08 / 4）
+    - 手续费：30 元/口（单边）
+    - 交易税：期货免征交易税
+    """
+    params = (
+        ('stocklike', False),
+        ('commtype', bt.CommInfoBase.COMM_FIXED),
+        ('commission', 30.0),      # 30 元/口
+        ('mult', 50.0),            # 合约乘数 50 元/点
+        ('margin', 46000.0),       # 保证金 46,000 元/口
+    )
+
+
 class DailyValueAnalyzer(bt.Analyzer):
     """
     自定義 Analyzer 用於記錄每日資產淨值、現金、股票價值
@@ -302,6 +340,38 @@ class BacktestEngine:
         self.db = db
         self.cerebro = None
         self.strategy_instance = None
+
+    def _is_futures(self, stock_id: str) -> bool:
+        """
+        判断标的是否为期货
+
+        Args:
+            stock_id: 标的代码
+
+        Returns:
+            True 表示期货，False 表示股票
+        """
+        return stock_id.upper() in ['TX', 'MTX']
+
+    def _get_commission_info(self, stock_id: str):
+        """
+        根据标的类型获取交易成本配置
+
+        Args:
+            stock_id: 标的代码
+
+        Returns:
+            CommissionInfo 对象（期货）或 None（股票使用默认百分比手续费）
+        """
+        stock_id_upper = stock_id.upper()
+
+        if stock_id_upper == 'TX':
+            return TXCommissionInfo()
+        elif stock_id_upper == 'MTX':
+            return MTXCommissionInfo()
+        else:
+            # 股票使用默认百分比手续费
+            return None
 
     def load_data(
         self,
@@ -799,13 +869,22 @@ class BacktestEngine:
         # 6. 設定初始資金
         self.cerebro.broker.setcash(initial_cash)
 
-        # 7. 設定交易成本（手續費 + 交易稅）
-        # Backtrader 的 commission 參數會同時應用於買入和賣出
-        # 台股交易稅只在賣出時收取，需要特殊處理
-        total_commission = commission  # 買入時的成本
-        # 注意：Backtrader 不直接支援單向稅率，這裡簡化為總成本
-        # 實際應用中可以通過自定義 CommissionInfo 類別來實現
-        self.cerebro.broker.setcommission(commission=total_commission)
+        # 7. 設定交易成本（根據標的類型）
+        commission_info = self._get_commission_info(stock_id)
+
+        if commission_info:
+            # 期货：使用自定义 CommissionInfo（固定手续费 + 保证金）
+            self.cerebro.broker.addcommissioninfo(commission_info)
+            logger.info(f"✅ 使用期货交易成本配置: {stock_id}")
+        else:
+            # 股票：使用百分比手续费
+            # Backtrader 的 commission 參數會同時應用於買入和賣出
+            # 台股交易稅只在賣出時收取，需要特殊處理
+            total_commission = commission  # 買入時的成本
+            # 注意：Backtrader 不直接支援單向稅率，這裡簡化為總成本
+            # 實際應用中可以通過自定義 CommissionInfo 類別來實現
+            self.cerebro.broker.setcommission(commission=total_commission)
+            logger.info(f"✅ 使用股票交易成本配置: {stock_id} (手续费: {commission*100}%)")
 
         # 8. 設定滑點（如果有）
         if slippage > 0:

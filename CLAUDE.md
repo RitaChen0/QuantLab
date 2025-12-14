@@ -84,6 +84,27 @@ docker compose exec backend celery -A app.core.celery_app call app.tasks.sync_st
 docker compose exec redis redis-cli FLUSHDB
 ```
 
+### 測試
+
+```bash
+# 執行所有測試
+docker compose exec backend pytest
+
+# 執行特定測試檔案
+docker compose exec backend pytest tests/services/test_shioaji_client.py
+
+# 執行特定測試函數
+docker compose exec backend pytest tests/test_auth.py::test_register
+
+# 執行帶標記的測試（見 pytest.ini）
+docker compose exec backend pytest -m unit        # 快速單元測試
+docker compose exec backend pytest -m integration # 整合測試
+docker compose exec backend pytest -m futures     # 期貨相關測試
+
+# 顯示測試覆蓋率
+docker compose exec backend pytest --cov=app --cov-report=html
+```
+
 ### 開發工具
 
 ```bash
@@ -218,6 +239,30 @@ FinLab API → PostgreSQL (stock_prices) → Qlib 二進制
 
 **定時任務**：每天 15:00 執行（`sync-shioaji-minute-daily`）
 
+#### 期貨資料流
+
+```
+                    Shioaji API
+                         ↓
+         ┌───────────────┴───────────────┐
+         ↓                               ↓
+    PostgreSQL                         Qlib
+(stock_minute_prices)          (tw_stock_minute/)
+   月份合約數據                    連續合約數據
+   (TX202512)                      (TXCONT)
+```
+
+**月份合約 → 連續合約流程**：
+1. **註冊合約**：`scripts/register_futures_contracts.py` 註冊 TX/MTX 月份合約到 stocks 表
+2. **同步數據**：`sync-shioaji-futures-daily` 任務每天 15:30 同步月份合約分鐘線
+3. **生成連續合約**：`generate-continuous-contracts-weekly` 任務每週六 18:00 拼接為連續合約
+4. **自動註冊新年度**：每年 1/1 00:05 自動註冊下一年度月份合約
+
+**關鍵概念**：
+- **月份合約**（TX202512）：實際交易的合約，每月第三個週三結算
+- **連續合約**（TXCONT）：拼接多個月份合約，用於長期回測
+- **換月邏輯**：結算日前 3 天自動切換到下月合約
+
 ### Qlib 數據格式
 
 **位置**：
@@ -263,13 +308,16 @@ celery_app.conf.update(
 | 03:00 | `cleanup_old_cache` | 清理 Redis 過期快取 |
 | 08:00 | `sync_stock_list` | 更新股票清單（FinLab） |
 | 09:00-13:30 每 15 分 | `sync_latest_prices` | 即時價格（交易時段） |
-| 15:00 | **`sync_shioaji_minute_data`** | **Shioaji 分鐘線（Top 50）** |
+| 15:00 | **`sync_shioaji_minute_data`** | **Shioaji 股票分鐘線（Top 50）** |
+| 15:30 | **`sync_shioaji_futures`** | **Shioaji 期貨分鐘線（TX/MTX）** |
 | 21:00 | `sync_daily_prices` | 每日價格（FinLab） |
 | 21:00 | `sync_top_stocks_institutional` | 法人買賣超（Top 100） |
 | 22:00 | `sync_ohlcv_data` | OHLCV 數據 |
 | 23:00 | `sync_fundamental_latest` | 基本面（增量） |
 | 週日 02:00 | `cleanup_old_institutional_data` | 清理舊法人資料 |
 | 週日 04:00 | `sync_fundamental_data` | 基本面（完整） |
+| 週六 18:00 | `generate_continuous_contracts` | 生成期貨連續合約 |
+| 每年 1/1 00:05 | `register_new_futures_contracts` | 註冊新年度月份合約 |
 
 **新增定時任務**：
 ```python
@@ -371,6 +419,23 @@ SELECT add_compression_policy('stock_minute_prices', INTERVAL '7 days');
 - 需確保兩邊最終一致
 - 雙向同步：API → [PG, Qlib]
 
+### 為何期貨需要月份合約和連續合約？
+
+**月份合約**（TX202512、MTX202501）：
+- 真實交易合約，有結算日（每月第三個週三）
+- 用於實盤交易、短期策略
+- 問題：合約到期後無法繼續回測
+
+**連續合約**（TXCONT、MTXCONT）：
+- 拼接多個月份合約，無到期日
+- 用於長期回測、策略開發
+- 實現：結算日前 N 天自動切換到下月合約
+
+**Backtrader 整合**：
+- 自動檢測期貨代碼（TX/MTX）
+- 應用對應手續費和保證金（`TXCommissionInfo`、`MTXCommissionInfo`）
+- 支援期貨特有指標（持倉成本、保證金使用率）
+
 ---
 
 ## 📋 資料庫變更檢查清單
@@ -443,6 +508,51 @@ bash scripts/reset-rate-limit.sh
 SELECT * FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention';
 ```
 
+### 6. 期貨回測失敗或手續費異常
+
+**症狀**：期貨策略回測結果不正確
+
+**檢查項目**：
+1. 合約代碼格式：TX/MTX 會自動套用期貨手續費，TXCONT/MTXCONT 為連續合約
+2. 數據可用性：確認 Qlib 是否有對應合約數據
+3. 結算日處理：月份合約在結算日後會標記為 `inactive`
+
+**驗證**：
+```bash
+# 檢查期貨合約是否已註冊
+docker compose exec postgres psql -U quantlab quantlab -c \
+  "SELECT stock_id, name, is_active FROM stocks WHERE category = 'FUTURES_MONTHLY' ORDER BY stock_id DESC LIMIT 10;"
+
+# 檢查連續合約數據
+docker compose exec backend ls -lh /data/qlib/tw_stock_minute/features/TXCONT/
+```
+
+### 7. 日誌格式不統一導致搜尋困難
+
+**症狀**：無法快速定位特定類型的日誌
+
+**解決**：使用標準化日誌前綴進行搜尋
+```bash
+# 搜尋期貨相關日誌
+docker compose logs backend | grep "\[FUTURES\]"
+
+# 搜尋合約處理日誌
+docker compose logs backend | grep "\[CONTRACT\]"
+
+# 搜尋 Celery 任務日誌
+docker compose logs celery-worker | grep "\[TASK\]"
+
+# 搜尋合約註冊日誌
+docker compose logs backend | grep "\[REGISTER\]"
+
+# 搜尋告警日誌
+docker compose logs backend | grep "\[ALERT\]"
+```
+
+**告警檔案位置**：
+- 告警 JSON：`/tmp/quantlab_alerts/*.json`
+- 任務日誌：`/tmp/futures_logs/*.log`
+
 ---
 
 ## 📚 文檔導航
@@ -485,10 +595,75 @@ CELERY_RESULT_BACKEND=redis://redis:6379/1
 ```bash
 OPENAI_API_KEY=<RD-Agent 因子挖掘>
 ANTHROPIC_API_KEY=<Claude API>
-SHIOAJI_API_KEY=<永豐證券>
+
+# Shioaji 期貨交易 API
+SHIOAJI_API_KEY=<永豐證券 API Key>
+SHIOAJI_SECRET_KEY=<永豐證券 Secret Key>
+SHIOAJI_PERSON_ID=<身分證字號>
+SHIOAJI_SIMULATION_MODE=True  # True=模擬交易，False=實盤
+SHIOAJI_ENABLE_ORDER=False    # True=允許下單，False=僅查詢
+```
+
+---
+
+## 🧪 測試規範
+
+### Pytest 配置
+
+測試使用標記（markers）進行分類（定義於 `backend/pytest.ini`）：
+
+- `@pytest.mark.unit` - 快速單元測試，無外部依賴
+- `@pytest.mark.integration` - 整合測試，需要資料庫或 API
+- `@pytest.mark.slow` - 執行時間超過 1 秒的測試
+- `@pytest.mark.futures` - 期貨合約相關測試
+
+### 測試覆蓋目標
+
+**必須測試**：
+1. 所有 `services/` 業務邏輯
+2. 所有 `repositories/` 資料訪問方法
+3. 關鍵 `scripts/` 腳本（如期貨合約註冊）
+4. 所有 Celery 任務的成功/失敗/超時場景
+
+**測試檔案結構**：
+```
+tests/
+├── services/           # 業務邏輯測試
+│   └── test_shioaji_client.py
+├── scripts/            # 腳本測試
+│   └── test_register_futures_contracts.py
+├── tasks/              # Celery 任務測試
+│   └── test_futures_continuous.py
+├── integration/        # 整合測試
+└── unit/               # 純單元測試
+```
+
+### 避免常見測試陷阱
+
+**1. Celery 裝飾器問題**：
+```python
+# ❌ 錯誤：直接調用會失敗
+result = generate_continuous_contracts(symbols=['TX'])
+
+# ✅ 正確：繞過裝飾器
+from app.tasks import futures_continuous
+func = futures_continuous.generate_continuous_contracts.__wrapped__.__wrapped__
+result = func(Mock(), symbols=['TX'], days_back=90)
+```
+
+**2. 外部 API Mock**：
+```python
+# 整合測試標記為 @pytest.mark.integration
+# 需要真實 API 的測試應該可選擇性執行
+@pytest.mark.integration
+def test_real_shioaji_api():
+    # 只在提供 API key 時執行
+    if not settings.SHIOAJI_API_KEY:
+        pytest.skip("SHIOAJI_API_KEY not set")
 ```
 
 ---
 
 **文檔版本**：2025-12-14
 **維護者**：開發團隊
+**最後更新**：新增期貨交易支援、測試規範、告警系統
