@@ -35,6 +35,10 @@ celery_app.conf.update(
             'rate_limit': '300/h',  # 每小時最多 300 個任務（平均每分鐘 5 個）
             'time_limit': 600,      # 10 分鐘硬限制
             'soft_time_limit': 540,  # 9 分鐘軟限制
+        },
+        'app.tasks.sync_shioaji_top_stocks': {
+            'time_limit': 14400,      # 4 小時硬限制（同步所有股票）
+            'soft_time_limit': 14100,  # 3 小時 55 分鐘軟限制
         }
     },
 
@@ -120,12 +124,13 @@ celery_app.conf.beat_schedule = {
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 
-    # Sync Shioaji minute data (top 50 stocks) once per day at 15:00 (3 PM)
-    # Runs after market close (13:30) to sync latest minute bars
+    # Sync Shioaji minute data (all stocks) once per day at 15:00 (3 PM)
+    # Runs after market close (13:30) to sync latest minute bars for all stocks
+    # Execution time: ~2-4 hours (depends on number of stocks and missing data)
     "sync-shioaji-minute-daily": {
         "task": "app.tasks.sync_shioaji_top_stocks",
         "schedule": crontab(hour=15, minute=0, day_of_week='mon,tue,wed,thu,fri'),
-        "options": {"expires": 7200},  # Expire after 2 hours
+        "options": {"expires": 18000},  # Expire after 5 hours (task may take up to 4 hours)
     },
 }
 

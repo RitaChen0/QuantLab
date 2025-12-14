@@ -56,11 +56,16 @@ def sync_shioaji_minute_data(
 
         # 執行同步腳本
         logger.info(f"Executing command: {' '.join(cmd)}")
+
+        # 根據是否指定股票列表來設定超時時間
+        # 所有股票：4 小時，指定股票：30 分鐘
+        timeout = 14400 if not stock_ids else 1800
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=1800  # 30 分鐘超時
+            timeout=timeout
         )
 
         # 檢查執行結果
@@ -84,10 +89,11 @@ def sync_shioaji_minute_data(
             }
 
     except subprocess.TimeoutExpired:
-        logger.error("Shioaji sync timed out after 30 minutes")
+        timeout_msg = "4 hours" if not stock_ids else "30 minutes"
+        logger.error(f"Shioaji sync timed out after {timeout_msg}")
         return {
             "status": "error",
-            "message": "Shioaji sync timed out",
+            "message": f"Shioaji sync timed out after {timeout_msg}",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
@@ -102,36 +108,27 @@ def sync_shioaji_minute_data(
 @record_task_history
 def sync_shioaji_top_stocks(self: Task) -> dict:
     """
-    同步熱門股票的 Shioaji 分鐘線數據（快速任務）
+    同步所有股票的 Shioaji 分鐘線數據（完整同步）
 
-    僅同步市值前 50 大股票，用於日常增量更新
+    從資料庫 stock_prices 表自動獲取所有股票，用於日常增量更新。
+    使用智慧增量模式，只同步缺失的日期範圍。
+
+    執行時間：約 2-4 小時（視股票數量和缺失數據量而定）
     """
     try:
-        logger.info("Starting Shioaji top 50 stocks sync...")
+        logger.info("Starting Shioaji all stocks sync...")
+        logger.info("Stock list will be automatically fetched from database (stock_prices table)")
 
-        # 熱門股票清單（市值前 50 大）
-        top_50_stocks = [
-            '2330', '2317', '2454', '2412', '3008',  # 台積電、鴻海、聯發科、中華電、大立光
-            '2308', '2882', '1301', '1303', '2002',  # 台達電、國泰金、台塑、南亞、中鋼
-            '2886', '2881', '2891', '2892', '2885',  # 兆豐金、富邦金、中信金、第一金、元大金
-            '2884', '2887', '2883', '5880', '2912',  # 玉山金、台新金、開發金、合庫金、統一超
-            '2880', '2382', '2395', '6505', '3045',  # 華南金、廣達、研華、台塑化、台灣大
-            '1216', '2357', '1326', '2303', '2379',  # 統一、華碩、台化、聯電、瑞昱
-            '2408', '2207', '2327', '3711', '2474',  # 南亞科、和泰車、國巨、日月光投控、可成
-            '2801', '2609', '2615', '2603', '4904',  # 彰銀、陽明、萬海、長榮、遠傳
-            '9910', '2888', '2345', '6669', '2409',  # 豐泰、新光金、智邦、緯穎、友達
-            '3037', '2377', '2353', '5871', '2324',  # 欣興、微星、宏碁、中租-KY、仁寶
-        ]
-
-        # 調用完整同步任務
+        # 調用完整同步任務，stock_ids=None 表示同步所有股票
+        # 腳本會自動從資料庫 stock_prices 表獲取股票清單
         return sync_shioaji_minute_data(
-            stock_ids=top_50_stocks,
-            smart_mode=True,
+            stock_ids=None,  # None = 同步所有股票（從資料庫自動獲取）
+            smart_mode=True,  # 智慧增量同步
             end_date=None  # 使用今天
         )
 
     except Exception as e:
-        logger.error(f"Failed to sync top stocks: {str(e)}")
+        logger.error(f"Failed to sync all stocks: {str(e)}")
         # 使用指數退避：10m, 20m, 40m
         retry_count = self.request.retries
         countdown = 600 * (2 ** retry_count)
