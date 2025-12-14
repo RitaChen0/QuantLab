@@ -300,13 +300,45 @@ const requestBinding = async () => {
 // 複製驗證碼
 const copyCode = async () => {
   try {
-    await navigator.clipboard.writeText(verificationCode.value)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 2000)
+    // 方法 1: 使用現代 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(verificationCode.value)
+      copied.value = true
+      setTimeout(() => {
+        copied.value = false
+      }, 2000)
+      return
+    }
+
+    // 方法 2: 降級方案 - 使用舊式 execCommand
+    const textArea = document.createElement('textarea')
+    textArea.value = verificationCode.value
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+
+    try {
+      const successful = document.execCommand('copy')
+      if (successful) {
+        copied.value = true
+        setTimeout(() => {
+          copied.value = false
+        }, 2000)
+      } else {
+        alert('❌ 複製失敗，請手動複製驗證碼')
+      }
+    } catch (err) {
+      console.error('execCommand 複製失敗:', err)
+      alert('❌ 複製失敗，請手動複製驗證碼')
+    } finally {
+      document.body.removeChild(textArea)
+    }
   } catch (error) {
     console.error('複製失敗:', error)
+    alert('❌ 複製失敗，請手動複製驗證碼')
   }
 }
 

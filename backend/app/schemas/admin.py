@@ -13,6 +13,8 @@ class UserListResponse(BaseModel):
     email: str
     username: str
     full_name: Optional[str]
+    telegram_id: Optional[str] = None
+    telegram_channel_id: Optional[str] = None
     is_active: bool
     is_superuser: bool
     member_level: int
@@ -21,6 +23,7 @@ class UserListResponse(BaseModel):
     credit: float = 0.0
     created_at: datetime
     last_login: Optional[datetime]
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -28,8 +31,11 @@ class UserListResponse(BaseModel):
 
 class UserUpdateAdmin(BaseModel):
     """Update user by admin"""
+    username: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
+    telegram_id: Optional[str] = Field(None, max_length=255, description="Telegram 用戶 ID")
+    telegram_channel_id: Optional[str] = Field(None, max_length=255, description="Telegram 頻道 ID")
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     member_level: Optional[int] = Field(None, ge=0, le=9)

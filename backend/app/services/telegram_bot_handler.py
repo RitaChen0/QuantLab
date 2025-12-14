@@ -17,10 +17,16 @@ from telegram.ext import (
 )
 
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, ensure_models_imported
 from app.repositories.user import UserRepository
 from app.schemas.user import UserUpdate
 from app.utils.cache import cache
+
+# 確保所有模型都已導入，避免 SQLAlchemy 關係解析錯誤
+ensure_models_imported()
+
+# 導入 User 模型供代碼使用
+from app.models.user import User
 
 
 class TelegramBotHandler:
@@ -112,7 +118,7 @@ class TelegramBotHandler:
         try:
             # 從 Redis 查找驗證碼
             user_id = None
-            for key in cache.redis.scan_iter("telegram:verification:*"):
+            for key in cache.redis_client.scan_iter("telegram:verification:*"):
                 stored_code = cache.get(key.decode())
                 if stored_code == verification_code:
                     # 提取 user_id
@@ -130,11 +136,9 @@ class TelegramBotHandler:
 
             # 檢查是否已被其他用戶綁定
             user_repo = UserRepository()
-            existing_user = db.query(
-                db.query(user_repo.__class__).filter_by(telegram_id=chat_id).exists()
-            ).scalar()
+            existing_user = db.query(User).filter(User.telegram_id == chat_id).first()
 
-            if existing_user:
+            if existing_user and existing_user.id != user_id:
                 await update.message.reply_text(
                     "⚠️ 此 Telegram 帳號已綁定到其他 QuantLab 帳號\n\n"
                     "如需重新綁定，請先在網站上解除舊綁定"
@@ -217,7 +221,6 @@ class TelegramBotHandler:
             user_repo = UserRepository()
 
             # 使用原生 SQLAlchemy 查詢
-            from app.models.user import User
             quantlab_user = db.query(User).filter(User.telegram_id == chat_id).first()
 
             if not quantlab_user:

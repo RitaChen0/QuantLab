@@ -196,3 +196,13 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
 
 ✅ 运行所有质量检查（快速模式）
   docker compose exec backend python /app/scripts/run_all_tests.py --quick
+
+✅
+  # 查看日誌
+  docker compose logs -f telegram-bot
+  # 重啟服務
+  docker compose restart telegram-bot
+  # 停止服務
+  docker compose stop telegram-bot
+
+  
