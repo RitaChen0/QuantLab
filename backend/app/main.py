@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.rate_limit import limiter, get_rate_limit_error_handler
 from app.middleware.request_size_limit import RequestSizeLimitMiddleware, StrategyCodeSizeLimitMiddleware
 from app.middleware.monitoring import MonitoringMiddleware
-from app.api.v1 import auth, users, strategies, backtest, data, trading, ai, industry, industry_chain, admin, rdagent, factor_evaluation, intraday, metrics, membership, institutional, telegram
+from app.api.v1 import auth, users, strategies, backtest, data, trading, ai, industry, industry_chain, admin, rdagent, factor_evaluation, intraday, metrics, membership, institutional, telegram, options
 
 # Create FastAPI application
 app = FastAPI(
@@ -151,6 +151,12 @@ app.include_router(
     telegram.router,
     prefix=settings.API_PREFIX,
     tags=["Telegram 通知"]
+)
+
+app.include_router(
+    options.router,
+    prefix=settings.API_PREFIX,
+    tags=["選擇權"]
 )
 
 # Include metrics router (no prefix, accessed at root /metrics)

@@ -28,6 +28,7 @@ class Stock(Base):
     trades = relationship("Trade", back_populates="stock")
     stock_industries = relationship("StockIndustry", back_populates="stock", cascade="all, delete-orphan")
     institutional_investors = relationship("InstitutionalInvestor", back_populates="stock", cascade="all, delete-orphan")
+    option_daily_factors = relationship("OptionDailyFactor", back_populates="underlying", cascade="all, delete-orphan")
 
     # Indexes for better query performance
     __table_args__ = (

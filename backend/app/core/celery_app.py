@@ -164,6 +164,26 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=0, minute=5, day_of_month='1', month_of_year='1'),
         "options": {"expires": 3600},  # Expire after 1 hour
     },
+
+    # ==================== 選擇權相關任務 ====================
+
+    # Sync option daily factors (Stage 1) once per day at 15:40 (3:40 PM)
+    # Runs after futures sync to calculate PCR, ATM IV
+    # Execution time: ~2-5 minutes
+    "sync-option-daily-factors": {
+        "task": "app.tasks.sync_option_daily_factors",
+        "schedule": crontab(hour=15, minute=40, day_of_week='mon,tue,wed,thu,fri'),
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
+
+    # Register option contracts once per week on Sunday at 19:00
+    # Updates option contract list in database
+    # Execution time: ~1-2 minutes
+    "register-option-contracts-weekly": {
+        "task": "app.tasks.register_option_contracts",
+        "schedule": crontab(hour=19, minute=0, day_of_week='sunday'),
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
 }
 
 if __name__ == "__main__":

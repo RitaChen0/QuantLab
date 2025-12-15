@@ -1,1 +1,3 @@
-"""Tests for tasks"""
+"""
+Celery tasks tests
+"""
