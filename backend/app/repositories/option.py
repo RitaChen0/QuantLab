@@ -5,7 +5,7 @@ Option repository for database operations
 """
 
 from typing import Optional, List, Dict, Any
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc, func
 from app.models.option import (
@@ -521,3 +521,176 @@ class OptionSyncConfigRepository:
         """Check if Greeks calculation is enabled"""
         config = OptionSyncConfigRepository.get_by_key(db, 'calculate_greeks')
         return config and config.value and config.value.lower() == 'true'
+
+
+class OptionGreeksRepository:
+    """Repository for option Greeks database operations"""
+
+    @staticmethod
+    def get_by_contract_and_datetime(
+        db: Session,
+        contract_id: str,
+        datetime: datetime
+    ) -> Optional[OptionGreeks]:
+        """Get Greeks by contract_id and datetime"""
+        return db.query(OptionGreeks).filter(
+            and_(
+                OptionGreeks.contract_id == contract_id,
+                OptionGreeks.datetime == datetime
+            )
+        ).first()
+
+    @staticmethod
+    def get_by_contract(
+        db: Session,
+        contract_id: str,
+        start_datetime: Optional[datetime] = None,
+        end_datetime: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[OptionGreeks]:
+        """
+        Get Greeks history for a contract
+
+        Args:
+            db: Database session
+            contract_id: Contract ID
+            start_datetime: Filter start datetime
+            end_datetime: Filter end datetime
+            limit: Maximum number of records
+
+        Returns:
+            List of Greeks records
+        """
+        query = db.query(OptionGreeks).filter(
+            OptionGreeks.contract_id == contract_id
+        )
+
+        if start_datetime:
+            query = query.filter(OptionGreeks.datetime >= start_datetime)
+
+        if end_datetime:
+            query = query.filter(OptionGreeks.datetime <= end_datetime)
+
+        return query.order_by(
+            OptionGreeks.datetime.desc()
+        ).limit(limit).all()
+
+    @staticmethod
+    def get_latest_by_underlying(
+        db: Session,
+        underlying_id: str,
+        target_datetime: Optional[datetime] = None
+    ) -> List[OptionGreeks]:
+        """
+        Get latest Greeks for all contracts of an underlying
+
+        Args:
+            db: Database session
+            underlying_id: Underlying ID (TX, MTX)
+            target_datetime: Target datetime (default: now)
+
+        Returns:
+            List of latest Greeks for each contract
+        """
+        if not target_datetime:
+            target_datetime = datetime.now()
+
+        # 子查詢：獲取每個合約的最新記錄
+        subquery = (
+            db.query(
+                OptionGreeks.contract_id,
+                func.max(OptionGreeks.datetime).label('max_datetime')
+            )
+            .join(OptionContract, OptionContract.contract_id == OptionGreeks.contract_id)
+            .filter(
+                and_(
+                    OptionContract.underlying_id == underlying_id,
+                    OptionGreeks.datetime <= target_datetime
+                )
+            )
+            .group_by(OptionGreeks.contract_id)
+            .subquery()
+        )
+
+        # 主查詢：獲取完整記錄
+        return db.query(OptionGreeks).join(
+            subquery,
+            and_(
+                OptionGreeks.contract_id == subquery.c.contract_id,
+                OptionGreeks.datetime == subquery.c.max_datetime
+            )
+        ).all()
+
+    @staticmethod
+    def create(db: Session, greeks_data: 'OptionGreeksCreate') -> OptionGreeks:
+        """Create new Greeks record"""
+        from app.schemas.option import OptionGreeksCreate
+
+        db_greeks = OptionGreeks(**greeks_data.model_dump())
+        db.add(db_greeks)
+        db.commit()
+        db.refresh(db_greeks)
+        return db_greeks
+
+    @staticmethod
+    def upsert(db: Session, greeks_data: 'OptionGreeksCreate') -> OptionGreeks:
+        """
+        Insert or update Greeks record
+
+        Args:
+            db: Database session
+            greeks_data: Greeks data to upsert
+
+        Returns:
+            Saved Greeks record
+        """
+        from app.schemas.option import OptionGreeksCreate
+
+        # 檢查是否已存在
+        existing = OptionGreeksRepository.get_by_contract_and_datetime(
+            db,
+            greeks_data.contract_id,
+            greeks_data.datetime
+        )
+
+        if existing:
+            # 更新現有記錄
+            update_data = greeks_data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(existing, field, value)
+
+            db.commit()
+            db.refresh(existing)
+            return existing
+        else:
+            # 創建新記錄
+            return OptionGreeksRepository.create(db, greeks_data)
+
+    @staticmethod
+    def delete_old_records(
+        db: Session,
+        contract_id: str,
+        keep_days: int = 90
+    ) -> int:
+        """
+        Delete old Greeks records for a contract
+
+        Args:
+            db: Database session
+            contract_id: Contract ID
+            keep_days: Keep records newer than this many days
+
+        Returns:
+            Number of deleted records
+        """
+        cutoff_datetime = datetime.now() - timedelta(days=keep_days)
+
+        deleted = db.query(OptionGreeks).filter(
+            and_(
+                OptionGreeks.contract_id == contract_id,
+                OptionGreeks.datetime < cutoff_datetime
+            )
+        ).delete()
+
+        db.commit()
+        return deleted

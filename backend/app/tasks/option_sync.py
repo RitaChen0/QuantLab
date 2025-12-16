@@ -529,22 +529,273 @@ def sync_option_minute_data(
 @record_task_history
 def calculate_option_greeks(
     self: Task,
-    underlying_ids: Optional[List[str]] = None
+    underlying_ids: Optional[List[str]] = None,
+    target_date: Optional[str] = None
 ) -> dict:
     """
     計算選擇權 Greeks（階段三）
 
-    注意：階段一不實作，僅預留接口
+    執行流程：
+    1. 獲取選擇權合約列表
+    2. 使用 Black-Scholes 模型計算 Greeks
+    3. 儲存到 option_greeks 表
 
     Args:
-        underlying_ids: 標的代碼列表
+        underlying_ids: 標的代碼列表（None 表示使用配置）
+        target_date: 目標日期（YYYY-MM-DD，預設為今天）
 
     Returns:
-        Task result
+        Task result with calculation statistics
     """
-    logger.warning("[OPTION] Greeks calculation not implemented in Stage 1")
-    return {
-        "status": "skipped",
-        "message": "Greeks calculation not implemented in Stage 1",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    start_time = datetime.now()
+
+    try:
+        logger.info(
+            f"[GREEKS] 🚀 Starting Greeks calculation (task_id: {self.request.id})"
+        )
+
+        # 解析目標日期
+        try:
+            if target_date:
+                calc_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+            else:
+                calc_date = date.today()
+        except ValueError as e:
+            logger.error(f"[GREEKS] ❌ Invalid date format: {target_date}")
+            return {
+                "status": "error",
+                "message": f"Invalid date format: {target_date}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+        logger.info(f"[GREEKS] 📅 Calculation date: {calc_date}")
+
+        # 獲取資料庫連接
+        try:
+            db = next(get_db())
+        except Exception as e:
+            logger.error(f"[GREEKS] ❌ Failed to get database connection: {str(e)}")
+            raise self.retry(exc=e, countdown=60)
+
+        # 獲取當前階段配置
+        try:
+            stage = OptionSyncConfigRepository.get_current_stage(db)
+            logger.info(f"[GREEKS] 📈 Current stage: {stage}")
+
+            if stage < 3:
+                logger.warning(
+                    f"[GREEKS] ⚠️  Greeks calculation requires stage 3, current: {stage}"
+                )
+                return {
+                    "status": "skipped",
+                    "message": f"Greeks calculation requires stage 3 (current: {stage})",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+        except Exception as e:
+            logger.warning(f"[GREEKS] ⚠️  Failed to get stage config: {str(e)}")
+
+        # 獲取啟用的標的物列表
+        if not underlying_ids:
+            try:
+                underlying_ids = OptionSyncConfigRepository.get_enabled_underlyings(db)
+            except Exception as e:
+                logger.warning(f"[GREEKS] ⚠️  Failed to get enabled underlyings: {str(e)}")
+                underlying_ids = []
+
+        if not underlying_ids:
+            logger.warning("[GREEKS] ⚠️  No underlyings configured. Using default: TX, MTX")
+            underlying_ids = ['TX', 'MTX']
+
+        logger.info(f"[GREEKS] 🎯 Target underlyings: {underlying_ids}")
+
+        # 初始化 Shioaji 客戶端和計算器
+        try:
+            from app.services.greeks_calculator import (
+                BlackScholesGreeksCalculator,
+                calculate_time_to_expiry
+            )
+            from app.schemas.option import OptionGreeksCreate
+            from app.repositories.option import OptionGreeksRepository
+
+            with ShioajiClient() as shioaji:
+                if not shioaji.is_available():
+                    error_msg = "Shioaji client not available"
+                    logger.error(f"[GREEKS] ❌ {error_msg}")
+                    if self.request.retries < self.max_retries:
+                        raise self.retry(exc=Exception(error_msg), countdown=300)
+                    return {
+                        "status": "error",
+                        "message": error_msg,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+
+                # 創建資料源和計算器
+                data_source = ShioajiOptionDataSource(shioaji)
+                bs_calculator = BlackScholesGreeksCalculator()
+
+                # 統計
+                stats = {
+                    "total_underlyings": len(underlying_ids),
+                    "total_contracts_processed": 0,
+                    "greeks_calculated": 0,
+                    "errors": []
+                }
+
+                # 逐個標的計算 Greeks
+                for index, underlying_id in enumerate(underlying_ids, 1):
+                    try:
+                        logger.info(
+                            f"[GREEKS] 📊 Processing {underlying_id} "
+                            f"({index}/{len(underlying_ids)})..."
+                        )
+
+                        # 獲取選擇權鏈數據
+                        option_chain = data_source.get_option_chain(underlying_id, calc_date)
+
+                        if option_chain.empty:
+                            logger.warning(f"[GREEKS] No option chain data for {underlying_id}")
+                            continue
+
+                        # 過濾有效合約
+                        valid_contracts = option_chain[
+                            option_chain['close'].notna() &
+                            (option_chain['close'] > 0) &
+                            option_chain['strike_price'].notna() &
+                            option_chain['expiry_date'].notna()
+                        ]
+
+                        if valid_contracts.empty:
+                            logger.warning(f"[GREEKS] No valid contracts for {underlying_id}")
+                            continue
+
+                        # 估算標的現價
+                        calls = valid_contracts[valid_contracts['option_type'] == 'CALL']
+                        if not calls.empty and 'volume' in calls.columns and calls['volume'].sum() > 0:
+                            atm_call = calls.loc[calls['volume'].idxmax()]
+                            spot_price = float(atm_call['strike_price'])
+                        else:
+                            spot_price = float(valid_contracts['strike_price'].median())
+
+                        logger.debug(f"[GREEKS] Spot price: {spot_price}")
+
+                        # 逐個合約計算 Greeks
+                        for _, row in valid_contracts.iterrows():
+                            try:
+                                contract_id = row['contract_id']
+                                strike_price = float(row['strike_price'])
+                                expiry_date = row['expiry_date']
+                                option_type = row['option_type']
+                                option_price = float(row['close'])
+
+                                # 計算到期時間
+                                time_to_expiry = calculate_time_to_expiry(expiry_date, calc_date)
+                                if time_to_expiry <= 0:
+                                    continue
+
+                                # 估算隱含波動率
+                                volatility = (option_price / strike_price) * np.sqrt(2 * np.pi / time_to_expiry)
+                                volatility = max(0.05, min(volatility, 1.0))
+
+                                # 計算 Greeks
+                                greeks = bs_calculator.calculate_greeks(
+                                    spot_price=spot_price,
+                                    strike_price=strike_price,
+                                    time_to_expiry=time_to_expiry,
+                                    volatility=volatility,
+                                    option_type=option_type
+                                )
+
+                                if greeks['delta'] is None:
+                                    continue
+
+                                # 創建 Greeks 記錄
+                                greeks_data = OptionGreeksCreate(
+                                    contract_id=contract_id,
+                                    datetime=datetime.combine(calc_date, datetime.min.time()),
+                                    delta=Decimal(str(greeks['delta'])),
+                                    gamma=Decimal(str(greeks['gamma'])) if greeks['gamma'] else None,
+                                    theta=Decimal(str(greeks['theta'])) if greeks['theta'] else None,
+                                    vega=Decimal(str(greeks['vega'])) if greeks['vega'] else None,
+                                    rho=Decimal(str(greeks['rho'])) if greeks['rho'] else None,
+                                    vanna=Decimal(str(greeks['vanna'])) if greeks['vanna'] else None,
+                                    spot_price=Decimal(str(spot_price)),
+                                    volatility=Decimal(str(volatility)),
+                                    risk_free_rate=Decimal('0.01')
+                                )
+
+                                # 儲存到資料庫（upsert）
+                                OptionGreeksRepository.upsert(db, greeks_data)
+                                stats["greeks_calculated"] += 1
+
+                            except Exception as e:
+                                logger.debug(
+                                    f"[GREEKS] Failed to calculate for contract {row.get('contract_id', 'unknown')}: {str(e)}"
+                                )
+                                continue
+
+                        stats["total_contracts_processed"] += len(valid_contracts)
+                        logger.info(
+                            f"[GREEKS] ✅ Processed {len(valid_contracts)} contracts for {underlying_id}"
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            f"[GREEKS] ❌ Error processing {underlying_id}: {str(e)}"
+                        )
+                        stats["errors"].append(f"{underlying_id}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"[GREEKS] ❌ Failed to initialize: {str(e)}")
+            if self.request.retries < self.max_retries:
+                raise self.retry(exc=e, countdown=300)
+            return {
+                "status": "error",
+                "message": f"Initialization error: {str(e)}",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+        # 計算執行時間
+        duration = (datetime.now() - start_time).total_seconds()
+        stats['duration_seconds'] = duration
+
+        # 記錄最終統計
+        logger.info(
+            f"[GREEKS] 🏁 Calculation completed in {duration:.1f}s. "
+            f"Processed: {stats['total_contracts_processed']}, "
+            f"Greeks calculated: {stats['greeks_calculated']}"
+        )
+
+        if stats['errors']:
+            logger.error(
+                f"[GREEKS] ❌ Errors:\n" +
+                "\n".join(f"  - {error}" for error in stats['errors'][:10])
+            )
+
+        # 返回結果
+        if stats["greeks_calculated"] > 0:
+            return {
+                "status": "success",
+                "message": f"Calculated Greeks for {stats['greeks_calculated']} contracts",
+                "statistics": stats,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            return {
+                "status": "error",
+                "message": "No Greeks were calculated",
+                "statistics": stats,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+
+    except Exception as e:
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.error(
+            f"[GREEKS] ❌ Fatal error after {duration:.1f}s: {type(e).__name__}: {str(e)}",
+            exc_info=True
+        )
+        return {
+            "status": "error",
+            "message": f"Fatal error: {str(e)}",
+            "duration_seconds": duration,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }

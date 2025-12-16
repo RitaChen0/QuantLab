@@ -121,6 +121,7 @@ services:
       - ./backend:/app
       - backend_cache:/root/.cache
       - /data/qlib:/data/qlib  # Qlib 數據持久化
+      - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for RD-Agent
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -136,6 +137,14 @@ services:
       FINLAB_API_TOKEN: ${FINLAB_API_TOKEN}
       FINMIND_API_TOKEN: ${FINMIND_API_TOKEN}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Shioaji API (for option sync)
+      SHIOAJI_API_KEY: ${SHIOAJI_API_KEY}
+      SHIOAJI_SECRET_KEY: ${SHIOAJI_SECRET_KEY}
+      SHIOAJI_PERSON_ID: ${SHIOAJI_PERSON_ID}
+      SHIOAJI_SIMULATION_MODE: ${SHIOAJI_SIMULATION_MODE:-False}
+      SHIOAJI_ENABLE_ORDER: ${SHIOAJI_ENABLE_ORDER:-False}
+      SHIOAJI_CA_PATH: ${SHIOAJI_CA_PATH}
+      SHIOAJI_CA_PASSWORD: ${SHIOAJI_CA_PASSWORD}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-True}
       QLIB_DATA_PATH: ${QLIB_DATA_PATH}
@@ -158,6 +167,7 @@ services:
     volumes:
       - ./backend:/app
       - /data/qlib:/data/qlib  # Qlib 數據持久化
+      - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
@@ -169,6 +179,14 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Shioaji API (for option sync)
+      SHIOAJI_API_KEY: ${SHIOAJI_API_KEY}
+      SHIOAJI_SECRET_KEY: ${SHIOAJI_SECRET_KEY}
+      SHIOAJI_PERSON_ID: ${SHIOAJI_PERSON_ID}
+      SHIOAJI_SIMULATION_MODE: ${SHIOAJI_SIMULATION_MODE:-False}
+      SHIOAJI_ENABLE_ORDER: ${SHIOAJI_ENABLE_ORDER:-False}
+      SHIOAJI_CA_PATH: ${SHIOAJI_CA_PATH}
+      SHIOAJI_CA_PASSWORD: ${SHIOAJI_CA_PASSWORD}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-True}
       QLIB_DATA_PATH: ${QLIB_DATA_PATH}
@@ -318,6 +336,8 @@ volumes:
   redis_data:
     driver: local
   backend_cache:
+    driver: local
+  celerybeat_schedule:
     driver: local
   prometheus_data:
     driver: local

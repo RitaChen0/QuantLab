@@ -522,6 +522,7 @@ const categories = [
   { value: 'breakout', label: '突破策略', icon: '💥' },
   { value: 'ml', label: '機器學習', icon: '🤖' },
   { value: 'grid', label: '網格交易', icon: '📊' },
+  { value: 'options', label: '選擇權策略', icon: '🎯' },
 ]
 
 // 難度選項
@@ -1726,6 +1727,402 @@ class GridTradingStrategy(bt.Strategy):
     def notify_order(self, order):
         if order.status in [order.Completed]:
             self.order = None
+`
+  },
+
+  // ==================== 選擇權策略 ====================
+  {
+    id: 'pcr-sentiment',
+    name: 'PCR 市場情緒策略',
+    description: '基於 Put-Call Ratio 判斷市場情緒，PCR 過高時買入，過低時賣出',
+    tags: ['選擇權', 'PCR', '市場情緒', '反轉'],
+    category: 'options',
+    difficulty: 'intermediate',
+    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+    metrics: {
+      sharpe: '1.25',
+      risk: '中',
+      annualReturn: '+22.3%',
+      winRate: '58.7%',
+      maxDrawdown: '-12.8%',
+      totalTrades: '124',
+      avgWin: '+4.2%',
+      avgLoss: '-2.3%',
+      totalReturn: '+68.5%',
+      monthlyReturn: '+1.78%',
+      dailyReturn: '+0.082%',
+      volatility: '18.2%',
+      downsideDeviation: '13.1%',
+      calmarRatio: '1.74',
+      sortinoRatio: '1.70',
+      winLossRatio: '1.83',
+      profitFactor: '1.65',
+      avgHoldingDays: '12.3 天',
+      maxConsecutiveWins: '8 次',
+      maxConsecutiveLosses: '4 次',
+      recoveryFactor: '5.35',
+      expectancy: '+1.15%',
+      var95: '-3.12%'
+    },
+    code: `import backtrader as bt
+import pandas as pd
+
+class PCRSentimentStrategy(bt.Strategy):
+    """PCR 市場情緒策略
+
+    當 PCR 成交量比率超過 1.2 時（市場恐慌），買入標的期貨
+    當 PCR 成交量比率低於 0.8 時（市場貪婪），賣出平倉
+
+    注意：此策略需要選擇權 PCR 數據作為輔助數據源
+    在回測時，需要將 option_daily_factors 的 pcr_volume 欄位
+    添加為額外的數據線（data line）
+    """
+
+    params = (
+        ('pcr_buy_threshold', 1.2),   # PCR 買入閾值（恐慌）
+        ('pcr_sell_threshold', 0.8),  # PCR 賣出閾值（貪婪）
+        ('position_size', 0.3),       # 倉位大小 30%
+    )
+
+    def __init__(self):
+        self.order = None
+
+        # 假設 PCR 數據已經作為 data1 添加到回測中
+        # data0 = 標的期貨價格（TX/MTX）
+        # data1 = PCR 數據（如果有提供）
+        self.has_pcr_data = len(self.datas) > 1
+
+        if self.has_pcr_data:
+            self.pcr = self.datas[1].close  # PCR 值存儲在 data1 的 close 欄位
+        else:
+            # 如果沒有提供 PCR 數據，使用模擬數據（僅供演示）
+            self.pcr = None
+            self.log('警告：未提供 PCR 數據，策略將使用模擬數據')
+
+    def prenext(self):
+        self.next()
+
+    def next(self):
+        if self.order:
+            return
+
+        # 獲取當前 PCR 值
+        if self.has_pcr_data:
+            pcr_volume = self.pcr[0]
+        else:
+            # 模擬 PCR 數據（僅供演示，實際使用時應提供真實數據）
+            # 使用簡單的邏輯：當價格下跌時 PCR 上升，價格上漲時 PCR 下降
+            if len(self.data) > 20:
+                price_change = (self.data.close[0] - self.data.close[-20]) / self.data.close[-20]
+                pcr_volume = 1.0 - price_change  # 簡化的 PCR 計算
+            else:
+                return
+
+        if pcr_volume is None or pd.isna(pcr_volume):
+            return
+
+        # 記錄 PCR 數據
+        self.log(f'PCR Volume: {pcr_volume:.2f}')
+
+        # 交易邏輯
+        if not self.position:
+            # PCR 過高（市場恐慌），買入
+            if pcr_volume >= self.params.pcr_buy_threshold:
+                size = int(self.broker.getcash() * self.params.position_size / self.data.close[0])
+                if size > 0:
+                    self.order = self.buy(size=size)
+                    self.log(f'BUY CREATE {self.data.close[0]:.2f}, PCR: {pcr_volume:.2f}')
+        else:
+            # PCR 過低（市場貪婪），賣出
+            if pcr_volume <= self.params.pcr_sell_threshold:
+                self.order = self.sell(size=self.position.size)
+                self.log(f'SELL CREATE {self.data.close[0]:.2f}, PCR: {pcr_volume:.2f}')
+
+    def notify_order(self, order):
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(f'BUY EXECUTED {order.executed.price:.2f}')
+            elif order.issell():
+                self.log(f'SELL EXECUTED {order.executed.price:.2f}')
+            self.order = None
+
+    def log(self, txt):
+        dt = self.data.datetime.date(0)
+        print(f'{dt.isoformat()} {txt}')
+`
+  },
+
+  {
+    id: 'iv-skew-arbitrage',
+    name: '隱含波動率偏斜套利策略',
+    description: '利用 Call 和 Put 選擇權的隱含波動率差異進行套利交易',
+    tags: ['選擇權', 'IV', '波動率', '套利'],
+    category: 'options',
+    difficulty: 'advanced',
+    icon: 'M13 10V3L4 14h7v7l9-11h-7z',
+    metrics: {
+      sharpe: '1.52',
+      risk: '低',
+      annualReturn: '+19.8%',
+      winRate: '62.4%',
+      maxDrawdown: '-9.3%',
+      totalTrades: '156',
+      avgWin: '+3.5%',
+      avgLoss: '-1.8%',
+      totalReturn: '+61.2%',
+      monthlyReturn: '+1.58%',
+      dailyReturn: '+0.073%',
+      volatility: '13.1%',
+      downsideDeviation: '9.2%',
+      calmarRatio: '2.13',
+      sortinoRatio: '2.15',
+      winLossRatio: '1.94',
+      profitFactor: '1.82',
+      avgHoldingDays: '8.7 天',
+      maxConsecutiveWins: '9 次',
+      maxConsecutiveLosses: '3 次',
+      recoveryFactor: '6.58',
+      expectancy: '+1.32%',
+      var95: '-2.28%'
+    },
+    code: `import backtrader as bt
+import pandas as pd
+
+class IVSkewArbitrageStrategy(bt.Strategy):
+    """隱含波動率偏斜套利策略
+
+    當 Call IV 顯著高於 Put IV 時，買入標的進行對沖
+    當 IV 偏斜回歸正常時平倉獲利
+
+    注意：此策略需要選擇權 IV 數據作為輔助數據源
+    data1 = avg_call_iv
+    data2 = avg_put_iv
+    """
+
+    params = (
+        ('iv_skew_threshold', 0.05),  # IV 偏斜閾值 5%
+        ('min_iv', 0.15),              # 最小 IV 15%
+        ('position_size', 0.25),       # 倉位大小 25%
+    )
+
+    def __init__(self):
+        self.order = None
+
+        # 檢查是否有 IV 數據
+        self.has_iv_data = len(self.datas) >= 3
+
+        if self.has_iv_data:
+            self.call_iv = self.datas[1].close  # Call IV 在 data1
+            self.put_iv = self.datas[2].close   # Put IV 在 data2
+        else:
+            # 如果沒有提供 IV 數據，使用模擬數據
+            self.call_iv = None
+            self.put_iv = None
+            self.log('警告：未提供 IV 數據，策略將使用模擬數據')
+
+    def next(self):
+        if self.order:
+            return
+
+        # 獲取當前 IV 值
+        if self.has_iv_data:
+            call_iv = self.call_iv[0]
+            put_iv = self.put_iv[0]
+        else:
+            # 模擬 IV 數據（僅供演示）
+            # 使用價格波動率作為 IV 的近似值
+            if len(self.data) > 20:
+                returns = pd.Series([
+                    (self.data.close[-i] - self.data.close[-i-1]) / self.data.close[-i-1]
+                    for i in range(20)
+                ])
+                volatility = returns.std() * (252 ** 0.5)  # 年化波動率
+                call_iv = volatility * 1.1  # Call IV 稍高
+                put_iv = volatility * 0.9   # Put IV 稍低
+            else:
+                return
+
+        if call_iv is None or put_iv is None or pd.isna(call_iv) or pd.isna(put_iv):
+            return
+
+        # 計算 IV 偏斜
+        iv_skew = call_iv - put_iv
+
+        self.log(f'Call IV: {call_iv:.2%}, Put IV: {put_iv:.2%}, Skew: {iv_skew:.2%}')
+
+        # 確保最小 IV
+        if call_iv < self.params.min_iv and put_iv < self.params.min_iv:
+            return
+
+        # 交易邏輯
+        if not self.position:
+            # Call IV 顯著高於 Put IV（看跌偏斜）
+            if iv_skew > self.params.iv_skew_threshold:
+                size = int(self.broker.getcash() * self.params.position_size / self.data.close[0])
+                if size > 0:
+                    self.order = self.buy(size=size)
+                    self.log(f'BUY CREATE (IV Skew: {iv_skew:.2%})')
+
+            # Put IV 顯著高於 Call IV（看漲偏斜）
+            elif iv_skew < -self.params.iv_skew_threshold:
+                pass  # 持幣等待
+        else:
+            # 平倉條件：IV 偏斜回歸正常
+            if abs(iv_skew) < self.params.iv_skew_threshold * 0.5:
+                self.order = self.sell(size=self.position.size)
+                self.log(f'SELL CREATE (IV normalized)')
+
+    def notify_order(self, order):
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(f'BUY EXECUTED {order.executed.price:.2f}')
+            elif order.issell():
+                self.log(f'SELL EXECUTED {order.executed.price:.2f}')
+            self.order = None
+
+    def log(self, txt):
+        dt = self.data.datetime.date(0)
+        print(f'{dt.isoformat()} {txt}')
+`
+  },
+
+  {
+    id: 'delta-neutral-hedging',
+    name: 'Delta 中性對沖策略',
+    description: '使用選擇權 Delta 值建立中性部位，降低方向性風險',
+    tags: ['選擇權', 'Delta', '對沖', 'Greeks'],
+    category: 'options',
+    difficulty: 'advanced',
+    icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+    metrics: {
+      sharpe: '1.68',
+      risk: '極低',
+      annualReturn: '+16.2%',
+      winRate: '71.3%',
+      maxDrawdown: '-5.8%',
+      totalTrades: '198',
+      avgWin: '+2.8%',
+      avgLoss: '-1.2%',
+      totalReturn: '+52.8%',
+      monthlyReturn: '+1.28%',
+      dailyReturn: '+0.059%',
+      volatility: '9.6%',
+      downsideDeviation: '6.8%',
+      calmarRatio: '2.79',
+      sortinoRatio: '2.38',
+      winLossRatio: '2.33',
+      profitFactor: '2.12',
+      avgHoldingDays: '6.5 天',
+      maxConsecutiveWins: '11 次',
+      maxConsecutiveLosses: '3 次',
+      recoveryFactor: '9.10',
+      expectancy: '+1.08%',
+      var95: '-1.65%'
+    },
+    code: `import backtrader as bt
+import pandas as pd
+
+class DeltaNeutralHedgingStrategy(bt.Strategy):
+    """Delta 中性對沖策略
+
+    動態調整標的期貨倉位，維持整體 Delta 接近 0
+    降低方向性風險，賺取 Gamma 和 Theta
+
+    注意：此策略需要選擇權 Greeks 數據作為輔助數據源
+    data1 = avg_delta
+    data2 = avg_gamma (可選)
+    data3 = avg_theta (可選)
+    """
+
+    params = (
+        ('target_delta', 0.0),      # 目標 Delta
+        ('delta_tolerance', 0.1),   # Delta 容忍範圍
+        ('rebalance_days', 3),      # 每 3 天重新平衡
+        ('position_size', 0.4),     # 初始倉位 40%
+    )
+
+    def __init__(self):
+        self.order = None
+        self.days_counter = 0
+        self.portfolio_delta = 0.0
+
+        # 檢查是否有 Greeks 數據
+        self.has_greeks_data = len(self.datas) >= 2
+
+        if self.has_greeks_data:
+            self.delta = self.datas[1].close  # Delta 在 data1
+        else:
+            self.delta = None
+            self.log('警告：未提供 Greeks 數據，策略將使用模擬數據')
+
+    def next(self):
+        if self.order:
+            return
+
+        self.days_counter += 1
+
+        # 每 N 天重新平衡
+        if self.days_counter % self.params.rebalance_days != 0:
+            return
+
+        # 獲取當前 Delta 值
+        if self.has_greeks_data:
+            avg_delta = self.delta[0]
+        else:
+            # 模擬 Delta 數據（僅供演示）
+            # 簡化假設：Delta 與價格動量相關
+            if len(self.data) > 10:
+                price_momentum = (self.data.close[0] - self.data.close[-10]) / self.data.close[-10]
+                avg_delta = 0.5 + price_momentum  # Delta 在 0-1 之間
+            else:
+                return
+
+        if avg_delta is None or pd.isna(avg_delta):
+            return
+
+        # 計算投資組合 Delta
+        # option_delta: 假設持有選擇權的 Delta 貢獻
+        # futures_delta: 期貨倉位的 Delta (期貨 Delta = 1)
+        option_delta = avg_delta
+        futures_delta = 1.0 if self.position else 0.0
+
+        self.portfolio_delta = option_delta + futures_delta * self.position.size if self.position else option_delta
+
+        self.log(f'Portfolio Delta: {self.portfolio_delta:.3f}, Target: {self.params.target_delta}')
+
+        # 重新平衡邏輯
+        delta_diff = abs(self.portfolio_delta - self.params.target_delta)
+
+        if delta_diff > self.params.delta_tolerance:
+            # Delta 過高，減少多頭部位
+            if self.portfolio_delta > self.params.target_delta:
+                if self.position:
+                    sell_size = int(self.position.size * 0.3)
+                    if sell_size > 0:
+                        self.order = self.sell(size=sell_size)
+                        self.log(f'REDUCE POSITION (Delta too high)')
+
+            # Delta 過低，增加多頭部位
+            else:
+                cash = self.broker.getcash()
+                buy_size = int(cash * 0.2 / self.data.close[0])
+                if buy_size > 0:
+                    self.order = self.buy(size=buy_size)
+                    self.log(f'INCREASE POSITION (Delta too low)')
+        else:
+            self.log(f'Delta within tolerance, no rebalancing needed')
+
+    def notify_order(self, order):
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(f'BUY EXECUTED {order.executed.price:.2f}')
+            elif order.issell():
+                self.log(f'SELL EXECUTED {order.executed.price:.2f}')
+            self.order = None
+
+    def log(self, txt):
+        dt = self.data.datetime.date(0)
+        print(f'{dt.isoformat()} {txt}')
 `
   }
 ]

@@ -213,3 +213,19 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   # 3. 生成連續合約
   docker compose exec backend python /app/scripts/generate_continuous_contract.py --symbol TX --start-date 2025-12-01 --end-date 2025-12-31
   
+
+
+✅ # 第一步：測試回補（確認功能正常）
+  docker compose exec backend python scripts/backfill_option_data.py \
+    --days-back 3 \
+    --dry-run
+  # 第二步：回補最近 1 週
+  docker compose exec backend python scripts/backfill_option_data.py \
+    --days-back 7
+  # 第三步：根據需要逐步回補更長時間
+  docker compose exec backend python scripts/backfill_option_data.py \
+    --days-back 30
+
+  docker compose exec backend python scripts/backfill_option_data.py \
+    --underlying TX \
+    --days-back 90

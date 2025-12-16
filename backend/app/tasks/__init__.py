@@ -32,6 +32,12 @@ from app.tasks.shioaji_sync import (
     sync_shioaji_minute_data,
     sync_shioaji_top_stocks,
 )
+from app.tasks.option_sync import (
+    sync_option_daily_factors,
+    register_option_contracts,
+    sync_option_minute_data,
+    calculate_option_greeks,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -54,4 +60,8 @@ __all__ = [
     "cleanup_old_institutional_data",
     "sync_shioaji_minute_data",
     "sync_shioaji_top_stocks",
+    "sync_option_daily_factors",
+    "register_option_contracts",
+    "sync_option_minute_data",
+    "calculate_option_greeks",
 ]

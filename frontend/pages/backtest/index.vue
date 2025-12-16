@@ -355,8 +355,11 @@
                 <option value="5min">5 分鐘線</option>
                 <option value="1min">1 分鐘線</option>
               </select>
-              <p class="field-hint">
-                ⏰ 分鐘線回測需要已匯入的分鐘級數據（目前支援 TOP 50 股票）
+              <p v-if="newBacktest.timeframe === '1day'" class="field-hint">
+                📊 日線數據覆蓋所有台股（2007 年至今）
+              </p>
+              <p v-else class="field-hint">
+                ⏰ 分鐘線數據：已支援 <strong>2000+ 檔股票</strong> + <strong>期貨</strong>（TX、MTX、連續合約）
               </p>
             </div>
 

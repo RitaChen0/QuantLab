@@ -88,4 +88,3 @@ httpx==0.25.2  # Must match main httpx version
 black==23.12.1
 flake8==7.0.0
 mypy==1.8.0
-shioaji>=1.2.9

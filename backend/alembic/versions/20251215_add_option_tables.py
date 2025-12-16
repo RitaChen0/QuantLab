@@ -1,7 +1,7 @@
 """add option tables for stage 1
 
 Revision ID: 20251215_option
-Revises: 20251213_inst_inv
+Revises: 14b5df59adf4
 Create Date: 2025-12-15 12:00:00.000000
 
 Creates option-related tables with evolution support:
@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20251215_option'
-down_revision = '20251213_inst_inv'
+down_revision = '14b5df59adf4'
 branch_labels = None
 depends_on = None
 

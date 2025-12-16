@@ -68,6 +68,42 @@ docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart
 docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart --test
 ```
 
+### 選擇權數據回補
+
+```bash
+# 回補選擇權歷史數據（使用 Shioaji API 獲取真實價格並計算 Greeks）
+# 測試模式（3 天，不寫入資料庫）
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX \
+  --days-back 3 \
+  --dry-run
+
+# 實際回補最近 7 天
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX \
+  --days-back 7
+
+# 回補完整 90 天（需時 2-3 小時）
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX \
+  --days-back 90
+
+# 指定日期範圍
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX \
+  --start-date 2025-09-16 \
+  --end-date 2025-12-15
+
+# 驗證選擇權數據品質
+bash /home/ubuntu/QuantLab/verify_option_quality.sh
+```
+
+**重要說明**：
+- MTX (小台期貨) **沒有選擇權產品**，僅 TX (台指期貨) 有 TXO (台指選擇權)
+- 回補腳本會計算真實的 Black-Scholes Greeks（Delta, Gamma, Theta, Vega, Rho, Vanna）
+- 數據品質驗證會檢查 Greeks 是否為真實計算而非估算值
+- 回補過程中會自動處理 API 限制並重試
+
 ### Celery 任務管理
 
 ```bash
@@ -262,6 +298,35 @@ FinLab API → PostgreSQL (stock_prices) → Qlib 二進制
 - **月份合約**（TX202512）：實際交易的合約，每月第三個週三結算
 - **連續合約**（TXCONT）：拼接多個月份合約，用於長期回測
 - **換月邏輯**：結算日前 3 天自動切換到下月合約
+
+#### 選擇權資料流
+
+```
+                    Shioaji API
+                         ↓
+                  ┌──────┴──────┐
+                  ↓             ↓
+            合約快照        歷史價格
+                  ↓             ↓
+         Black-Scholes     選擇權因子
+           Greeks 計算      (option_daily_factors)
+                  ↓
+            PostgreSQL
+```
+
+**選擇權數據特性**：
+- **標的限制**：僅 TX (台指期貨) 有選擇權，MTX (小台) **無選擇權產品**
+- **數據來源**：Shioaji API TXO (台指選擇權) 合約
+- **Greeks 計算**：使用 Black-Scholes 模型計算 Delta, Gamma, Theta, Vega, Rho, Vanna
+- **因子儲存**：`option_daily_factors` 表（PCR, ATM IV, Greeks 彙總）
+- **品質保證**：真實計算 vs 估算值（delta_iv_ratio != 0.10）
+
+**回補流程**（backfill_option_data.py）：
+1. 獲取特定日期的有效選擇權合約（過濾即將到期）
+2. 批次獲取合約快照（價格、履約價、類型）
+3. 計算每個合約的隱含波動率和 Greeks
+4. 彙總為每日因子並儲存
+5. 自動重試處理 API 限制
 
 ### Qlib 數據格式
 
@@ -553,6 +618,79 @@ docker compose logs backend | grep "\[ALERT\]"
 - 告警 JSON：`/tmp/quantlab_alerts/*.json`
 - 任務日誌：`/tmp/futures_logs/*.log`
 
+### 8. 選擇權回測零交易
+
+**症狀**：Delta Neutral 等選擇權策略回測顯示 COMPLETED 但交易次數為 0
+
+**常見原因**：
+1. **使用 MTX**：小台期貨沒有選擇權產品 → 改用 TX
+2. **Greeks 數據缺失**：`avg_call_delta`, `avg_put_delta` 為 NULL
+3. **Greeks 為估算值**：delta_iv_ratio = 0.10（非真實計算）
+4. **歷史數據不足**：策略需要至少 10 天數據，但只有 2-3 天
+
+**診斷步驟**：
+```bash
+# 1. 檢查選擇權因子數據
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT date, avg_call_delta, avg_put_delta,
+       ROUND((avg_call_delta - 0.5) / NULLIF(atm_iv, 0), 3) as delta_iv_ratio
+FROM option_daily_factors
+WHERE underlying_id = 'TX'
+ORDER BY date DESC LIMIT 5;"
+
+# 2. 檢查期貨數據範圍
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT stock_id, MIN(datetime::date), MAX(datetime::date), COUNT(DISTINCT datetime::date)
+FROM stock_minute_prices
+WHERE stock_id IN ('TX', 'TXCONT')
+GROUP BY stock_id;"
+
+# 3. 驗證數據品質
+bash /home/ubuntu/QuantLab/verify_option_quality.sh
+```
+
+**解決方案**：
+```bash
+# 清除估算值並重新回補真實 Greeks
+docker compose exec postgres psql -U quantlab quantlab -c "
+UPDATE option_daily_factors
+SET avg_call_delta = NULL, avg_put_delta = NULL,
+    gamma_exposure = NULL, vanna_exposure = NULL
+WHERE underlying_id = 'TX'
+  AND ABS((avg_call_delta - 0.5) / NULLIF(atm_iv, 0) - 0.10) < 0.001;"
+
+# 回補真實選擇權數據
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX --days-back 90
+```
+
+### 9. Celery Worker 被卡住
+
+**症狀**：新的回測任務一直處於 PENDING 狀態
+
+**原因**：Worker 被長時間運行的任務（如 Greeks 計算）阻塞
+
+**診斷**：
+```bash
+# 檢查活動任務
+docker compose exec backend celery -A app.core.celery_app inspect active
+
+# 檢查隊列長度
+docker compose exec redis redis-cli LLEN celery
+```
+
+**解決**：
+```bash
+# 停止 Worker
+docker compose stop celery-worker celery-beat
+
+# 清空 Redis 隊列
+docker compose exec redis redis-cli FLUSHDB
+
+# 重啟 Worker
+docker compose start celery-worker celery-beat
+```
+
 ---
 
 ## 📚 文檔導航
@@ -664,6 +802,6 @@ def test_real_shioaji_api():
 
 ---
 
-**文檔版本**：2025-12-14
+**文檔版本**：2025-12-15
 **維護者**：開發團隊
-**最後更新**：新增期貨交易支援、測試規範、告警系統
+**最後更新**：新增選擇權數據回補、Greeks 計算、品質驗證流程

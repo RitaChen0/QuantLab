@@ -420,13 +420,156 @@ class OptionFactorCalculator:
                 'vanna_exposure': Decimal
             }
         """
-        logger.debug("[OPTION] Greeks summary calculation not implemented in Stage 1")
-        return {
-            'avg_call_delta': None,
-            'avg_put_delta': None,
-            'gamma_exposure': None,
-            'vanna_exposure': None
-        }
+        try:
+            from app.services.greeks_calculator import (
+                BlackScholesGreeksCalculator,
+                calculate_time_to_expiry
+            )
+
+            # 驗證必要欄位
+            required_fields = ['option_type', 'strike_price', 'expiry_date', 'close']
+            missing_fields = [f for f in required_fields if f not in option_chain.columns]
+            if missing_fields:
+                logger.error(
+                    f"[GREEKS] Missing required fields: {missing_fields}. "
+                    f"Available: {list(option_chain.columns)}"
+                )
+                return {
+                    'avg_call_delta': None,
+                    'avg_put_delta': None,
+                    'gamma_exposure': None,
+                    'vanna_exposure': None
+                }
+
+            # 過濾有效數據
+            valid_data = option_chain[
+                option_chain['close'].notna() &
+                (option_chain['close'] > 0) &
+                option_chain['strike_price'].notna() &
+                option_chain['expiry_date'].notna()
+            ].copy()
+
+            if valid_data.empty:
+                logger.warning("[GREEKS] No valid option data for Greeks calculation")
+                return {
+                    'avg_call_delta': None,
+                    'avg_put_delta': None,
+                    'gamma_exposure': None,
+                    'vanna_exposure': None
+                }
+
+            # 獲取標的現價（使用 ATM Call 的 strike 作為近似）
+            if 'volume' in valid_data.columns:
+                calls = valid_data[valid_data['option_type'] == 'CALL']
+                if not calls.empty and calls['volume'].sum() > 0:
+                    atm_call = calls.loc[calls['volume'].idxmax()]
+                    spot_price = float(atm_call['strike_price'])
+                else:
+                    spot_price = float(valid_data['strike_price'].median())
+            else:
+                spot_price = float(valid_data['strike_price'].median())
+
+            logger.debug(f"[GREEKS] Estimated spot price: {spot_price}")
+
+            # 初始化計算器
+            calculator = BlackScholesGreeksCalculator()
+
+            # 計算當前日期
+            current_date = date.today()
+
+            # 儲存 Greeks 計算結果
+            call_deltas = []
+            put_deltas = []
+            gamma_exposures = []
+            vanna_exposures = []
+
+            # 逐個合約計算 Greeks
+            for _, row in valid_data.iterrows():
+                try:
+                    strike_price = float(row['strike_price'])
+                    expiry_date = row['expiry_date']
+                    option_type = row['option_type']
+                    option_price = float(row['close'])
+
+                    # 計算到期時間
+                    time_to_expiry = calculate_time_to_expiry(expiry_date, current_date)
+                    if time_to_expiry <= 0:
+                        continue
+
+                    # 估算隱含波動率（使用簡化方法）
+                    volatility = (option_price / strike_price) * np.sqrt(2 * np.pi / time_to_expiry)
+                    volatility = max(0.05, min(volatility, 1.0))  # 限制在 5%-100%
+
+                    # 計算 Greeks
+                    greeks = calculator.calculate_greeks(
+                        spot_price=spot_price,
+                        strike_price=strike_price,
+                        time_to_expiry=time_to_expiry,
+                        volatility=volatility,
+                        option_type=option_type
+                    )
+
+                    if greeks['delta'] is not None:
+                        if option_type == 'CALL':
+                            call_deltas.append(greeks['delta'])
+                        else:
+                            put_deltas.append(greeks['delta'])
+
+                    if greeks['gamma'] is not None:
+                        # Gamma Exposure = Gamma × Open Interest × Contract Size
+                        open_interest = float(row.get('open_interest', 0))
+                        gamma_exposure = greeks['gamma'] * open_interest * spot_price
+                        gamma_exposures.append(gamma_exposure)
+
+                    if greeks['vanna'] is not None:
+                        open_interest = float(row.get('open_interest', 0))
+                        vanna_exposure = greeks['vanna'] * open_interest
+                        vanna_exposures.append(vanna_exposure)
+
+                except Exception as e:
+                    logger.debug(
+                        f"[GREEKS] Failed to calculate Greeks for contract: {str(e)}"
+                    )
+                    continue
+
+            # 計算摘要統計
+            avg_call_delta = Decimal(str(np.mean(call_deltas))) if call_deltas else None
+            avg_put_delta = Decimal(str(np.mean(put_deltas))) if put_deltas else None
+            gamma_exposure = Decimal(str(np.sum(gamma_exposures))) if gamma_exposures else None
+            vanna_exposure = Decimal(str(np.sum(vanna_exposures))) if vanna_exposures else None
+
+            logger.info(
+                f"[GREEKS] ✅ Greeks summary calculated: "
+                f"avg_call_delta={avg_call_delta}, avg_put_delta={avg_put_delta}, "
+                f"gamma_exp={gamma_exposure}, vanna_exp={vanna_exposure}"
+            )
+
+            return {
+                'avg_call_delta': avg_call_delta,
+                'avg_put_delta': avg_put_delta,
+                'gamma_exposure': gamma_exposure,
+                'vanna_exposure': vanna_exposure
+            }
+
+        except ImportError as e:
+            logger.error(f"[GREEKS] Failed to import Greeks calculator: {str(e)}")
+            return {
+                'avg_call_delta': None,
+                'avg_put_delta': None,
+                'gamma_exposure': None,
+                'vanna_exposure': None
+            }
+        except Exception as e:
+            logger.error(
+                f"[GREEKS] Unexpected error in Greeks summary: {type(e).__name__}: {str(e)}",
+                exc_info=True
+            )
+            return {
+                'avg_call_delta': None,
+                'avg_put_delta': None,
+                'gamma_exposure': None,
+                'vanna_exposure': None
+            }
 
     def _assess_quality(
         self,

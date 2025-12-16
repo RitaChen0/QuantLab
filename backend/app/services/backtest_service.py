@@ -2,9 +2,12 @@
 Backtest service for business logic
 """
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
+from datetime import date, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import func, text
 from fastapi import HTTPException, status
+from loguru import logger
 from app.models.backtest import Backtest, BacktestStatus
 from app.schemas.backtest import BacktestCreate, BacktestUpdate
 from app.repositories.backtest import BacktestRepository
@@ -229,6 +232,22 @@ class BacktestService:
                 detail="Initial capital must be greater than 0",
             )
 
+        # Smart date adjustment: adjust dates to available data range
+        adjusted_start, adjusted_end, adjustment_msg = self._adjust_dates_to_available_data(
+            symbol=backtest_create.symbol,
+            timeframe=backtest_create.timeframe,
+            requested_start=backtest_create.start_date,
+            requested_end=backtest_create.end_date
+        )
+
+        # Update backtest dates with adjusted values
+        backtest_create.start_date = adjusted_start
+        backtest_create.end_date = adjusted_end
+
+        # Log adjustment if dates were changed
+        if adjustment_msg:
+            logger.info(f"📅 Date adjustment for backtest: {adjustment_msg}")
+
         # Determine engine type: use request override or inherit from strategy
         engine_type = backtest_create.engine_type or strategy.engine_type
 
@@ -400,3 +419,99 @@ class BacktestService:
                 detail=f"Backtest quota exceeded for this strategy. Maximum {settings.MAX_BACKTESTS_PER_STRATEGY} backtests allowed per strategy. "
                        f"Current count: {strategy_backtest_count}. Please delete some backtests for this strategy before creating new ones."
             )
+
+    def _adjust_dates_to_available_data(
+        self,
+        symbol: str,
+        timeframe: str,
+        requested_start: date,
+        requested_end: date
+    ) -> Tuple[date, date, Optional[str]]:
+        """
+        智慧調整回測日期到實際有資料的範圍
+
+        Args:
+            symbol: 股票/期貨代碼
+            timeframe: 時間框架（1day, 1min, 5min, 15min, 30min, 60min）
+            requested_start: 用戶請求的開始日期
+            requested_end: 用戶請求的結束日期
+
+        Returns:
+            Tuple of (adjusted_start_date, adjusted_end_date, adjustment_message)
+            - adjustment_message is None if no adjustment was needed
+        """
+        try:
+            # Determine which table to query based on timeframe
+            if timeframe == '1day':
+                # Query daily data from stock_prices
+                query = text("""
+                    SELECT MIN(date)::date as min_date, MAX(date)::date as max_date
+                    FROM stock_prices
+                    WHERE stock_id = :symbol
+                """)
+            else:
+                # Query minute data from stock_minute_prices
+                query = text("""
+                    SELECT MIN(datetime)::date as min_date, MAX(datetime)::date as max_date
+                    FROM stock_minute_prices
+                    WHERE stock_id = :symbol
+                """)
+
+            result = self.db.execute(query, {"symbol": symbol}).fetchone()
+
+            if not result or result.min_date is None or result.max_date is None:
+                # No data available for this symbol
+                logger.warning(f"⚠️ No data available for {symbol} ({timeframe})")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"無資料可用於標的 {symbol}（{timeframe}）。請選擇其他標的或時間框架。"
+                )
+
+            available_start = result.min_date
+            available_end = result.max_date
+
+            # Check if requested dates are completely outside available range
+            if requested_end < available_start or requested_start > available_end:
+                adjustment_msg = (
+                    f"請求日期範圍 {requested_start} 至 {requested_end} 完全超出可用資料範圍。"
+                    f"已自動調整為 {available_start} 至 {available_end}"
+                )
+                logger.info(f"📅 {adjustment_msg}")
+                return available_start, available_end, adjustment_msg
+
+            # Adjust dates to fit within available range
+            adjusted_start = requested_start
+            adjusted_end = requested_end
+            adjustments = []
+
+            if requested_start < available_start:
+                adjusted_start = available_start
+                adjustments.append(f"開始日期從 {requested_start} 調整為 {available_start}")
+
+            if requested_end > available_end:
+                adjusted_end = available_end
+                adjustments.append(f"結束日期從 {requested_end} 調整為 {available_end}")
+
+            # Ensure we have at least some data range
+            if adjusted_end <= adjusted_start:
+                # Fallback: use all available data
+                adjusted_start = available_start
+                adjusted_end = available_end
+                adjustment_msg = f"日期範圍已調整為全部可用資料：{available_start} 至 {available_end}"
+                logger.info(f"📅 {adjustment_msg}")
+                return adjusted_start, adjusted_end, adjustment_msg
+
+            if adjustments:
+                adjustment_msg = "；".join(adjustments) + f"（可用資料範圍：{available_start} 至 {available_end}）"
+                return adjusted_start, adjusted_end, adjustment_msg
+
+            # No adjustment needed
+            return requested_start, requested_end, None
+
+        except HTTPException:
+            # Re-raise HTTPException as-is
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error adjusting dates for {symbol}: {str(e)}")
+            # On error, return original dates
+            return requested_start, requested_end, None

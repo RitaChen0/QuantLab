@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, timezone, timedelta
+from celery.schedules import crontab
 
 from app.api.dependencies import get_db, get_current_superuser
 from app.models.user import User
@@ -34,6 +35,101 @@ from app.core.celery_app import celery_app
 from app.utils.logging import logger
 
 router = APIRouter()
+
+
+def format_crontab_schedule(schedule) -> str:
+    """
+    將 crontab schedule 轉換為人類可讀的文字
+
+    注意：由於 Celery crontab 內部使用 UTC 時間，需要將時間轉換為台北時間 (UTC+8)
+
+    Examples:
+        crontab(hour=0, minute=0) -> "每天 08:00"（UTC 00:00 = 台北 08:00）
+        crontab(hour=7, minute=30) -> "每天 15:30"（UTC 07:30 = 台北 15:30）
+    """
+    if not isinstance(schedule, crontab):
+        return str(schedule)
+
+    # 解析 crontab 各個欄位（UTC 時間）
+    minute = schedule._orig_minute
+    hour = schedule._orig_hour
+    day_of_month = schedule._orig_day_of_month
+    month_of_year = schedule._orig_month_of_year
+    day_of_week = schedule._orig_day_of_week
+
+    # 轉換 UTC 時間為台北時間 (UTC+8)
+    def convert_utc_to_taiwan(utc_hour):
+        """將 UTC 小時轉換為台北時間"""
+        if isinstance(utc_hour, int):
+            taiwan_hour = (utc_hour + 8) % 24
+            return taiwan_hour
+        return utc_hour  # 如果是字符串（如 '*/4'），不轉換
+
+    # 星期對照表
+    weekday_map = {
+        '0': '週日', '1': '週一', '2': '週二', '3': '週三',
+        '4': '週四', '5': '週五', '6': '週六'
+    }
+
+    # 月份對照表
+    month_map = {
+        '1': '1月', '2': '2月', '3': '3月', '4': '4月',
+        '5': '5月', '6': '6月', '7': '7月', '8': '8月',
+        '9': '9月', '10': '10月', '11': '11月', '12': '12月'
+    }
+
+    # 轉換小時為台北時間
+    taiwan_hour = convert_utc_to_taiwan(hour)
+
+    # 處理每週特定日期（非時間範圍）
+    if day_of_week != '*' and hour != '*' and minute != '*' and not (isinstance(hour, str) and '-' in hour):
+        if day_of_week == 'mon,tue,wed,thu,fri':
+            return f"交易日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+        weekday = weekday_map.get(str(day_of_week), f'週{day_of_week}')
+        return f"每{weekday} {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+
+    # 處理每月特定日期
+    if day_of_month != '*' and hour != '*' and minute != '*':
+        return f"每月 {day_of_month} 日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+
+    # 處理每年特定日期
+    if month_of_year != '*' and day_of_month != '*' and hour != '*' and minute != '*':
+        month = month_map.get(str(month_of_year), f'{month_of_year}月')
+        return f"每年 {month} {day_of_month} 日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+
+    # 處理每小時
+    if hour == '*' and minute != '*':
+        if isinstance(minute, str) and minute.startswith('*/'):
+            interval = minute.replace('*/', '')
+            return f"每 {interval} 分鐘"
+        return f"每小時 {str(minute).zfill(2)} 分"
+
+    # 處理特定時間範圍（含 day_of_week）
+    if hour != '*' and isinstance(hour, str) and '-' in hour:
+        start_utc, end_utc = hour.split('-')
+        start_tw = (int(start_utc) + 8) % 24
+        end_tw = (int(end_utc) + 8) % 24
+        if isinstance(minute, str) and minute.startswith('*/'):
+            interval = minute.replace('*/', '')
+            if day_of_week == 'mon,tue,wed,thu,fri':
+                prefix = "交易日"
+            elif day_of_week != '*':
+                prefix = f"每{weekday_map.get(str(day_of_week), '天')}"
+            else:
+                prefix = "每天"
+            return f"{prefix} {str(start_tw).zfill(2)}:00-{str(end_tw).zfill(2)}:59 每 {interval} 分鐘"
+
+    # 處理每天特定時間
+    if day_of_week == '*' and day_of_month == '*' and hour != '*' and minute != '*':
+        # 檢查是否為間隔 (例如 */4)
+        if isinstance(hour, str) and hour.startswith('*/'):
+            interval = hour.replace('*/', '')
+            return f"每 {interval} 小時"
+
+        return f"每天 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+
+    # 預設返回原始格式（UTC 時間，加上提示）
+    return f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week} (UTC)"
 
 
 # ============ User Management ============
@@ -305,7 +401,7 @@ async def list_sync_tasks(
         tasks.append(SyncTaskInfo(
             task_name=task_name,
             display_name=task_display_names.get(task_name, task_name),
-            schedule=str(config["schedule"]),
+            schedule=format_crontab_schedule(config["schedule"]),
             last_run=last_run,
             last_run_status=last_run_status,
             last_run_result=last_run_result,
