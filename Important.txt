@@ -229,3 +229,36 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   docker compose exec backend python scripts/backfill_option_data.py \
     --underlying TX \
     --days-back 90
+
+✅ backend 重啟後自動檢測並重新觸發今天應該執行但被撤銷的任務。
+  偶而重啟
+  scripts/retry-missed-tasks.sh
+
+  # 4. 查看執行結果
+  docker compose logs -f celery-worker | grep -E 'succeeded|failed'
+
+  頻繁重啟 , 全自動 , 會固定一直監測
+  scripts/auto-retry-after-restart.sh
+
+  查看任務的 Log
+  docker compose logs -f celery-worker celery-beat --tail 10
+
+✅ 創建或編輯策略時，在「策略參數」中添加：
+
+  {
+    "short_ma": 5,
+    "long_ma": 20,
+    "stocks": ["2330", "2317", "2454"]
+  }
+
+  如果您想監控台指期貨和小台期貨：
+
+  {
+    "stocks": ["TX", "MTX", "TXCONT", "MTXCONT"]
+  }
+
+  說明：
+  - TX, MTX - 月份合約（會自動換月）
+  - TXCONT, MTXCONT - 連續合約（無到期日）
+  - 期貨策略：配置 ["TX", "MTX"] 或 ["TXCONT"]
+  - 選擇權策略：配置 ["TX"]（選擇權標的）

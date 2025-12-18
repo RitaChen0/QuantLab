@@ -38,6 +38,17 @@ from app.tasks.option_sync import (
     sync_option_minute_data,
     calculate_option_greeks,
 )
+from app.tasks.strategy_monitoring import (
+    monitor_active_strategies,
+    cleanup_old_signals,
+)
+from app.tasks.system_maintenance import (
+    cleanup_celery_metadata,
+)
+from app.tasks.futures_continuous import (
+    generate_continuous_contracts,
+    register_new_futures_contracts,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -64,4 +75,9 @@ __all__ = [
     "register_option_contracts",
     "sync_option_minute_data",
     "calculate_option_greeks",
+    "monitor_active_strategies",
+    "cleanup_old_signals",
+    "cleanup_celery_metadata",
+    "generate_continuous_contracts",
+    "register_new_futures_contracts",
 ]

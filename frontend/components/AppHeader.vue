@@ -76,9 +76,14 @@
 
 <script setup lang="ts">
 const { logout } = useAuth()
-const { username, fullName, isSuperuser, memberLevel, loading: userLoading } = useUserInfo()
+const { loadUserInfo, username, fullName, isSuperuser, memberLevel, loading: userLoading } = useUserInfo()
 
 const isDropdownOpen = ref(false)
+
+// 載入用戶資訊
+onMounted(() => {
+  loadUserInfo()
+})
 
 const toggleDropdown = () => {
   isDropdownOpen.value = !isDropdownOpen.value

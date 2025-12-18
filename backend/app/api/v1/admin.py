@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 from celery.schedules import crontab
 
 from app.api.dependencies import get_db, get_current_superuser
+from app.db.session import SessionLocal
 from app.models.user import User
 from app.models.strategy import Strategy
 from app.models.backtest import Backtest
@@ -41,29 +42,25 @@ def format_crontab_schedule(schedule) -> str:
     """
     將 crontab schedule 轉換為人類可讀的文字
 
-    注意：由於 Celery crontab 內部使用 UTC 時間，需要將時間轉換為台北時間 (UTC+8)
+    重要：Celery 配置為 enable_utc=False + timezone="Asia/Taipei"
+    因此 crontab 的時間參數已經是台灣本地時間，不需要轉換！
 
     Examples:
-        crontab(hour=0, minute=0) -> "每天 08:00"（UTC 00:00 = 台北 08:00）
-        crontab(hour=7, minute=30) -> "每天 15:30"（UTC 07:30 = 台北 15:30）
+        crontab(hour=15, minute=0) -> "交易日 15:00"（台灣時間 15:00）
+        crontab(hour=8, minute=0) -> "每天 08:00"（台灣時間 08:00）
     """
     if not isinstance(schedule, crontab):
         return str(schedule)
 
-    # 解析 crontab 各個欄位（UTC 時間）
+    # 解析 crontab 各個欄位（已經是台灣本地時間）
     minute = schedule._orig_minute
     hour = schedule._orig_hour
     day_of_month = schedule._orig_day_of_month
     month_of_year = schedule._orig_month_of_year
     day_of_week = schedule._orig_day_of_week
 
-    # 轉換 UTC 時間為台北時間 (UTC+8)
-    def convert_utc_to_taiwan(utc_hour):
-        """將 UTC 小時轉換為台北時間"""
-        if isinstance(utc_hour, int):
-            taiwan_hour = (utc_hour + 8) % 24
-            return taiwan_hour
-        return utc_hour  # 如果是字符串（如 '*/4'），不轉換
+    # 由於 enable_utc=False，crontab 使用台灣本地時間，不需要轉換！
+    # 注意：時間範圍處理仍需要特殊邏輯（見下方）
 
     # 星期對照表
     weekday_map = {
@@ -78,24 +75,21 @@ def format_crontab_schedule(schedule) -> str:
         '9': '9月', '10': '10月', '11': '11月', '12': '12月'
     }
 
-    # 轉換小時為台北時間
-    taiwan_hour = convert_utc_to_taiwan(hour)
-
     # 處理每週特定日期（非時間範圍）
     if day_of_week != '*' and hour != '*' and minute != '*' and not (isinstance(hour, str) and '-' in hour):
         if day_of_week == 'mon,tue,wed,thu,fri':
-            return f"交易日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+            return f"交易日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
         weekday = weekday_map.get(str(day_of_week), f'週{day_of_week}')
-        return f"每{weekday} {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每{weekday} {str(hour).zfill(2)}:{str(minute).zfill(2)}"
 
     # 處理每月特定日期
     if day_of_month != '*' and hour != '*' and minute != '*':
-        return f"每月 {day_of_month} 日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每月 {day_of_month} 日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
 
     # 處理每年特定日期
     if month_of_year != '*' and day_of_month != '*' and hour != '*' and minute != '*':
         month = month_map.get(str(month_of_year), f'{month_of_year}月')
-        return f"每年 {month} {day_of_month} 日 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每年 {month} {day_of_month} 日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
 
     # 處理每小時
     if hour == '*' and minute != '*':
@@ -106,9 +100,8 @@ def format_crontab_schedule(schedule) -> str:
 
     # 處理特定時間範圍（含 day_of_week）
     if hour != '*' and isinstance(hour, str) and '-' in hour:
-        start_utc, end_utc = hour.split('-')
-        start_tw = (int(start_utc) + 8) % 24
-        end_tw = (int(end_utc) + 8) % 24
+        start_hour, end_hour = hour.split('-')
+        # 直接使用台灣本地時間，不需要轉換
         if isinstance(minute, str) and minute.startswith('*/'):
             interval = minute.replace('*/', '')
             if day_of_week == 'mon,tue,wed,thu,fri':
@@ -117,7 +110,7 @@ def format_crontab_schedule(schedule) -> str:
                 prefix = f"每{weekday_map.get(str(day_of_week), '天')}"
             else:
                 prefix = "每天"
-            return f"{prefix} {str(start_tw).zfill(2)}:00-{str(end_tw).zfill(2)}:59 每 {interval} 分鐘"
+            return f"{prefix} {str(start_hour).zfill(2)}:00-{str(end_hour).zfill(2)}:59 每 {interval} 分鐘"
 
     # 處理每天特定時間
     if day_of_week == '*' and day_of_month == '*' and hour != '*' and minute != '*':
@@ -126,10 +119,10 @@ def format_crontab_schedule(schedule) -> str:
             interval = hour.replace('*/', '')
             return f"每 {interval} 小時"
 
-        return f"每天 {str(taiwan_hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每天 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
 
-    # 預設返回原始格式（UTC 時間，加上提示）
-    return f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week} (UTC)"
+    # 預設返回原始格式（台灣本地時間）
+    return f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week} (Taiwan)"
 
 
 # ============ User Management ============
@@ -354,22 +347,74 @@ async def list_sync_tasks(
     schedule = celery_app.conf.beat_schedule
     tasks = []
 
+    # ============================================
+    # 任務分類：數據同步、數據處理、策略處理
+    # ============================================
+
+    # 數據同步任務（外部 API → 資料庫）
+    data_sync_task_names = [
+        "app.tasks.sync_stock_list",
+        "app.tasks.sync_daily_prices",
+        "app.tasks.sync_ohlcv_data",
+        "app.tasks.sync_latest_prices",
+        "app.tasks.sync_fundamental_data",
+        "app.tasks.sync_fundamental_latest",
+        "app.tasks.sync_top_stocks_institutional",
+        "app.tasks.sync_institutional_investors",
+        "app.tasks.sync_single_stock_institutional",
+        "app.tasks.sync_shioaji_top_stocks",
+        "app.tasks.sync_shioaji_futures",
+        "app.tasks.sync_option_daily_factors",
+        "app.tasks.register_option_contracts",
+    ]
+
+    # 數據處理任務（資料庫 → 計算 → 資料庫/文件）
+    data_processing_task_names = [
+        "app.tasks.generate_continuous_contracts",
+        "app.tasks.register_new_futures_contracts",
+        "app.tasks.cleanup_old_cache",
+        "app.tasks.cleanup_old_institutional_data",
+        "app.tasks.cleanup_old_signals",
+    ]
+
+    # 策略處理任務（資料庫 → 策略引擎 → 信號）
+    strategy_processing_task_names = [
+        "app.tasks.monitor_active_strategies",
+    ]
+
     task_display_names = {
+        # 數據同步任務
         "app.tasks.sync_stock_list": "同步股票列表",
         "app.tasks.sync_daily_prices": "同步每日價格",
         "app.tasks.sync_ohlcv_data": "同步 OHLCV 數據",
         "app.tasks.sync_latest_prices": "同步最新價格",
-        "app.tasks.cleanup_old_cache": "清理過期快取",
         "app.tasks.sync_fundamental_data": "同步財務指標（完整）",
         "app.tasks.sync_fundamental_latest": "同步財務指標（快速）",
-        "app.tasks.sync_top_stocks_institutional": "同步法人買賣超（Top 100）",
+        "app.tasks.sync_top_stocks_institutional": "同步法人買賣超（全部股票）",
         "app.tasks.sync_institutional_investors": "同步法人買賣超",
         "app.tasks.sync_single_stock_institutional": "同步單一股票法人買賣超",
+        "app.tasks.sync_shioaji_top_stocks": "同步 Shioaji 分鐘線（全部股票）",
+        "app.tasks.sync_shioaji_futures": "同步 Shioaji 期貨分鐘線（TX/MTX）",
+        "app.tasks.sync_option_daily_factors": "同步選擇權因子（含計算）",
+        "app.tasks.register_option_contracts": "註冊選擇權合約",
+
+        # 數據處理任務
+        "app.tasks.generate_continuous_contracts": "生成期貨連續合約",
+        "app.tasks.register_new_futures_contracts": "註冊新年度期貨合約",
+        "app.tasks.cleanup_old_cache": "清理過期快取",
         "app.tasks.cleanup_old_institutional_data": "清理過期法人數據",
+        "app.tasks.cleanup_old_signals": "清理舊信號記錄",
+
+        # 策略處理任務
+        "app.tasks.monitor_active_strategies": "🔔 監控策略信號（實盤）",
     }
 
     for name, config in schedule.items():
         task_name = config["task"]
+
+        # Only include data sync tasks
+        if task_name not in data_sync_task_names:
+            continue
 
         # Get last run information from Redis cache
         last_run = None
@@ -410,6 +455,239 @@ async def list_sync_tasks(
         ))
 
     return tasks
+
+
+@router.get("/processing/tasks", response_model=List[SyncTaskInfo])
+async def list_processing_tasks(
+    current_user: User = Depends(get_current_superuser),
+):
+    """Get all data processing tasks and their schedules (admin only)"""
+    from app.utils.cache import cache
+    import json
+
+    schedule = celery_app.conf.beat_schedule
+    tasks = []
+
+    # 數據處理任務清單（資料庫 → 計算 → 資料庫/文件）
+    data_processing_task_names = [
+        "app.tasks.generate_continuous_contracts",
+        "app.tasks.register_new_futures_contracts",
+        "app.tasks.cleanup_old_cache",
+        "app.tasks.cleanup_old_institutional_data",
+        "app.tasks.cleanup_old_signals",
+    ]
+
+    task_display_names = {
+        "app.tasks.generate_continuous_contracts": "生成期貨連續合約",
+        "app.tasks.register_new_futures_contracts": "註冊新年度期貨合約",
+        "app.tasks.cleanup_old_cache": "清理過期快取",
+        "app.tasks.cleanup_old_institutional_data": "清理過期法人數據",
+        "app.tasks.cleanup_old_signals": "清理舊信號記錄",
+    }
+
+    for name, config in schedule.items():
+        task_name = config["task"]
+
+        # Only include data processing tasks
+        if task_name not in data_processing_task_names:
+            continue
+
+        # Get last run information from Redis cache
+        last_run = None
+        last_run_status = None
+        last_run_result = None
+        error_message = None
+
+        try:
+            if cache.is_available():
+                history_key = f"task_history:{task_name}"
+                history_data = cache.get(history_key)
+
+                if history_data:
+                    if isinstance(history_data, str):
+                        history_data = json.loads(history_data)
+
+                    last_run_str = history_data.get("last_run")
+                    if last_run_str:
+                        last_run = datetime.fromisoformat(last_run_str.replace('Z', '+00:00'))
+
+                    last_run_status = history_data.get("status", "unknown")
+                    last_run_result = history_data.get("result")
+                    error_message = history_data.get("error")
+        except Exception as e:
+            logger.warning(f"Failed to get task history for {task_name}: {str(e)}")
+
+        tasks.append(SyncTaskInfo(
+            task_name=task_name,
+            display_name=task_display_names.get(task_name, task_name),
+            schedule=format_crontab_schedule(config["schedule"]),
+            last_run=last_run,
+            last_run_status=last_run_status,
+            last_run_result=last_run_result,
+            error_message=error_message,
+            status="active",
+        ))
+
+    return tasks
+
+
+@router.get("/monitoring/tasks", response_model=List[SyncTaskInfo])
+async def list_monitoring_tasks(
+    current_user: User = Depends(get_current_superuser),
+):
+    """Get all strategy processing tasks and their schedules (admin only)"""
+    from app.utils.cache import cache
+    import json
+
+    schedule = celery_app.conf.beat_schedule
+    tasks = []
+
+    # 策略處理任務清單（資料庫 → 策略引擎 → 信號）
+    strategy_processing_task_names = [
+        "app.tasks.monitor_active_strategies",
+    ]
+
+    task_display_names = {
+        "app.tasks.monitor_active_strategies": "🔔 監控策略信號（實盤）",
+    }
+
+    for name, config in schedule.items():
+        task_name = config["task"]
+
+        # Only include strategy processing tasks
+        if task_name not in strategy_processing_task_names:
+            continue
+
+        # Get last run information from Redis cache
+        last_run = None
+        last_run_status = None
+        last_run_result = None
+        error_message = None
+
+        try:
+            if cache.is_available():
+                history_key = f"task_history:{task_name}"
+                history_data = cache.get(history_key)
+
+                if history_data:
+                    if isinstance(history_data, str):
+                        history_data = json.loads(history_data)
+
+                    last_run_str = history_data.get("last_run")
+                    if last_run_str:
+                        last_run = datetime.fromisoformat(last_run_str.replace('Z', '+00:00'))
+
+                    last_run_status = history_data.get("status", "unknown")
+                    last_run_result = history_data.get("result")
+                    error_message = history_data.get("error")
+        except Exception as e:
+            logger.warning(f"Failed to get task history for {task_name}: {str(e)}")
+
+        tasks.append(SyncTaskInfo(
+            task_name=task_name,
+            display_name=task_display_names.get(task_name, task_name),
+            schedule=format_crontab_schedule(config["schedule"]),
+            last_run=last_run,
+            last_run_status=last_run_status,
+            last_run_result=last_run_result,
+            error_message=error_message,
+            status="active",
+        ))
+
+    return tasks
+
+
+@router.get("/monitoring/stats")
+async def get_monitoring_stats(
+    current_user: User = Depends(get_current_superuser),
+):
+    """Get strategy monitoring statistics (admin only)"""
+    from app.models.strategy_signal import StrategySignal
+    from app.models.strategy import Strategy
+    from sqlalchemy import func, and_
+    from datetime import timedelta
+
+    db = SessionLocal()
+
+    try:
+        now = datetime.now()
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+        week_ago = today - timedelta(days=7)
+
+        # Count active strategies
+        active_strategies = db.query(Strategy).filter(
+            Strategy.status == "ACTIVE"
+        ).count()
+
+        # Count signals today
+        signals_today = db.query(StrategySignal).filter(
+            func.date(StrategySignal.detected_at) == today
+        ).count()
+
+        # Count signals yesterday
+        signals_yesterday = db.query(StrategySignal).filter(
+            func.date(StrategySignal.detected_at) == yesterday
+        ).count()
+
+        # Count signals this week
+        signals_week = db.query(StrategySignal).filter(
+            StrategySignal.detected_at >= week_ago
+        ).count()
+
+        # Count by signal type today
+        buy_signals_today = db.query(StrategySignal).filter(
+            and_(
+                func.date(StrategySignal.detected_at) == today,
+                StrategySignal.signal_type == "BUY"
+            )
+        ).count()
+
+        sell_signals_today = db.query(StrategySignal).filter(
+            and_(
+                func.date(StrategySignal.detected_at) == today,
+                StrategySignal.signal_type == "SELL"
+            )
+        ).count()
+
+        # Get latest signals
+        latest_signals = db.query(StrategySignal).order_by(
+            StrategySignal.detected_at.desc()
+        ).limit(5).all()
+
+        # Get monitored stocks from ACTIVE strategies
+        monitored_stocks = set()
+        active_strategy_list = db.query(Strategy).filter(
+            Strategy.status == "ACTIVE",
+            Strategy.engine_type == "backtrader"  # Only Backtrader supports monitoring
+        ).all()
+
+        for strategy in active_strategy_list:
+            if strategy.parameters and isinstance(strategy.parameters, dict):
+                stocks = strategy.parameters.get("stocks")
+                if stocks and isinstance(stocks, list):
+                    monitored_stocks.update(stocks)
+
+        return {
+            "active_strategies": active_strategies,
+            "signals_today": signals_today,
+            "signals_yesterday": signals_yesterday,
+            "signals_week": signals_week,
+            "buy_signals_today": buy_signals_today,
+            "sell_signals_today": sell_signals_today,
+            "monitored_stocks": sorted(list(monitored_stocks)),  # Sorted unique list
+            "latest_signals": [
+                {
+                    "stock_id": sig.stock_id,
+                    "signal_type": sig.signal_type,
+                    "price": float(sig.price) if sig.price else None,
+                    "detected_at": sig.detected_at.isoformat(),
+                }
+                for sig in latest_signals
+            ]
+        }
+    finally:
+        db.close()
 
 
 @router.post("/sync/trigger")

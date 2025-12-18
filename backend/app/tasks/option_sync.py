@@ -110,8 +110,8 @@ def sync_option_daily_factors(
                 underlying_ids = []
 
         if not underlying_ids:
-            logger.warning("[OPTION] ⚠️  No underlyings configured. Using default: TX, MTX")
-            underlying_ids = ['TX', 'MTX']
+            logger.warning("[OPTION] ⚠️  No underlyings configured. Using default: TX only (MTX has no options)")
+            underlying_ids = ['TX']  # MTX (小台期貨) 沒有選擇權產品
 
         logger.info(f"[OPTION] 🎯 Target underlyings: {underlying_ids}")
 

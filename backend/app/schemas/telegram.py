@@ -20,6 +20,7 @@ class NotificationType(str, Enum):
     RDAGENT_COMPLETED = "rdagent_completed"
     MARKET_ALERT = "market_alert"
     SYSTEM_ALERT = "system_alert"
+    TRADING_SIGNAL = "trading_signal"  # 交易信號
 
 
 class NotificationStatus(str, Enum):

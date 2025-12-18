@@ -22,17 +22,17 @@ interface CachedUserInfo {
 export const useUserInfo = () => {
   const { getCurrentUser } = useAuth()
 
-  // 用戶資訊狀態
-  const username = ref('')
-  const fullName = ref('')
-  const email = ref('')
-  const isSuperuser = ref(false)
-  const memberLevel = ref(0)
-  const createdAt = ref<string | null>(null)
-  const lastLoginAt = ref<string | null>(null)
-  const loading = ref(false)
-  const error = ref('')
-  const initialized = ref(false) // 追蹤是否已初始化
+  // 使用全局共享狀態（跨組件共享）
+  const username = useState('userInfo-username', () => '')
+  const fullName = useState('userInfo-fullName', () => '')
+  const email = useState('userInfo-email', () => '')
+  const isSuperuser = useState('userInfo-isSuperuser', () => false)
+  const memberLevel = useState('userInfo-memberLevel', () => 0)
+  const createdAt = useState<string | null>('userInfo-createdAt', () => null)
+  const lastLoginAt = useState<string | null>('userInfo-lastLoginAt', () => null)
+  const loading = useState('userInfo-loading', () => false)
+  const error = useState('userInfo-error', () => '')
+  const initialized = useState('userInfo-initialized', () => false) // 追蹤是否已初始化
 
   /**
    * 從 localStorage 同步讀取快取的用戶資訊（僅返回數據，不修改狀態）

@@ -23,6 +23,8 @@
 |------|------|-------------|----------|----------|
 | **08:00** | 股票清單同步 | `app.tasks.sync_stock_list` | `backend/app/tasks/stock_data.py` | ~30 秒 |
 | **09:00-13:00** | 即時價格（每 15 分） | `app.tasks.sync_latest_prices` | `backend/app/tasks/stock_data.py` | ~30 秒 |
+| **09:00-13:00** 🔔 | **策略監控（股票）** | `app.tasks.monitor_active_strategies` | `backend/app/tasks/strategy_monitoring.py` | **~1-3 分鐘** |
+| **15:00-05:00** 🔔 | **策略監控（期貨）** | `app.tasks.monitor_active_strategies` | `backend/app/tasks/strategy_monitoring.py` | **~1-3 分鐘** |
 | **15:00** ⭐ | **Shioaji 分鐘線** | `app.tasks.sync_shioaji_top_stocks` | `backend/app/tasks/shioaji_sync.py` | **2-4 小時** |
 | **15:30** ⭐ | **期貨分鐘線** | `app.tasks.sync_shioaji_futures` | `backend/app/tasks/shioaji_sync.py` | **5-10 分鐘** |
 | **15:40** ⭐ | **選擇權因子** | `app.tasks.sync_option_daily_factors` | `backend/app/tasks/option_sync.py` | **2-5 分鐘** |
@@ -37,6 +39,7 @@
 |------|------|-------------|----------|----------|
 | **週日 02:00** | 清理法人數據 | `app.tasks.cleanup_old_institutional_data` | `backend/app/tasks/institutional_investor_sync.py` | ~1-2 分鐘 |
 | **週日 04:00** | 基本面（完整） | `app.tasks.sync_fundamental_data` | `backend/app/tasks/fundamental_sync.py` | ~2-4 小時 |
+| **週日 04:00** 🔔 | 清理舊信號記錄 | `app.tasks.cleanup_old_signals` | `backend/app/tasks/strategy_monitoring.py` | ~10-30 秒 |
 | **週日 19:00** | 註冊選擇權合約 | `app.tasks.register_option_contracts` | `backend/app/tasks/option_sync.py` | ~1-2 分鐘 |
 | **週六 18:00** | 生成連續合約 | `app.tasks.generate_continuous_contracts` | `backend/app/tasks/futures_continuous.py` | ~1-2 分鐘 |
 

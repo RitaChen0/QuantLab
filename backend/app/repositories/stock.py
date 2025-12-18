@@ -22,7 +22,7 @@ class StockRepository:
     def get_all(
         db: Session,
         skip: int = 0,
-        limit: int = 100,
+        limit: Optional[int] = 100,
         is_active: Optional[str] = None
     ) -> List[Stock]:
         """
@@ -31,7 +31,7 @@ class StockRepository:
         Args:
             db: Database session
             skip: Number of records to skip
-            limit: Maximum number of records to return
+            limit: Maximum number of records to return (None = no limit)
             is_active: Filter by active status
 
         Returns:
@@ -42,7 +42,13 @@ class StockRepository:
         if is_active:
             query = query.filter(Stock.is_active == is_active)
 
-        return query.offset(skip).limit(limit).all()
+        query = query.offset(skip)
+
+        # 只在 limit 不為 None 時才限制數量
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.all()
 
     @staticmethod
     def count(db: Session, is_active: Optional[str] = None) -> int:

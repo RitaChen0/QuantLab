@@ -361,20 +361,21 @@ class OptionDailyFactorRepository:
         db_factor = OptionDailyFactorRepository.get_by_key(
             db,
             factor.underlying_id,
-            factor.date
+            factor.factor_date  # 修正：使用 factor_date 而不是 date
         )
 
         if db_factor:
             # Update existing record
-            update_data = factor.model_dump(exclude_unset=True)
+            update_data = factor.model_dump(exclude_unset=True, by_alias=True)
             for field, value in update_data.items():
-                if field not in ['underlying_id', 'date']:  # Skip primary keys
+                if field not in ['underlying_id', 'date']:  # Skip primary keys (ORM 使用 'date')
                     setattr(db_factor, field, value)
             db.commit()
             db.refresh(db_factor)
         else:
             # Create new record
-            db_factor = OptionDailyFactor(**factor.model_dump())
+            # 使用 by_alias=True 確保使用 ORM 欄位名稱（date）
+            db_factor = OptionDailyFactor(**factor.model_dump(by_alias=True))
             db.add(db_factor)
             db.commit()
             db.refresh(db_factor)

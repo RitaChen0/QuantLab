@@ -147,14 +147,14 @@ def sync_single_stock_institutional(
 @record_task_history
 def sync_top_stocks_institutional(
     self: Task,
-    limit: int = 100,
+    limit: Optional[int] = None,
     days: int = 7
 ) -> dict:
     """
-    同步市值前 N 大股票的法人買賣超數據
+    同步股票的法人買賣超數據
 
     Args:
-        limit: 股票數量（市值排名前 N）
+        limit: 股票數量限制（None = 全部股票）
         days: 同步最近 N 天
 
     Returns:
@@ -163,14 +163,19 @@ def sync_top_stocks_institutional(
     db = SessionLocal()
 
     try:
-        logger.info(f"Starting institutional investor sync for top {limit} stocks")
+        if limit is None:
+            logger.info("Starting institutional investor sync for ALL active stocks")
+        else:
+            logger.info(f"Starting institutional investor sync for top {limit} stocks")
 
-        # 獲取市值前 N 大股票
-        # TODO: 實作市值排序，目前先用所有股票的前 N 個
+        # 獲取股票列表
         stocks = StockRepository.get_all(db, is_active='active', limit=limit)
         stock_ids = [stock.stock_id for stock in stocks]
 
-        logger.info(f"Selected {len(stock_ids)} stocks for sync")
+        if limit is None:
+            logger.info(f"Selected ALL {len(stock_ids)} active stocks for sync")
+        else:
+            logger.info(f"Selected {len(stock_ids)} stocks for sync")
 
         # 直接調用同步邏輯（避免在任務內部等待其他任務）
         service = InstitutionalInvestorService(db)

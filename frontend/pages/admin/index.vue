@@ -88,24 +88,50 @@
           <table class="data-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>用戶名</th>
-                <th>Email</th>
-                <th>全名</th>
-                <th>Telegram ID</th>
-                <th>TG 頻道</th>
-                <th>會員等級</th>
-                <th>現金</th>
-                <th>信用</th>
-                <th>狀態</th>
-                <th>管理員</th>
-                <th>註冊時間</th>
-                <th>最後登入</th>
+                <th @click="toggleSort('id')" class="sortable">
+                  ID <span class="sort-icon">{{ getSortIcon('id') }}</span>
+                </th>
+                <th @click="toggleSort('username')" class="sortable">
+                  用戶名 <span class="sort-icon">{{ getSortIcon('username') }}</span>
+                </th>
+                <th @click="toggleSort('email')" class="sortable">
+                  Email <span class="sort-icon">{{ getSortIcon('email') }}</span>
+                </th>
+                <th @click="toggleSort('full_name')" class="sortable">
+                  全名 <span class="sort-icon">{{ getSortIcon('full_name') }}</span>
+                </th>
+                <th @click="toggleSort('telegram_id')" class="sortable">
+                  Telegram ID <span class="sort-icon">{{ getSortIcon('telegram_id') }}</span>
+                </th>
+                <th @click="toggleSort('telegram_channel_id')" class="sortable">
+                  TG 頻道 <span class="sort-icon">{{ getSortIcon('telegram_channel_id') }}</span>
+                </th>
+                <th @click="toggleSort('member_level')" class="sortable">
+                  會員等級 <span class="sort-icon">{{ getSortIcon('member_level') }}</span>
+                </th>
+                <th @click="toggleSort('cash')" class="sortable">
+                  現金 <span class="sort-icon">{{ getSortIcon('cash') }}</span>
+                </th>
+                <th @click="toggleSort('credit')" class="sortable">
+                  信用 <span class="sort-icon">{{ getSortIcon('credit') }}</span>
+                </th>
+                <th @click="toggleSort('is_active')" class="sortable">
+                  狀態 <span class="sort-icon">{{ getSortIcon('is_active') }}</span>
+                </th>
+                <th @click="toggleSort('is_superuser')" class="sortable">
+                  管理員 <span class="sort-icon">{{ getSortIcon('is_superuser') }}</span>
+                </th>
+                <th @click="toggleSort('created_at')" class="sortable">
+                  註冊時間 <span class="sort-icon">{{ getSortIcon('created_at') }}</span>
+                </th>
+                <th @click="toggleSort('last_login')" class="sortable">
+                  最後登入 <span class="sort-icon">{{ getSortIcon('last_login') }}</span>
+                </th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="user in users" :key="user.id">
+              <tr v-for="user in sortedUsers" :key="user.id">
                 <td>{{ user.id }}</td>
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
@@ -218,6 +244,204 @@
               <span v-if="worker.uptime_seconds">⏱️ 運行時間: {{ formatUptime(worker.uptime_seconds) }}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Processing Tab -->
+      <div v-show="activeTab === 'processing'" class="tab-pane">
+        <div class="section-header">
+          <h2 class="section-title">數據處理管理</h2>
+          <button @click="loadProcessingTasks" class="btn-refresh">🔄 刷新</button>
+        </div>
+
+        <div v-if="loading.processing" class="loading">載入中...</div>
+
+        <div v-else-if="processingTasks.length > 0" class="sync-tasks">
+          <div v-for="task in processingTasks" :key="task.task_name" class="task-card">
+            <div class="task-header">
+              <h3 class="task-name">{{ task.display_name }}</h3>
+              <span :class="['task-status', 'status-' + task.status]">
+                {{ task.status }}
+              </span>
+            </div>
+            <div class="task-details">
+              <div class="task-info">
+                <strong>任務名稱:</strong> {{ task.task_name }}
+              </div>
+              <div class="task-info">
+                <strong>排程:</strong> {{ task.schedule }}
+              </div>
+              <div class="task-info" v-if="task.last_run">
+                <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span
+                  v-if="task.last_run_status"
+                  :class="['execution-status', 'status-' + task.last_run_status]"
+                >
+                  {{ getStatusText(task.last_run_status) }}
+                </span>
+              </div>
+              <div class="task-info" v-else>
+                <strong>最後執行:</strong> <span class="text-muted">尚未執行</span>
+              </div>
+              <div v-if="task.error_message" class="task-info error-message">
+                <strong>錯誤:</strong> {{ task.error_message }}
+              </div>
+            </div>
+            <div class="task-actions">
+              <button @click="triggerTask(task.task_name)" class="btn-trigger" :disabled="triggering">
+                立即執行
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="empty-state">
+          沒有數據處理任務
+        </div>
+
+        <!-- Description -->
+        <div class="info-box">
+          <h3>💡 數據處理說明</h3>
+          <p><strong>數據處理任務</strong>：從資料庫讀取數據，經過計算或轉換後，存回資料庫或導出文件。</p>
+          <ul>
+            <li><strong>輸入來源</strong>：PostgreSQL 資料庫</li>
+            <li><strong>處理類型</strong>：計算、拼接、清理、轉換</li>
+            <li><strong>輸出目標</strong>：資料庫或 Qlib 文件</li>
+            <li><strong>特點</strong>：不依賴外部 API，可離線執行，冪等性（可重複執行）</li>
+          </ul>
+          <p class="mt-2"><strong>範例</strong>：</p>
+          <ul>
+            <li>生成期貨連續合約：從月份合約拼接為連續合約</li>
+            <li>清理過期數據：刪除超過保留期限的舊記錄</li>
+            <li>註冊新合約：根據日期計算生成新年度合約</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Monitoring Tab -->
+      <div v-show="activeTab === 'monitoring'" class="tab-pane">
+        <div class="section-header">
+          <h2 class="section-title">策略實盤監控</h2>
+          <button @click="loadMonitoringTasks" class="btn-refresh">🔄 刷新</button>
+        </div>
+
+        <!-- Monitoring Stats -->
+        <div v-if="monitoringStats" class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">ACTIVE 策略數</div>
+            <div class="stat-value">{{ monitoringStats.active_strategies }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">今日信號</div>
+            <div class="stat-value">{{ monitoringStats.signals_today }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🟢 買入信號</div>
+            <div class="stat-value">{{ monitoringStats.buy_signals_today }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🔴 賣出信號</div>
+            <div class="stat-value">{{ monitoringStats.sell_signals_today }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">昨日信號</div>
+            <div class="stat-value">{{ monitoringStats.signals_yesterday }}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">本週信號</div>
+            <div class="stat-value">{{ monitoringStats.signals_week }}</div>
+          </div>
+        </div>
+
+        <!-- Monitored Stocks -->
+        <div v-if="monitoringStats" class="monitored-stocks-section">
+          <h3 class="section-subtitle">📈 監控股票清單</h3>
+          <div v-if="monitoringStats.monitored_stocks && monitoringStats.monitored_stocks.length > 0" class="stock-chips">
+            <span v-for="stock in monitoringStats.monitored_stocks" :key="stock" class="stock-chip">
+              {{ stock }}
+            </span>
+            <span class="stock-count-badge">共 {{ monitoringStats.monitored_stocks.length }} 檔</span>
+          </div>
+          <div v-else class="empty-state-inline">
+            ⚠️ 目前沒有配置任何監控股票
+          </div>
+        </div>
+
+        <!-- Monitoring Tasks -->
+        <h3 class="section-subtitle">監控任務</h3>
+        <div v-if="loading.monitoring" class="loading">載入中...</div>
+        <div v-else-if="monitoringTasks.length > 0" class="sync-tasks">
+          <div v-for="task in monitoringTasks" :key="task.task_name" class="task-card">
+            <div class="task-header">
+              <h3 class="task-name">{{ task.display_name }}</h3>
+              <span :class="['task-status', 'status-' + task.status]">
+                {{ task.status }}
+              </span>
+            </div>
+            <div class="task-details">
+              <div class="task-info">
+                <strong>任務名稱:</strong> {{ task.task_name }}
+              </div>
+              <div class="task-info">
+                <strong>排程:</strong> {{ task.schedule }}
+              </div>
+              <div class="task-info" v-if="task.last_run">
+                <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span
+                  v-if="task.last_run_status"
+                  :class="['execution-status', 'status-' + task.last_run_status]"
+                >
+                  {{ getStatusText(task.last_run_status) }}
+                </span>
+              </div>
+              <div class="task-info" v-else>
+                <strong>最後執行:</strong> <span class="text-muted">尚未執行</span>
+              </div>
+              <div class="task-info" v-if="task.last_run_result">
+                <strong>執行結果:</strong> {{ task.last_run_result }}
+              </div>
+              <div class="task-error" v-if="task.error_message">
+                <strong>❌ 錯誤訊息:</strong> {{ task.error_message }}
+              </div>
+            </div>
+            <button
+              @click="triggerTask(task.task_name)"
+              class="btn-trigger"
+              :disabled="triggering"
+            >
+              {{ triggering ? '執行中...' : '立即執行' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Latest Signals -->
+        <h3 class="section-subtitle">最新信號</h3>
+        <div v-if="monitoringStats && monitoringStats.latest_signals.length > 0" class="signal-list">
+          <div v-for="(signal, index) in monitoringStats.latest_signals" :key="index" class="signal-item">
+            <div class="signal-stock">{{ signal.stock_id }}</div>
+            <div :class="['signal-type', signal.signal_type === 'BUY' ? 'buy' : 'sell']">
+              {{ signal.signal_type === 'BUY' ? '🟢 買入' : '🔴 賣出' }}
+            </div>
+            <div class="signal-price">NT$ {{ signal.price?.toFixed(2) || 'N/A' }}</div>
+            <div class="signal-time">{{ new Date(signal.detected_at).toLocaleString('zh-TW') }}</div>
+          </div>
+        </div>
+        <div v-else class="empty-state">
+          目前沒有檢測到任何信號
+        </div>
+
+        <!-- Info Box -->
+        <div class="info-box">
+          <h4>📌 關於策略監控</h4>
+          <p>策略監控功能會自動檢測所有 <strong>ACTIVE</strong> 狀態的策略，每 15 分鐘執行一次信號檢測。</p>
+          <ul>
+            <li>✅ 覆蓋股票交易時段（09:00-13:00）</li>
+            <li>✅ 覆蓋期貨夜盤時段（15:00-05:00）</li>
+            <li>✅ 自動過濾重複信號（15 分鐘內相同股票相同方向）</li>
+            <li>✅ 發送 Telegram 通知給策略擁有者</li>
+          </ul>
+          <p class="warning">⚠️ <strong>重要</strong>: 策略必須在 parameters 中配置 <code>stocks</code> 陣列，否則不會被監控。</p>
+          <p>範例：<code>{"stocks": ["2330", "2317", "2454"]}</code></p>
         </div>
       </div>
 
@@ -385,7 +609,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 // 要求管理員權限
@@ -404,6 +628,8 @@ const tabs = [
   { id: 'stats', label: '系統統計', icon: '📊' },
   { id: 'users', label: '用戶管理', icon: '👥' },
   { id: 'sync', label: '數據同步', icon: '🔄' },
+  { id: 'processing', label: '數據處理', icon: '⚙️' },
+  { id: 'monitoring', label: '策略監控', icon: '🔔' },
   { id: 'logs', label: '日誌查詢', icon: '📝' },
 ]
 
@@ -412,6 +638,8 @@ const loading = ref({
   health: false,
   users: false,
   sync: false,
+  processing: false,
+  monitoring: false,
   logs: false,
 })
 
@@ -419,11 +647,70 @@ const stats = ref<any>(null)
 const services = ref<any[]>([])
 const users = ref<any[]>([])
 const syncTasks = ref<any[]>([])
+const processingTasks = ref<any[]>([])
 const activeTasks = ref<any[]>([])
 const workers = ref<any[]>([])
 const logs = ref<any[]>([])
 
+// Monitoring state
+const monitoringTasks = ref<any[]>([])
+const monitoringStats = ref<any>(null)
+
+// Sorting state
+const sortBy = ref<string>('id')
+const sortOrder = ref<'asc' | 'desc'>('asc')
+
 const triggering = ref(false)
+
+// Computed: Sorted Users
+const sortedUsers = computed(() => {
+  if (!users.value || users.value.length === 0) return []
+
+  const sorted = [...users.value].sort((a, b) => {
+    let aVal = a[sortBy.value]
+    let bVal = b[sortBy.value]
+
+    // Handle null/undefined values
+    if (aVal == null) aVal = ''
+    if (bVal == null) bVal = ''
+
+    // Convert to numbers for numeric fields
+    if (['id', 'member_level', 'cash', 'credit'].includes(sortBy.value)) {
+      aVal = parseFloat(aVal) || 0
+      bVal = parseFloat(bVal) || 0
+    }
+
+    // Convert to dates for date fields
+    if (['created_at', 'last_login'].includes(sortBy.value)) {
+      aVal = aVal ? new Date(aVal).getTime() : 0
+      bVal = bVal ? new Date(bVal).getTime() : 0
+    }
+
+    // Compare values
+    if (aVal < bVal) return sortOrder.value === 'asc' ? -1 : 1
+    if (aVal > bVal) return sortOrder.value === 'asc' ? 1 : -1
+    return 0
+  })
+
+  return sorted
+})
+
+// Sorting functions
+function toggleSort(field: string) {
+  if (sortBy.value === field) {
+    // Toggle order if clicking the same field
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    // Set new field and default to ascending
+    sortBy.value = field
+    sortOrder.value = 'asc'
+  }
+}
+
+function getSortIcon(field: string): string {
+  if (sortBy.value !== field) return '⇅'
+  return sortOrder.value === 'asc' ? '↑' : '↓'
+}
 
 // Edit User Modal State
 const showEditModal = ref(false)
@@ -537,6 +824,46 @@ async function loadSyncTasks() {
     console.error('Failed to load sync tasks:', error)
   } finally {
     loading.value.sync = false
+  }
+}
+
+async function loadProcessingTasks() {
+  loading.value.processing = true
+  try {
+    const token = localStorage.getItem('access_token')
+
+    // Load processing tasks
+    const tasks = await $fetch<any[]>(`${config.public.apiBase}/api/v1/admin/processing/tasks`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    processingTasks.value = tasks
+  } catch (error) {
+    console.error('Failed to load processing tasks:', error)
+  } finally {
+    loading.value.processing = false
+  }
+}
+
+async function loadMonitoringTasks() {
+  loading.value.monitoring = true
+  try {
+    const token = localStorage.getItem('access_token')
+
+    // Load monitoring tasks
+    const tasks = await $fetch<any[]>(`${config.public.apiBase}/api/v1/admin/monitoring/tasks`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    monitoringTasks.value = tasks
+
+    // Load monitoring stats
+    const stats = await $fetch<any>(`${config.public.apiBase}/api/v1/admin/monitoring/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    monitoringStats.value = stats
+  } catch (error) {
+    console.error('Failed to load monitoring tasks:', error)
+  } finally {
+    loading.value.monitoring = false
   }
 }
 
@@ -725,6 +1052,19 @@ onMounted(() => {
   // Load initial data
   loadStats()
   loadHealth()
+})
+
+// Watch for tab changes and auto-load data
+watch(activeTab, (newTab) => {
+  if (newTab === 'sync') {
+    loadSyncTasks()
+  } else if (newTab === 'processing') {
+    loadProcessingTasks()
+  } else if (newTab === 'monitoring') {
+    loadMonitoringTasks()
+  } else if (newTab === 'users') {
+    loadUsers()
+  }
 })
 </script>
 
@@ -939,6 +1279,21 @@ onMounted(() => {
     th {
       font-weight: 600;
       color: #374151;
+
+      &.sortable {
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #f3f4f6;
+          color: #111827;
+        }
+
+        &:active {
+          background: #e5e7eb;
+        }
+      }
     }
   }
 
@@ -948,6 +1303,20 @@ onMounted(() => {
     &:hover {
       background: #f9fafb;
     }
+  }
+}
+
+.sort-icon {
+  display: inline-block;
+  margin-left: 0.25rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+  opacity: 0.6;
+  transition: all 0.2s;
+
+  .sortable:hover & {
+    opacity: 1;
+    color: #3b82f6;
   }
 }
 
@@ -1508,5 +1877,174 @@ onMounted(() => {
   border-radius: 0.5rem;
   color: #991b1b;
   font-size: 0.875rem;
+}
+
+// Monitored Stocks Section
+.monitored-stocks-section {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.stock-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.stock-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  transition: all 0.2s;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+  }
+}
+
+.stock-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-radius: 9999px;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  border: 1px dashed #d1d5db;
+}
+
+.empty-state-inline {
+  padding: 1rem;
+  color: #f59e0b;
+  font-size: 0.9375rem;
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: 0.375rem;
+  text-align: center;
+}
+
+// Signal List
+.signal-list {
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.signal-item {
+  display: grid;
+  grid-template-columns: 100px 120px 120px 1fr;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  align-items: center;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: #f9fafb;
+  }
+}
+
+.signal-stock {
+  font-weight: 600;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.signal-type {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+
+  &.buy {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  &.sell {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+}
+
+.signal-price {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-weight: 600;
+  color: #059669;
+  font-size: 0.875rem;
+}
+
+.signal-time {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+// Info Box
+.info-box {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-top: 2rem;
+
+  h4 {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  p {
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+    color: #1e40af;
+    line-height: 1.6;
+  }
+
+  ul {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+
+    li {
+      margin: 0.5rem 0;
+      font-size: 0.875rem;
+      color: #1e40af;
+    }
+  }
+
+  code {
+    background: #dbeafe;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    color: #1e3a8a;
+  }
+
+  .warning {
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    padding: 0.75rem 1rem;
+    margin: 1rem 0;
+    border-radius: 0.25rem;
+    color: #92400e;
+  }
 }
 </style>

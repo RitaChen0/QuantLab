@@ -113,8 +113,17 @@ docker compose exec backend celery -A app.core.celery_app inspect registered
 # 查看定時任務清單
 docker compose exec backend celery -A app.core.celery_app inspect scheduled
 
+# 查看活動任務
+docker compose exec backend celery -A app.core.celery_app inspect active
+
+# 檢查 revoked tasks（被撤銷的任務）
+docker compose exec backend celery -A app.core.celery_app inspect revoked
+
 # 手動觸發任務
 docker compose exec backend celery -A app.core.celery_app call app.tasks.sync_stock_list
+
+# 手動清理 Celery 元數據
+docker compose exec backend celery -A app.core.celery_app call app.tasks.cleanup_celery_metadata
 
 # 清空任務隊列（開發環境）
 docker compose exec redis redis-cli FLUSHDB
@@ -363,14 +372,30 @@ storage.write(data)  # numpy array
 # backend/app/core/celery_app.py
 celery_app.conf.update(
     timezone="Asia/Taipei",
-    enable_utc=False,  # 必須 False，否則時間偏移 8 小時
+    enable_utc=False,  # 必須 False，crontab 使用台灣本地時間
+
+    # 任務確認策略（改善可靠性，減少任務丟失）
+    task_acks_late=True,  # 任務執行完成後才確認
+    task_reject_on_worker_lost=False,  # Worker 丟失時重新排隊任務
+
+    # Worker 自動重啟（防止 revoked 列表積累和內存洩漏）
+    worker_max_memory_per_child=512000,  # 512MB 後自動重啟
+
+    # 結果自動過期
+    result_expires=3600,  # 結果 1 小時後過期
 )
 ```
+
+**重要說明**：
+- `enable_utc=False` 時，crontab 的 `hour` 參數使用台灣本地時間（非 UTC）
+- 高頻任務（15 分鐘間隔）不應設置 `expires`，避免任務立即過期
+- 詳見 [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) 和 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
 
 **任務清單**（按時間排序）：
 | 時間 | 任務 | 用途 |
 |------|------|------|
 | 03:00 | `cleanup_old_cache` | 清理 Redis 過期快取 |
+| 05:00 | **`cleanup_celery_metadata`** | **清理 Celery 元數據（防止 revoked tasks 積累）** |
 | 08:00 | `sync_stock_list` | 更新股票清單（FinLab） |
 | 09:00-13:30 每 15 分 | `sync_latest_prices` | 即時價格（交易時段） |
 | 15:00 | **`sync_shioaji_minute_data`** | **Shioaji 股票分鐘線（Top 50）** |
@@ -691,6 +716,46 @@ docker compose exec redis redis-cli FLUSHDB
 docker compose start celery-worker celery-beat
 ```
 
+### 10. Celery 任務被標記為 Revoked
+
+**症狀**：所有定時任務顯示 "尚未執行"，日誌顯示 `Discarding revoked task`
+
+**原因**：
+1. **Beat 重啟補發機制**：Beat 重啟後補發所有逾期任務，但這些任務的 `expires` 時間早已過期
+2. **Worker 標記為 revoked**：Worker 正確地將過期任務標記為 REVOKED
+3. **內存積累**：Revoked task IDs 在 Worker 內存中積累，重啟前無法清除
+
+**診斷**：
+```bash
+# 檢查 revoked 列表
+docker compose exec backend celery -A app.core.celery_app inspect revoked
+
+# 檢查 Worker 配置
+docker compose exec backend celery -A app.core.celery_app inspect conf | grep -E "(task_acks_late|result_expires|worker_max_memory_per_child)"
+```
+
+**解決方案**：
+1. **立即修復**：重啟 Worker 清空 revoked 列表
+```bash
+docker compose restart celery-worker celery-beat
+```
+
+2. **永久修復**（已在配置中）：
+   - **移除短期 `expires`** - 確保 Beat 重啟補發的任務仍能執行
+   - `task_acks_late=True` - 改善任務可靠性
+   - `worker_max_memory_per_child=512000` - Worker 定期自動重啟，清空 revoked 列表
+   - 每天 05:00 自動執行 `cleanup_celery_metadata` 任務
+
+**驗證**：
+```bash
+# 檢查 revoked 列表應該為空
+docker compose exec backend celery -A app.core.celery_app inspect revoked
+# 預期輸出：-> celery@xxx: OK
+#            - empty -
+```
+
+**詳細說明**：參見 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
+
 ---
 
 ## 📚 文檔導航
@@ -701,6 +766,8 @@ docker compose start celery-worker celery-beat
 - [OPERATIONS_GUIDE.md](Document/OPERATIONS_GUIDE.md) - 完整操作手冊
 - [QLIB_SYNC_GUIDE.md](Document/QLIB_SYNC_GUIDE.md) - Qlib 同步詳解
 - [CELERY_TASKS_GUIDE.md](Document/CELERY_TASKS_GUIDE.md) - Celery 任務管理
+- [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) - Celery 時區配置詳解
+- [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題解決方案
 
 **資料庫**：
 - [DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) - 16 個資料表
@@ -802,6 +869,6 @@ def test_real_shioaji_api():
 
 ---
 
-**文檔版本**：2025-12-15
+**文檔版本**：2025-12-17
 **維護者**：開發團隊
-**最後更新**：新增選擇權數據回補、Greeks 計算、品質驗證流程
+**最後更新**：修復 Celery 時區配置錯誤、Revoked Tasks 問題，新增相關文檔鏈接

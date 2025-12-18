@@ -8,7 +8,10 @@
       <div class="dashboard-page">
         <div class="page-header">
           <h1 class="page-title">儀表板總覽</h1>
-          <p class="page-subtitle">歡迎回來！這是您的量化交易控制中心</p>
+          <p class="page-subtitle">
+            <template v-if="!initialized">歡迎回來，載入中...！這是您的量化交易控制中心</template>
+            <template v-else>歡迎回來，{{ fullName || username || '用戶' }}！這是您的量化交易控制中心</template>
+          </p>
         </div>
 
         <!-- 統計卡片 -->
@@ -168,7 +171,7 @@ definePageMeta({
 })
 
 const router = useRouter()
-const { loadUserInfo } = useUserInfo()
+const { loadUserInfo, fullName, username, initialized } = useUserInfo()
 const config = useRuntimeConfig()
 
 // 統計數據
@@ -310,17 +313,19 @@ const selectedRateLimits = computed(() => {
 })
 
 // 載入用戶資訊
-onMounted(() => {
-  loadUserInfo()
-  loadDashboardData()
-  loadMembershipInfo()
+onMounted(async () => {
+  // 優先載入用戶資訊（確保名稱顯示）
+  await loadUserInfo()
 
-  console.log('Dashboard mounted')
+  // 並行載入其他數據
+  Promise.all([
+    loadDashboardData(),
+    loadMembershipInfo()
+  ])
 })
 
 // 當頁面重新激活時刷新數據（例如從其他頁面返回）
 onActivated(() => {
-  console.log('Dashboard activated, refreshing data...')
   loadMembershipInfo()
   loadDashboardData()
 })
@@ -330,7 +335,6 @@ if (process.client) {
   onMounted(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        console.log('Page became visible, refreshing data...')
         loadMembershipInfo()
       }
     }

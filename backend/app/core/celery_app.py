@@ -22,6 +22,13 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=1000,
 
+    # 結果過期設置 - 自動清理舊結果
+    result_expires=3600,  # 結果 1 小時後過期
+
+    # Task acknowledgment settings
+    task_acks_late=True,  # 任務執行完成後才確認（確保任務不會丟失）
+    task_reject_on_worker_lost=False,  # Worker 丟失時重新排隊任務
+
     # Task routing - 專用隊列配置
     task_routes={
         'app.tasks.run_backtest_async': {'queue': 'backtest'},
@@ -49,6 +56,9 @@ celery_app.conf.update(
     # Worker 配置
     # Note: worker_concurrency is set via command-line --concurrency flag in docker-compose.yml
     worker_pool='prefork',  # 使用 prefork pool
+
+    # Worker 自動重啟設置 - 防止內存洩漏和 revoked 列表積累
+    worker_max_memory_per_child=512000,  # Worker 使用 512MB 後自動重啟（清空 revoked 列表）
 )
 
 # Celery Beat schedule (periodic tasks)
@@ -60,94 +70,92 @@ from app.db.session import ensure_models_imported
 ensure_models_imported()
 
 celery_app.conf.beat_schedule = {
-    # Note: All times are in UTC because Celery crontab uses UTC internally
-    # Taiwan (UTC+8): add 8 hours to UTC time to get Taiwan time
+    # Note: All times are in Taiwan time (Asia/Taipei timezone)
+    # Because enable_utc=False and timezone="Asia/Taipei", crontab uses local time
 
     # Sync stock list once per day at 8:00 AM Taiwan time
     "sync-stock-list-daily": {
         "task": "app.tasks.sync_stock_list",
-        "schedule": crontab(hour=0, minute=0),  # UTC 00:00 = Taiwan 08:00
+        "schedule": crontab(hour=8, minute=0),  # Taiwan 08:00
         "options": {"expires": 3600},  # Expire after 1 hour if not executed
     },
 
     # Sync daily prices once per day at 9:00 PM Taiwan time (after market close)
     "sync-daily-prices": {
         "task": "app.tasks.sync_daily_prices",
-        "schedule": crontab(hour=13, minute=0),  # UTC 13:00 = Taiwan 21:00
+        "schedule": crontab(hour=21, minute=0),  # Taiwan 21:00
         "options": {"expires": 7200},  # Expire after 2 hours
     },
 
     # Sync OHLCV data once per day at 10:00 PM Taiwan time
     "sync-ohlcv-daily": {
         "task": "app.tasks.sync_ohlcv_data",
-        "schedule": crontab(hour=14, minute=0),  # UTC 14:00 = Taiwan 22:00
+        "schedule": crontab(hour=22, minute=0),  # Taiwan 22:00
         "options": {"expires": 7200},
     },
 
-    # Sync latest prices every 15 minutes during trading hours (9:00-13:30 Taiwan time)
+    # Sync latest prices every 15 minutes during trading hours (9:00-13:59 Taiwan time)
     "sync-latest-prices-frequent": {
         "task": "app.tasks.sync_latest_prices",
         "schedule": crontab(
             minute='*/15',
-            hour='1-5',  # UTC 01:00-05:00 = Taiwan 09:00-13:00
+            hour='9-13',  # Taiwan 09:00-13:59
             day_of_week='mon,tue,wed,thu,fri'
         ),
-        "options": {"expires": 600},  # Expire after 10 minutes
+        # Note: 移除 expires 設置，讓任務永不過期
     },
 
     # Clean up old cache entries once per day at 3:00 AM Taiwan time
     "cleanup-cache-daily": {
         "task": "app.tasks.cleanup_old_cache",
-        "schedule": crontab(hour=19, minute=0),  # UTC 19:00 (prev day) = Taiwan 03:00
+        "schedule": crontab(hour=3, minute=0),  # Taiwan 03:00
     },
 
     # Sync fundamental data (full sync) once per week on Sunday at 4:00 AM Taiwan time
     "sync-fundamental-weekly": {
         "task": "app.tasks.sync_fundamental_data",
-        "schedule": crontab(hour=20, minute=0, day_of_week='saturday'),  # UTC 20:00 Sat = Taiwan 04:00 Sun
+        "schedule": crontab(hour=4, minute=0, day_of_week='sunday'),  # Taiwan Sunday 04:00
         "options": {"expires": 21600},  # Expire after 6 hours
     },
 
     # Sync latest fundamental data (quick sync) once per day at 23:00 Taiwan time
     "sync-fundamental-latest-daily": {
         "task": "app.tasks.sync_fundamental_latest",
-        "schedule": crontab(hour=15, minute=0),  # UTC 15:00 = Taiwan 23:00
+        "schedule": crontab(hour=23, minute=0),  # Taiwan 23:00
         "options": {"expires": 7200},  # Expire after 2 hours
     },
 
-    # Sync institutional investors data (top 100 stocks) once per day at 21:00 Taiwan time
+    # Sync institutional investors data (ALL active stocks) once per day at 21:00 Taiwan time
     "sync-institutional-investors-daily": {
         "task": "app.tasks.sync_top_stocks_institutional",
-        "schedule": crontab(hour=13, minute=0),  # UTC 13:00 = Taiwan 21:00
-        "kwargs": {"limit": 100, "days": 7},
+        "schedule": crontab(hour=21, minute=0),  # Taiwan 21:00
+        "kwargs": {"limit": None, "days": 7},  # None = 同步全部股票
         "options": {"expires": 7200},  # Expire after 2 hours
     },
 
     # Cleanup old institutional data once per week on Sunday at 2:00 AM Taiwan time
     "cleanup-institutional-data-weekly": {
         "task": "app.tasks.cleanup_old_institutional_data",
-        "schedule": crontab(hour=18, minute=0, day_of_week='saturday'),  # UTC 18:00 Sat = Taiwan 02:00 Sun
+        "schedule": crontab(hour=2, minute=0, day_of_week='sunday'),  # Taiwan Sunday 02:00
         "kwargs": {"days_to_keep": 365},
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 
     # Sync Shioaji minute data (all stocks) once per day at 15:00 (3 PM) Taiwan time
-    # Note: Using UTC time (7:00) because Celery crontab uses UTC internally despite timezone setting
     # Runs after market close (13:30) to sync latest minute bars for all stocks
     # Execution time: ~2-4 hours (depends on number of stocks and missing data)
     "sync-shioaji-minute-daily": {
         "task": "app.tasks.sync_shioaji_top_stocks",
-        "schedule": crontab(hour=7, minute=0, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:00 = Taiwan 15:00
+        "schedule": crontab(hour=15, minute=0, day_of_week='mon,tue,wed,thu,fri'),  # Taiwan 15:00
         "options": {"expires": 18000},  # Expire after 5 hours (task may take up to 4 hours)
     },
 
     # Sync Shioaji futures data (TX + MTX) once per day at 15:30 (3:30 PM) Taiwan time
-    # Note: Using UTC time (7:30) because Celery crontab uses UTC internally despite timezone setting
     # Runs after market close to sync futures minute bars
     # Execution time: ~5-10 minutes (only 2 futures contracts)
     "sync-shioaji-futures-daily": {
         "task": "app.tasks.sync_shioaji_futures",
-        "schedule": crontab(hour=7, minute=30, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:30 = Taiwan 15:30
+        "schedule": crontab(hour=15, minute=30, day_of_week='mon,tue,wed,thu,fri'),  # Taiwan 15:30
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 
@@ -156,7 +164,7 @@ celery_app.conf.beat_schedule = {
     # Execution time: ~1-2 minutes
     "generate-continuous-contracts-weekly": {
         "task": "app.tasks.generate_continuous_contracts",
-        "schedule": crontab(hour=10, minute=0, day_of_week='saturday'),  # UTC 10:00 = Taiwan 18:00
+        "schedule": crontab(hour=18, minute=0, day_of_week='saturday'),  # Taiwan Saturday 18:00
         "kwargs": {"symbols": ["TX", "MTX"], "days_back": 90},
         "options": {"expires": 3600},  # Expire after 1 hour
     },
@@ -166,7 +174,7 @@ celery_app.conf.beat_schedule = {
     # Execution time: ~30 seconds
     "register-new-futures-contracts-yearly": {
         "task": "app.tasks.register_new_futures_contracts",
-        "schedule": crontab(hour=16, minute=5, day_of_month='31', month_of_year='12'),  # UTC Dec 31 16:05 = Taiwan Jan 1 00:05
+        "schedule": crontab(hour=0, minute=5, day_of_month='1', month_of_year='1'),  # Taiwan Jan 1 00:05
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 
@@ -177,7 +185,7 @@ celery_app.conf.beat_schedule = {
     # Execution time: ~2-5 minutes
     "sync-option-daily-factors": {
         "task": "app.tasks.sync_option_daily_factors",
-        "schedule": crontab(hour=7, minute=40, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:40 = Taiwan 15:40
+        "schedule": crontab(hour=15, minute=40, day_of_week='mon,tue,wed,thu,fri'),  # Taiwan 15:40
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 
@@ -186,7 +194,67 @@ celery_app.conf.beat_schedule = {
     # Execution time: ~1-2 minutes
     "register-option-contracts-weekly": {
         "task": "app.tasks.register_option_contracts",
-        "schedule": crontab(hour=11, minute=0, day_of_week='sunday'),  # UTC 11:00 = Taiwan 19:00
+        "schedule": crontab(hour=19, minute=0, day_of_week='sunday'),  # Taiwan 19:00
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
+
+    # ==================== 策略實盤監控任務 ====================
+
+    # Monitor active strategies (trading hours) every 15 minutes from 9:00-13:59 Taiwan time
+    # Checks for buy/sell signals from ACTIVE strategies during stock market hours
+    # Execution time: ~1-3 minutes (depends on number of active strategies)
+    "monitor-strategies-trading-hours": {
+        "task": "app.tasks.monitor_active_strategies",
+        "schedule": crontab(
+            minute='*/15',
+            hour='9-13',  # Taiwan 09:00-13:59
+            day_of_week='mon,tue,wed,thu,fri'
+        ),
+        # Note: 移除 expires 設置，讓任務永不過期
+    },
+
+    # Monitor active strategies (after hours - futures) every 15 minutes from 15:00-23:59 Taiwan time
+    # Checks for buy/sell signals from ACTIVE strategies during Taiwan futures night session
+    "monitor-strategies-futures-session-1": {
+        "task": "app.tasks.monitor_active_strategies",
+        "schedule": crontab(
+            minute='*/15',
+            hour='15-23',  # Taiwan 15:00-23:59
+            day_of_week='mon,tue,wed,thu,fri'
+        ),
+        # Note: 移除 expires 設置，讓任務永不過期
+    },
+
+    # Monitor active strategies (futures night session - late) every 15 minutes from 00:00-05:00 Taiwan time
+    # Covers the late night portion of futures trading
+    "monitor-strategies-futures-session-2": {
+        "task": "app.tasks.monitor_active_strategies",
+        "schedule": crontab(
+            minute='*/15',
+            hour='0-5',  # Taiwan 00:00-05:00
+            day_of_week='tue,wed,thu,fri,sat'  # Tuesday-Saturday morning (Monday-Friday night)
+        ),
+        # Note: 移除 expires 設置，讓任務永不過期
+    },
+
+    # Cleanup old signal records once per week on Sunday at 4:00 AM Taiwan time
+    # Keeps signals for 30 days
+    # Execution time: ~10-30 seconds
+    "cleanup-old-signals-weekly": {
+        "task": "app.tasks.cleanup_old_signals",
+        "schedule": crontab(hour=4, minute=0, day_of_week='sunday'),  # Taiwan Sunday 04:00
+        "kwargs": {"days_to_keep": 30},
+        "options": {"expires": 3600},  # Expire after 1 hour
+    },
+
+    # ==================== 系統維護任務 ====================
+
+    # Cleanup Celery results and revoked tasks once per day at 5:00 AM Taiwan time
+    # Prevents revoked task list from growing indefinitely
+    # Execution time: ~5-10 seconds
+    "cleanup-celery-metadata-daily": {
+        "task": "app.tasks.cleanup_celery_metadata",
+        "schedule": crontab(hour=5, minute=0),  # Taiwan 05:00
         "options": {"expires": 3600},  # Expire after 1 hour
     },
 }
