@@ -217,9 +217,10 @@ const handleDelete = async () => {
   }
 }
 
-// 格式化日期
+// 格式化日期（使用台灣時區）
+const { formatToTaiwanTime } = useDateTime()
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleString('zh-TW')
+  return formatToTaiwanTime(dateString)
 }
 
 // 狀態文字

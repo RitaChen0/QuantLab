@@ -5,7 +5,8 @@ FinMind Industry Chain Models
 """
 from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy.sql import func
+from datetime import datetime, timezone
 
 from app.db.base import Base
 
@@ -23,8 +24,8 @@ class IndustryChain(Base):
     chain_name = Column(String(100), unique=True, nullable=False, index=True,
                        comment="產業鏈名稱")
     description = Column(String(500), comment="產業鏈描述")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     stocks = relationship("StockIndustryChain", back_populates="industry_chain")
@@ -43,8 +44,8 @@ class StockIndustryChain(Base):
     chain_name = Column(String(100), ForeignKey('industry_chains.chain_name'),
                        nullable=False, comment="產業鏈名稱")
     is_primary = Column(Boolean, default=False, comment="是否為主要產業鏈")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     industry_chain = relationship("IndustryChain", back_populates="stocks")
@@ -74,8 +75,8 @@ class CustomIndustryCategory(Base):
     description = Column(String(500), comment="分類描述")
     parent_id = Column(Integer, ForeignKey('custom_industry_categories.id'),
                       comment="父分類 ID（支援階層結構）")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     parent = relationship("CustomIndustryCategory", remote_side=[id],
@@ -101,7 +102,7 @@ class StockCustomCategory(Base):
     category_id = Column(Integer, ForeignKey('custom_industry_categories.id'),
                         nullable=False, comment="自定義分類 ID")
     stock_id = Column(String(10), nullable=False, index=True, comment="股票代號")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     category = relationship("CustomIndustryCategory", back_populates="stocks")

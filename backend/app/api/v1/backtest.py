@@ -711,7 +711,7 @@ async def get_active_backtest_tasks(
 
                         if started_at:
                             from datetime import datetime
-                            running_time = int((datetime.now().timestamp() - started_at))
+                            running_time = int((datetime.now(timezone.utc).timestamp() - started_at))
 
                             # 軟超時警告（55 分鐘）
                             if running_time > 3300:

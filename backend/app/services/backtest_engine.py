@@ -10,7 +10,7 @@ Backtrader 回測引擎核心
 
 import backtrader as bt
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, date
 from typing import Dict, List, Optional, Any, Tuple
 from decimal import Decimal
 import io
@@ -26,6 +26,7 @@ from app.models.trade import Trade, TradeAction
 from app.models.stock_price import StockPrice
 from app.repositories.stock_minute_price import StockMinutePriceRepository
 from app.utils.error_handler import get_safe_error_message
+from app.utils.timezone_helpers import parse_datetime_safe
 
 
 # ==================== 期货交易成本配置 ====================
@@ -392,11 +393,9 @@ class BacktestEngine:
         """
         try:
             # 處理日期格式：統一轉換為 date 對象
-            from datetime import date
-
             if start_date is not None:
                 if isinstance(start_date, str):
-                    start_date = datetime.fromisoformat(start_date).date()
+                    start_date = date.fromisoformat(start_date)
                 elif isinstance(start_date, datetime):
                     start_date = start_date.date()
                 elif not isinstance(start_date, date):
@@ -405,7 +404,7 @@ class BacktestEngine:
 
             if end_date is not None:
                 if isinstance(end_date, str):
-                    end_date = datetime.fromisoformat(end_date).date()
+                    end_date = date.fromisoformat(end_date)
                 elif isinstance(end_date, datetime):
                     end_date = end_date.date()
                 elif not isinstance(end_date, date):
@@ -516,9 +515,9 @@ class BacktestEngine:
         try:
             # 確保 datetime 類型正確
             if isinstance(start_datetime, str):
-                start_datetime = datetime.fromisoformat(start_datetime)
+                start_datetime = parse_datetime_safe(start_datetime)
             if isinstance(end_datetime, str):
-                end_datetime = datetime.fromisoformat(end_datetime)
+                end_datetime = parse_datetime_safe(end_datetime)
 
             logger.info(
                 f"Loading minute data for {stock_id}: "
@@ -923,7 +922,7 @@ class BacktestEngine:
 
         # 13.5. 轉換為權益曲線格式（用於計算指標）
         equity_curve = [
-            (datetime.fromisoformat(record['date']), record['value'])
+            (parse_datetime_safe(record['date']), record['value'])
             for record in daily_nav_data
         ]
 
@@ -1333,8 +1332,7 @@ class BacktestEngine:
                         trade_date = trade_data['date']
                         # 確保日期是 date 對象
                         if isinstance(trade_date, str):
-                            from datetime import datetime
-                            trade_date = datetime.strptime(trade_date, '%Y-%m-%d').date()
+                            trade_date = date.fromisoformat(trade_date)
                         elif hasattr(trade_date, 'date'):
                             trade_date = trade_date.date()
 

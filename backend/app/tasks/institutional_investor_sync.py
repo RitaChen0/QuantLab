@@ -50,9 +50,9 @@ def sync_institutional_investors(
 
         # 如果沒有指定日期範圍，使用最近 N 天
         if not start_date:
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
         if not end_date:
-            end_date = datetime.now().strftime('%Y-%m-%d')
+            end_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
         logger.info(f"Date range: {start_date} ~ {end_date}")
 
@@ -181,8 +181,8 @@ def sync_top_stocks_institutional(
         service = InstitutionalInvestorService(db)
 
         # 計算日期範圍
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-        end_date = datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
+        end_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
         logger.info(f"Date range: {start_date} ~ {end_date}")
 

@@ -5,7 +5,7 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 from celery import Task
@@ -82,7 +82,7 @@ def cleanup_celery_metadata(
         # Celery 結果存儲在 Redis 中，key pattern: celery-task-meta-<task_id>
         logger.info(f"🗑️  清理 {max_age_hours} 小時前的任務結果...")
 
-        cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
         result_pattern = "celery-task-meta-*"
 
         cursor = 0

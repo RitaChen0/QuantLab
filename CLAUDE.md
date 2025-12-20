@@ -371,8 +371,8 @@ storage.write(data)  # numpy array
 ```python
 # backend/app/core/celery_app.py
 celery_app.conf.update(
-    timezone="Asia/Taipei",
-    enable_utc=False,  # 必須 False，crontab 使用台灣本地時間
+    timezone="UTC",  # 統一使用 UTC 時區
+    enable_utc=True,  # 啟用 UTC 模式
 
     # 任務確認策略（改善可靠性，減少任務丟失）
     task_acks_late=True,  # 任務執行完成後才確認
@@ -387,7 +387,10 @@ celery_app.conf.update(
 ```
 
 **重要說明**：
-- `enable_utc=False` 時，crontab 的 `hour` 參數使用台灣本地時間（非 UTC）
+- **所有時間使用 UTC**：Celery 配置為 `timezone="UTC"`, `enable_utc=True`
+- **定時任務 crontab 使用 UTC 時間**：例如 `crontab(hour=21, minute=0)` 表示 UTC 21:00（台北時間隔天 05:00）
+- **應用層時區轉換**：應用代碼使用 `datetime.now(timezone.utc)` 獲取 UTC 時間，必要時轉換為台灣時間
+- **一致性策略**：資料庫、Celery、應用層全部統一使用 UTC，避免時區混亂
 - 高頻任務（15 分鐘間隔）不應設置 `expires`，避免任務立即過期
 - 詳見 [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) 和 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
 
@@ -544,20 +547,23 @@ SELECT add_compression_policy('stock_minute_prices', INTERVAL '7 days');
 
 ## 🐛 常見開發陷阱
 
-### 1. Celery 時區錯誤
+### 1. Celery 時區配置
 
-**症狀**：定時任務執行時間偏移 8 小時
-
-**原因**：`enable_utc=True` 會將 crontab 視為 UTC
-
-**解決**：
+**✅ 當前配置（正確）**：
 ```python
 # backend/app/core/celery_app.py
 celery_app.conf.update(
-    timezone="Asia/Taipei",
-    enable_utc=False,  # ✅ 必須 False
+    timezone="UTC",  # 統一使用 UTC
+    enable_utc=True,  # 啟用 UTC 模式
 )
 ```
+
+**重要**：
+- **不要修改為 `timezone="Asia/Taipei"` 和 `enable_utc=False`**
+- 系統已統一使用 UTC 時區（資料庫、Celery、應用層）
+- crontab 時間為 UTC 時間，例如 `crontab(hour=21, minute=0)` = UTC 21:00 = 台北時間隔天 05:00
+- 使用 `datetime.now(timezone.utc)` 獲取當前 UTC 時間
+- 必要時使用 `timezone_helpers.py` 中的函數進行時區轉換
 
 ### 2. 前端快取未更新
 
@@ -758,6 +764,169 @@ docker compose exec backend celery -A app.core.celery_app inspect revoked
 
 ---
 
+## ⏰ 時區處理規範
+
+### 系統時區策略
+
+**核心原則**：統一使用 UTC 時區儲存和處理時間
+
+- **資料庫**：所有 datetime 欄位使用 `TIMESTAMPTZ`（timezone-aware）
+- **應用層**：使用 `datetime.now(timezone.utc)` 或 `timezone_helpers.now_utc()`
+- **Celery**：配置為 `timezone="UTC"`, `enable_utc=True`
+- **前端**：使用 `useDateTime` composable 轉換為台灣時間顯示
+
+**唯一例外**：`stock_minute_prices` 表使用台灣時間（timezone-naive）
+- 原因：60M+ 行數據，已壓縮，修改成本高
+- 處理：使用 `timezone_helpers.py` 進行轉換
+
+### 各層時區處理規則
+
+#### ✅ Model 層（資料庫）
+
+```python
+from sqlalchemy import Column, DateTime
+from sqlalchemy.sql import func
+
+class Stock(Base):
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+```
+
+**關鍵點**：
+- 使用 `DateTime(timezone=True)` - 對應 `TIMESTAMPTZ`
+- 使用 `func.now()` - 資料庫層級時間戳
+- **不要使用** `datetime.utcnow`（Python 3.12+ 已棄用）
+
+#### ✅ Repository 層
+
+```python
+from app.utils.timezone_helpers import now_utc, parse_datetime_safe, utc_to_naive_taipei
+
+# 標準資料表
+def create_backtest(db: Session, data: BacktestCreate):
+    backtest = Backtest(
+        created_at=now_utc(),  # 使用 UTC 時間戳
+        ...
+    )
+    return backtest
+
+# stock_minute_prices 特殊處理
+def get_minute_prices(db: Session, stock_id: str, start_utc: datetime):
+    # 轉換 UTC → 台灣時間
+    start_taipei = utc_to_naive_taipei(start_utc)
+    return db.query(StockMinutePrice).filter(...).all()
+```
+
+#### ✅ Service 層
+
+```python
+from app.utils.timezone_helpers import now_utc, parse_datetime_safe, today_taiwan
+
+class BacktestService:
+    def create_backtest(self, data: BacktestCreate):
+        # 解析用戶輸入（確保 timezone-aware）
+        start_datetime = parse_datetime_safe(data.start_datetime)
+
+        # 獲取台灣今日日期（用於市場數據）
+        taiwan_today = today_taiwan()
+
+        # 記錄時間戳
+        current_time = now_utc()
+```
+
+#### ✅ API 層
+
+```python
+# Pydantic v2 會自動正確序列化 timezone-aware datetime
+# 輸出: {"created_at": "2025-12-20T00:18:21+00:00"}
+
+@router.post("/backtests/")
+def create_backtest(data: BacktestCreate):
+    # 解析輸入
+    start_datetime = parse_datetime_safe(data.start_datetime)
+    return BacktestService.create_backtest(data)
+```
+
+#### ✅ Celery 任務
+
+```python
+from app.utils.timezone_helpers import now_utc
+
+@shared_task
+def sync_daily_prices():
+    start_time = now_utc()  # 使用 UTC 時間
+    # 任務邏輯...
+```
+
+#### ✅ Scripts
+
+```python
+from app.utils.timezone_helpers import now_utc, today_taiwan
+
+def main():
+    start_time = now_utc()  # 記錄開始時間
+    taiwan_today = today_taiwan()  # 台灣今日日期
+    # 腳本邏輯...
+```
+
+#### ✅ 前端
+
+```typescript
+import { useDateTime } from '@/composables/useDateTime'
+const { formatToTaiwanTime } = useDateTime()
+
+// 顯示台灣時間
+const displayTime = formatToTaiwanTime(backtest.created_at)
+```
+
+### timezone_helpers.py 快速參考
+
+```python
+from app.utils.timezone_helpers import (
+    now_utc,                # 當前 UTC 時間（timezone-aware）
+    now_taipei_naive,       # 當前台灣時間（naive）
+    today_taiwan,           # 台灣今日日期
+    parse_datetime_safe,    # 解析並確保 timezone-aware
+    utc_to_naive_taipei,    # UTC → 台灣 naive
+    naive_taipei_to_utc,    # 台灣 naive → UTC
+)
+```
+
+**常用模式**：
+```python
+# 記錄時間戳
+created_at = now_utc()
+
+# 解析 API 輸入
+dt = parse_datetime_safe(input_datetime)
+
+# 獲取台灣今日
+today = today_taiwan()
+
+# stock_minute_prices 轉換
+taipei_time = utc_to_naive_taipei(utc_time)
+```
+
+### 開發檢查清單
+
+新增功能時：
+- [ ] Model 層：datetime 欄位使用 `DateTime(timezone=True)` 和 `func.now()`
+- [ ] Repository 層：stock_minute_prices 使用 timezone_helpers 轉換
+- [ ] Service 層：使用 `now_utc()`、`parse_datetime_safe()`、`today_taiwan()`
+- [ ] API 層：不要手動加 'Z'，讓 Pydantic 自動序列化
+- [ ] Celery：crontab 使用 UTC 時間（註解標註台灣時間）
+- [ ] 前端：使用 `useDateTime` composable 顯示時間
+
+Code Review 時：
+- [ ] 沒有使用 `datetime.now()` 而不指定時區
+- [ ] 沒有使用 `datetime.utcnow`（已棄用）
+- [ ] stock_minute_prices 操作有正確的時區轉換
+- [ ] Celery crontab 有正確的時區註解
+
+**詳細說明**：參見 [TIMEZONE_BEST_PRACTICES.md](TIMEZONE_BEST_PRACTICES.md)
+
+---
+
 ## 📚 文檔導航
 
 **快速開始**：[README.md](README.md)
@@ -768,6 +937,7 @@ docker compose exec backend celery -A app.core.celery_app inspect revoked
 - [CELERY_TASKS_GUIDE.md](Document/CELERY_TASKS_GUIDE.md) - Celery 任務管理
 - [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) - Celery 時區配置詳解
 - [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題解決方案
+- [TIMEZONE_BEST_PRACTICES.md](TIMEZONE_BEST_PRACTICES.md) - 時區處理最佳實踐
 
 **資料庫**：
 - [DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) - 16 個資料表

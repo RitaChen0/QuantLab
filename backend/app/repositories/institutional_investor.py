@@ -6,7 +6,7 @@ Institutional Investor Repository
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app.models.institutional_investor import InstitutionalInvestor
 from app.schemas.institutional_investor import (
@@ -54,7 +54,7 @@ class InstitutionalInvestorRepository:
             # 更新現有記錄
             existing.buy_volume = data.buy_volume
             existing.sell_volume = data.sell_volume
-            existing.updated_at = datetime.now()
+            existing.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(existing)
             return existing

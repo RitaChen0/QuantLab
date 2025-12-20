@@ -2,8 +2,18 @@
 Stock Minute Price Model
 
 分鐘級股票價格數據模型，支援多種時間粒度（1min, 5min, 15min, 30min, 60min）
+
+IMPORTANT: Timezone Strategy
+-----------------------------
+This table uses TIMESTAMP WITHOUT TIME ZONE (naive datetime) with Taiwan time.
+- datetime: Taiwan time (no timezone info)
+- created_at: Taiwan time (no timezone info)
+
+This is a design decision due to TimescaleDB limitations (60M+ rows, compressed).
+See TIMEZONE_STRATEGY.md for details.
 """
-from sqlalchemy import Column, String, TIMESTAMP, Numeric, BigInteger, Integer, Index, PrimaryKeyConstraint, ForeignKey, text
+from sqlalchemy import Column, String, TIMESTAMP, Numeric, BigInteger, Integer, Index, PrimaryKeyConstraint, ForeignKey
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -29,8 +39,10 @@ class StockMinutePrice(Base):
     adj_close = Column(Numeric(10, 2), nullable=True, comment="調整後收盤價")
     trades_count = Column(Integer, nullable=True, comment="成交筆數")
 
-    # 時間戳記
-    created_at = Column(TIMESTAMP, server_default=text('CURRENT_TIMESTAMP'))
+    # 時間戳記（使用資料庫當前時間，即台灣時間）
+    # 注意：PostgreSQL 設定為 UTC，但此表儲存台灣時間（設計決策）
+    # 實際插入時會由應用層提供台灣時間，此 server_default 僅作為備用
+    created_at = Column(TIMESTAMP, server_default=func.now())
 
     # 關聯（移除 back_populates 避免循環參考）
     stock = relationship("Stock")

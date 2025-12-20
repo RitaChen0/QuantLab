@@ -147,14 +147,14 @@ print("=" * 60)
 try:
     from app.repositories.option import OptionGreeksRepository
     from app.schemas.option import OptionGreeksCreate
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     db = SessionLocal()
     try:
         # 測試創建 Greeks 記錄
         test_greeks = OptionGreeksCreate(
             contract_id='TEST_TXO202601C23000',
-            datetime=datetime.now(),
+            datetime=datetime.now(timezone.utc),  # ✅ Use timezone-aware UTC time
             delta=Decimal('0.5'),
             gamma=Decimal('0.00001'),
             theta=Decimal('-10.5'),

@@ -14,7 +14,7 @@ import sys
 import json
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Set
 
 # Add backend to path
@@ -49,7 +49,7 @@ class BatchSyncProgress:
 
     def save(self):
         """儲存進度"""
-        self.data["last_update"] = datetime.now().isoformat()
+        self.data["last_update"] = datetime.now(timezone.utc).isoformat()
         with open(self.progress_file, 'w') as f:
             json.dump(self.data, f, indent=2, ensure_ascii=False)
 
@@ -65,7 +65,7 @@ class BatchSyncProgress:
         self.data["failed_stocks"].append({
             "stock_id": stock_id,
             "error": error,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         })
         self.save()
 
@@ -80,7 +80,7 @@ class BatchSyncProgress:
             "failed_stocks": [],
             "current_batch": 0,
             "total_synced": 0,
-            "start_time": datetime.now().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
             "last_update": None
         }
         self.save()

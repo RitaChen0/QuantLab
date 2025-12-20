@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.services.stock_minute_price_service import StockMinutePriceService
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from app.core.rate_limit import limiter, RateLimits
 from app.utils.logging import api_log
@@ -271,7 +271,7 @@ async def sync_intraday_data(
             )
 
         # 計算同步範圍
-        end_datetime = datetime.now()
+        end_datetime = datetime.now(timezone.utc)
         start_datetime = end_datetime - timedelta(days=days_back)
 
         logger.info(
@@ -295,7 +295,7 @@ async def sync_intraday_data(
             "stock_id": stock_id,
             "timeframe": timeframe,
             "records_synced": count,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except HTTPException:

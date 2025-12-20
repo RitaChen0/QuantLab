@@ -33,7 +33,7 @@ sys.path.insert(0, str(backend_dir))
 
 import argparse
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Dict, Tuple, Optional
 import pandas as pd
@@ -168,7 +168,7 @@ class DataGapChecker:
         Returns:
             是否成功
         """
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=self.years * 365)
 
         start_date_str = start_date.strftime("%Y-%m-%d")
@@ -222,7 +222,7 @@ class DataGapChecker:
 
     def run(self):
         """執行檢查與補齊"""
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
 
         # 檢查 FinLab 客戶端
         if not self.client.is_available():
@@ -300,7 +300,7 @@ class DataGapChecker:
 
     def _print_final_report(self):
         """印出最終報告"""
-        elapsed = datetime.now() - self.start_time
+        elapsed = datetime.now(timezone.utc) - self.start_time
 
         logger.info("\n" + "=" * 80)
         logger.info("資料完整性檢查報告")
@@ -353,7 +353,7 @@ class DataGapChecker:
         import json
 
         report = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "summary": {
                 "total_stocks": self.total_stocks,
                 "complete_stocks": len(self.complete_stocks),
@@ -369,7 +369,7 @@ class DataGapChecker:
             "failed": [{"stock_id": sid, "count": cnt} for sid, cnt in self.failed_stocks] if self.auto_fix else [],
         }
 
-        report_path = f"/tmp/data_gap_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        report_path = f"/tmp/data_gap_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 

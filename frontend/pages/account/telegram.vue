@@ -453,10 +453,11 @@ const unbind = async () => {
   }
 }
 
-// 格式化日期
+// 格式化日期（使用台灣時區）
+const { formatToTaiwanTime } = useDateTime()
 const formatDate = (dateString) => {
   if (!dateString) return '未知'
-  return new Date(dateString).toLocaleString('zh-TW')
+  return formatToTaiwanTime(dateString)
 }
 
 // 導航

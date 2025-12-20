@@ -9,7 +9,8 @@ RD-Agent 相關資料庫模型
 
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy.sql import func
+from datetime import datetime, timezone
 import enum
 
 from app.db.base import Base
@@ -54,9 +55,9 @@ class RDAgentTask(Base):
     llm_cost = Column(Float, default=0.0, comment="LLM 成本（美元）")
 
     # 時間戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # 關聯
     user = relationship("User", back_populates="rdagent_tasks")
@@ -92,7 +93,7 @@ class GeneratedFactor(Base):
     factor_metadata = Column(JSON, nullable=True, comment="其他元數據")
 
     # 時間戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # 關聯
     task = relationship("RDAgentTask", back_populates="generated_factors")
@@ -128,7 +129,7 @@ class FactorEvaluation(Base):
     detailed_results = Column(JSON, nullable=True, comment="詳細評估結果（JSON）")
 
     # 時間戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # 關聯
     factor = relationship("GeneratedFactor", back_populates="evaluations")

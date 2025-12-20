@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 import os
 import pickle
@@ -203,10 +203,10 @@ class RDAgentService:
         task.status = status
 
         if status == TaskStatus.RUNNING and not task.started_at:
-            task.started_at = datetime.utcnow()
+            task.started_at = datetime.now(timezone.utc)
 
         if status in [TaskStatus.COMPLETED, TaskStatus.FAILED]:
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(timezone.utc)
 
         if result:
             task.result = result

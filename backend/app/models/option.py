@@ -7,9 +7,10 @@ Option Models
 - 階段三：Greeks + 高級策略
 """
 from sqlalchemy import (
-    Column, String, TIMESTAMP, Numeric, BigInteger, Integer, Date,
+    Column, String, TIMESTAMP, Numeric, BigInteger, Integer, Date, DateTime,
     Index, PrimaryKeyConstraint, ForeignKey, CheckConstraint, text
 )
+from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -89,13 +90,14 @@ class OptionContract(Base):
 
     # 時間戳
     created_at = Column(
-        TIMESTAMP,
-        server_default=text('CURRENT_TIMESTAMP'),
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False
     )
     updated_at = Column(
-        TIMESTAMP,
-        server_default=text('CURRENT_TIMESTAMP'),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False
     )
 
@@ -232,8 +234,8 @@ class OptionDailyFactor(Base):
         comment="計算版本（用於回測一致性）"
     )
     created_at = Column(
-        TIMESTAMP,
-        server_default=text('CURRENT_TIMESTAMP'),
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False
     )
 
@@ -471,8 +473,9 @@ class OptionSyncConfig(Base):
         comment="說明"
     )
     updated_at = Column(
-        TIMESTAMP,
-        server_default=text('CURRENT_TIMESTAMP'),
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False
     )
 

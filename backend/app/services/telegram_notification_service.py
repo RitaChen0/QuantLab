@@ -6,7 +6,7 @@ Telegram Notification Service
 
 import asyncio
 from typing import Optional, Dict
-from datetime import datetime, time as datetime_time
+from datetime import datetime, time as datetime_time, timezone
 from sqlalchemy.orm import Session
 from loguru import logger
 
@@ -97,7 +97,7 @@ class TelegramNotificationService:
         if not start_time or not end_time:
             return False
 
-        now = datetime.now().time()
+        now = datetime.now(timezone.utc).time()
 
         # 跨日情況 (e.g., 23:00 - 08:00)
         if start_time > end_time:

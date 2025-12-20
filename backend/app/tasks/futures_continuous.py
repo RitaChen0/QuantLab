@@ -39,8 +39,9 @@ def generate_continuous_contracts(
     try:
         logger.info(f"Starting continuous contract generation for {symbols}...")
 
-        # 計算日期範圍
-        end_date = date.today()
+        # 計算日期範圍（使用台灣日期，因為期貨數據基於台灣交易日）
+        from app.utils.timezone_helpers import today_taiwan
+        end_date = today_taiwan()
         start_date = end_date - timedelta(days=days_back)
 
         results = []
@@ -71,7 +72,7 @@ def generate_continuous_contracts(
             # 保存完整日誌到文件
             log_dir = Path("/tmp/futures_logs")
             log_dir.mkdir(exist_ok=True)
-            log_file = log_dir / f"continuous_{symbol}_{datetime.now():%Y%m%d_%H%M%S}.log"
+            log_file = log_dir / f"continuous_{symbol}_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.log"
 
             try:
                 with open(log_file, 'w', encoding='utf-8') as f:
@@ -156,7 +157,8 @@ def register_new_futures_contracts(self: Task, year: int = None) -> dict:
     """
     try:
         if year is None:
-            year = date.today().year + 1
+            from app.utils.timezone_helpers import today_taiwan
+            year = today_taiwan().year + 1
 
         logger.info(f"Registering futures contracts for year {year}...")
 
@@ -182,7 +184,7 @@ def register_new_futures_contracts(self: Task, year: int = None) -> dict:
         # 保存完整日誌到文件
         log_dir = Path("/tmp/futures_logs")
         log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / f"register_{year}_{datetime.now():%Y%m%d_%H%M%S}.log"
+        log_file = log_dir / f"register_{year}_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}.log"
 
         try:
             with open(log_file, 'w', encoding='utf-8') as f:

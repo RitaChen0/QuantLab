@@ -173,6 +173,7 @@ definePageMeta({
 const router = useRouter()
 const { loadUserInfo, fullName, username, initialized } = useUserInfo()
 const config = useRuntimeConfig()
+const { formatRelativeTime } = useDateTime()
 
 // 統計數據
 const stats = reactive({
@@ -347,17 +348,10 @@ if (process.client) {
   })
 }
 
-// 格式化日期
+// 格式化日期（使用相對時間）
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffDays === 0) return '今天'
-  if (diffDays === 1) return '昨天'
-  if (diffDays < 7) return `${diffDays} 天前`
-  return date.toLocaleDateString('zh-TW')
+  // 使用 formatRelativeTime 將 UTC 時間轉為相對時間顯示（如 "今天"、"昨天"、"3 天前"）
+  return formatRelativeTime(dateString)
 }
 
 // 獲取狀態標籤

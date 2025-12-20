@@ -5,7 +5,7 @@ Option repository for database operations
 """
 
 from typing import Optional, List, Dict, Any
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc, func
 from app.models.option import (
@@ -594,7 +594,7 @@ class OptionGreeksRepository:
             List of latest Greeks for each contract
         """
         if not target_datetime:
-            target_datetime = datetime.now()
+            target_datetime = datetime.now(timezone.utc)
 
         # 子查詢：獲取每個合約的最新記錄
         subquery = (
@@ -684,7 +684,7 @@ class OptionGreeksRepository:
         Returns:
             Number of deleted records
         """
-        cutoff_datetime = datetime.now() - timedelta(days=keep_days)
+        cutoff_datetime = datetime.now(timezone.utc) - timedelta(days=keep_days)
 
         deleted = db.query(OptionGreeks).filter(
             and_(

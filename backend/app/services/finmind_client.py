@@ -8,7 +8,7 @@ import os
 import requests
 import pandas as pd
 from typing import Optional, Dict, Any, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from loguru import logger
 from app.utils.error_handler import get_safe_error_message
 
@@ -337,7 +337,7 @@ class FinMindClient:
             "industry_chain": industry_chain,
             "stocks_count": len(stocks),
             "stocks": stocks,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     # ========== 工具方法 ==========

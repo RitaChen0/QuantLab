@@ -610,7 +610,7 @@ async def get_monitoring_stats(
     db = SessionLocal()
 
     try:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         today = now.date()
         yesterday = today - timedelta(days=1)
         week_ago = today - timedelta(days=7)

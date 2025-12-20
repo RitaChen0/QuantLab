@@ -2,12 +2,19 @@
 Stock Minute Price Repository
 
 資料庫訪問層，負責 stock_minute_prices 表的 CRUD 操作
+
+⚠️ 時區處理規則：
+- stock_minute_prices 表使用 TIMESTAMP WITHOUT TIME ZONE，儲存台灣本地時間
+- 查詢時：如果傳入 UTC aware datetime，會自動轉換為台灣 naive datetime
+- 寫入時：確保傳入的 datetime 已經是台灣 naive datetime
+- 返回時：返回台灣 naive datetime（Service 層負責轉回 UTC）
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 from app.models.stock_minute_price import StockMinutePrice
 from app.schemas.stock_minute_price import StockMinutePriceCreate, StockMinutePriceUpdate
-from datetime import datetime
+from app.utils.timezone_helpers import utc_to_naive_taipei
+from datetime import datetime, timezone
 from typing import Optional, List
 from loguru import logger
 
@@ -28,12 +35,17 @@ class StockMinutePriceRepository:
         Args:
             db: 資料庫會話
             stock_id: 股票代碼
-            datetime: 時間戳記
+            datetime: 時間戳記（UTC aware 或 naive）
             timeframe: 時間粒度
 
         Returns:
             StockMinutePrice 物件，不存在返回 None
         """
+        # 時區轉換：如果傳入 UTC aware datetime，轉換為台灣 naive datetime
+        if datetime.tzinfo is not None:
+            datetime = utc_to_naive_taipei(datetime)
+            logger.debug(f"Converted UTC datetime to Taiwan time: {datetime}")
+
         return db.query(StockMinutePrice).filter(
             and_(
                 StockMinutePrice.stock_id == stock_id,
@@ -57,14 +69,23 @@ class StockMinutePriceRepository:
         Args:
             db: 資料庫會話
             stock_id: 股票代碼
-            start_datetime: 開始時間（可選）
-            end_datetime: 結束時間（可選）
+            start_datetime: 開始時間（可選，UTC aware 或 naive）
+            end_datetime: 結束時間（可選，UTC aware 或 naive）
             timeframe: 時間粒度（僅用於相容性，資料庫只有 1min）
             limit: 最大筆數（預設 10000）
 
         Returns:
             StockMinutePrice 列表，按時間升序排列
         """
+        # 時區轉換：如果傳入 UTC aware datetime，轉換為台灣 naive datetime
+        if start_datetime and start_datetime.tzinfo is not None:
+            start_datetime = utc_to_naive_taipei(start_datetime)
+            logger.debug(f"Converted UTC start_datetime to Taiwan time: {start_datetime}")
+
+        if end_datetime and end_datetime.tzinfo is not None:
+            end_datetime = utc_to_naive_taipei(end_datetime)
+            logger.debug(f"Converted UTC end_datetime to Taiwan time: {end_datetime}")
+
         # 資料庫只有 1min 資料，移除 timeframe 過濾條件
         query = db.query(StockMinutePrice).filter(
             StockMinutePrice.stock_id == stock_id

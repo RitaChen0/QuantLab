@@ -60,20 +60,27 @@ class TelegramClient:
             # 測試連接（異步）
             try:
                 # 使用 asyncio 在同步上下文中運行異步代碼
-                loop = asyncio.get_event_loop()
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    # 沒有事件循環，創建新的
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
                 if loop.is_running():
-                    # 如果事件循環正在運行，創建新的任務
-                    logger.info("📱 Telegram Bot initialized (async mode)")
+                    # 如果事件循環正在運行，延遲驗證
+                    logger.info("📱 Telegram Bot initialized (deferred validation - event loop running)")
+                    self._initialized = True
                 else:
                     # 如果沒有運行中的循環，直接運行
                     bot_info = loop.run_until_complete(self._bot.get_me())
                     logger.info(f"✅ Telegram Bot initialized: @{bot_info.username}")
+                    self._initialized = True
 
-                self._initialized = True
-
-            except RuntimeError:
-                # 沒有事件循環，延遲驗證
-                logger.info("📱 Telegram Bot initialized (deferred validation)")
+            except (RuntimeError, TelegramError) as e:
+                # 事件循環衝突或 Telegram API 錯誤，延遲驗證
+                logger.warning(f"⚠️  Telegram Bot deferred initialization: {str(e)}")
+                # 仍然標記為已初始化，實際使用時再驗證
                 self._initialized = True
 
         except Exception as e:

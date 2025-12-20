@@ -36,8 +36,8 @@ class InstitutionalInvestor(Base):
         Computed("buy_volume - sell_volume"),
         comment="買賣超（正數=買超，負數=賣超）"
     )
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # 關聯
     stock = relationship("Stock", back_populates="institutional_investors")

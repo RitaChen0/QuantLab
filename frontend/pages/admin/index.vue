@@ -423,7 +423,7 @@
               {{ signal.signal_type === 'BUY' ? '🟢 買入' : '🔴 賣出' }}
             </div>
             <div class="signal-price">NT$ {{ signal.price?.toFixed(2) || 'N/A' }}</div>
-            <div class="signal-time">{{ new Date(signal.detected_at).toLocaleString('zh-TW') }}</div>
+            <div class="signal-time">{{ formatDate(signal.detected_at) }}</div>
           </div>
         </div>
         <div v-else class="empty-state">
@@ -620,6 +620,7 @@ definePageMeta({
 const router = useRouter()
 const config = useRuntimeConfig()
 const { loadUserInfo } = useUserInfo()
+const { formatToTaiwanTime } = useDateTime()
 
 // State
 const activeTab = ref('stats')
@@ -1014,8 +1015,7 @@ async function deleteUser(user: any) {
 }
 
 function formatDate(dateStr: string) {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-TW')
+  return formatToTaiwanTime(dateStr)
 }
 
 function getStatusText(status: string) {

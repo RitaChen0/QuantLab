@@ -6,7 +6,7 @@ Shioaji API Client
 """
 import shioaji as sj
 from typing import Optional, List
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 import calendar
 import pandas as pd
 from loguru import logger
@@ -56,7 +56,8 @@ def is_contract_expired(contract_month_str: str, current_date: Optional[date] = 
         True 表示已到期，False 表示未到期
     """
     if current_date is None:
-        current_date = date.today()
+        from app.utils.timezone_helpers import today_taiwan
+        current_date = today_taiwan()
 
     try:
         year = int(contract_month_str[:4])
@@ -352,7 +353,8 @@ class ShioajiClient:
             return None
 
         if current_date is None:
-            current_date = date.today()
+            from app.utils.timezone_helpers import today_taiwan
+            current_date = today_taiwan()
 
         try:
             config = FUTURES_CONFIG[symbol]
@@ -432,9 +434,12 @@ class ShioajiClient:
             # 轉換為 DataFrame（新版 Shioaji API 返回 Kbars 物件，有 ts/Open/High/Low/Close/Volume 列表）
             data = []
             for i in range(len(kbars.ts)):
-                # ts 是 nano秒時間戳，需要轉換為 datetime
+                # ts 是 nanosecond 時間戳（台灣時區 UTC+8）
+                # Shioaji API 返回台灣證券交易所的本地時間
+                # 轉換為 naive datetime（無時區標記，但實際為台灣時間）
+                # 這是設計決策：stock_minute_prices 表使用台灣時間（見 TIMEZONE_STRATEGY.md）
                 timestamp_ns = kbars.ts[i]
-                dt = pd.to_datetime(timestamp_ns, unit='ns')
+                dt = pd.to_datetime(timestamp_ns, unit='ns', utc=True).tz_convert('Asia/Taipei').tz_localize(None)
 
                 data.append({
                     'datetime': dt,
@@ -504,7 +509,7 @@ class ShioajiClient:
                 'stock_id': stock_id,
                 'price': float(quote.close),
                 'volume': int(quote.volume),
-                'timestamp': datetime.now()
+                'timestamp': datetime.now(timezone.utc)
             }
 
         except Exception as e:
@@ -541,7 +546,7 @@ class ShioajiClient:
                     'stock_id': tick.code,
                     'price': float(tick.close),
                     'volume': int(tick.volume),
-                    'timestamp': datetime.now()
+                    'timestamp': datetime.now(timezone.utc)
                 })
 
             # 訂閱

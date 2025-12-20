@@ -28,6 +28,7 @@ def record_task_history(func: Callable) -> Callable:
         task_self = args[0] if args else None
         task_name = getattr(task_self, 'name', func.__name__)
 
+        # Use UTC timezone (unified timezone strategy)
         start_time = datetime.now(timezone.utc)
 
         try:

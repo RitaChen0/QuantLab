@@ -22,7 +22,7 @@
 import sys
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Tuple
 from loguru import logger
 
@@ -37,7 +37,7 @@ class TestRunner:
         self.verbose = verbose
         self.quick = quick
         self.results: List[Tuple[str, bool, str]] = []
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
 
     def run_test(self, name: str, test_func, skip_on_quick: bool = False) -> bool:
         """
@@ -77,7 +77,7 @@ class TestRunner:
 
     def print_summary(self):
         """打印测试摘要"""
-        duration = (datetime.now() - self.start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - self.start_time).total_seconds()
 
         logger.info("\n" + "=" * 70)
         logger.info("📊 Test Summary")

@@ -12,7 +12,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.db.session import SessionLocal
 from app.services.backtest_engine import BacktestEngine
 from loguru import logger
@@ -81,7 +81,7 @@ def test_backtest_engine():
 
         # 2. 設定測試參數
         stock_id = "2330"  # 台積電
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)  # ✅ Use timezone-aware UTC time
         start_date = end_date - timedelta(days=180)  # 最近 6 個月
         initial_cash = 1000000.0  # 100 萬
 

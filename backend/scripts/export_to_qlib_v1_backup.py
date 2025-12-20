@@ -19,7 +19,7 @@ import os
 import argparse
 import struct
 from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -323,7 +323,7 @@ def create_qlib_metadata(output_dir: Path, stock_list: List[str]):
 
 ## 數據資訊
 
-- **轉換時間**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **轉換時間**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}
 - **股票數量**: {len(stock_list)}
 - **數據來源**: QuantLab PostgreSQL + TimescaleDB
 - **市場**: 台灣股市 (TWSE/TPEX)

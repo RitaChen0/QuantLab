@@ -55,10 +55,10 @@ class InstitutionalInvestorService:
                     start_date = (latest_date + timedelta(days=1)).strftime('%Y-%m-%d')
                 else:
                     # 默認同步最近 30 天
-                    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                    start_date = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%d')
 
             if not end_date:
-                end_date = datetime.now().strftime('%Y-%m-%d')
+                end_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
             logger.info(f"Syncing institutional investor data for {stock_id}: {start_date} ~ {end_date}")
 
@@ -253,7 +253,9 @@ class InstitutionalInvestorService:
 
     def delete_old_data(self, days_to_keep: int = 365) -> int:
         """刪除舊數據（保留最近 N 天）"""
-        cutoff_date = datetime.now().date() - timedelta(days=days_to_keep)
+        from app.utils.timezone_helpers import today_taiwan
+        # 使用台灣日期而非 UTC 日期，因為法人買賣超數據基於台灣交易日
+        cutoff_date = today_taiwan() - timedelta(days=days_to_keep)
         start_date = date(2000, 1, 1)
 
         count = self.repo.delete_by_date_range(self.db, start_date, cutoff_date)

@@ -58,9 +58,8 @@ class GeneratedFactorResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() + 'Z' if v else None
-        }
+        # Pydantic v2 自動正確序列化 timezone-aware datetime
+        # datetime 會序列化為 ISO 8601 格式（如 2025-12-20T00:18:21+00:00）
 
 
 class UpdateGeneratedFactorRequest(BaseModel):
@@ -87,6 +86,5 @@ class RDAgentTaskResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() + 'Z' if v else None
-        }
+        # Pydantic v2 自動正確序列化 timezone-aware datetime
+        # datetime 會序列化為 ISO 8601 格式（如 2025-12-20T00:18:21+00:00）

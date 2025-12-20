@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import argparse
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 from loguru import logger
 from tqdm import tqdm
@@ -530,7 +530,7 @@ Examples:
     logger.info(f"{'='*60}\n")
 
     # 開始匯入
-    start_time = datetime.now()
+    start_time = datetime.now(timezone.utc)
 
     # 建立共用資料庫連線
     db = SessionLocal()
@@ -569,7 +569,7 @@ Examples:
         db.close()
 
     # 計算執行時間
-    end_time = datetime.now()
+    end_time = datetime.now(timezone.utc)
     elapsed = end_time - start_time
     elapsed_minutes = elapsed.total_seconds() / 60
 

@@ -72,9 +72,9 @@ class FactorEvaluationService:
 
         # 2. 設定預設日期範圍（過去 2 年）
         if not end_date:
-            end_date = datetime.now().strftime("%Y-%m-%d")
+            end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if not start_date:
-            start_dt = datetime.now() - timedelta(days=730)  # 2 年
+            start_dt = datetime.now(timezone.utc) - timedelta(days=730)  # 2 年
             start_date = start_dt.strftime("%Y-%m-%d")
 
         logger.info(f"Evaluating factor '{factor.name}' from {start_date} to {end_date}")
@@ -541,9 +541,9 @@ class FactorEvaluationService:
 
         # 2. 設定預設日期範圍（過去 2 年）
         if not end_date:
-            end_date = datetime.now().strftime("%Y-%m-%d")
+            end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if not start_date:
-            start_dt = datetime.now() - timedelta(days=730)  # 2 年
+            start_dt = datetime.now(timezone.utc) - timedelta(days=730)  # 2 年
             start_date = start_dt.strftime("%Y-%m-%d")
 
         logger.info(f"Analyzing IC decay for factor '{factor.name}' from {start_date} to {end_date}")

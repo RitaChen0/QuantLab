@@ -7,7 +7,7 @@ Supports multiple notification channels:
 - Future: Email, Slack, Telegram, etc.
 """
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from loguru import logger
 import json
@@ -63,7 +63,7 @@ class AlertManager:
             details: Additional details dictionary
             task_id: Optional task ID for tracking
         """
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
         # Create alert payload
         alert_data = {

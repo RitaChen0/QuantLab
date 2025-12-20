@@ -6,7 +6,7 @@ Stock Minute Price Service
 from sqlalchemy.orm import Session
 from app.repositories.stock_minute_price import StockMinutePriceRepository
 from app.schemas.stock_minute_price import StockMinutePriceCreate
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict
 import pandas as pd
 from loguru import logger
@@ -339,7 +339,7 @@ class StockMinutePriceService:
             "total_records": total_records,
             "succeeded": succeeded,
             "failed": failed,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         logger.info(

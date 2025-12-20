@@ -233,7 +233,7 @@ def cleanup_old_signals(
     db = SessionLocal()
 
     try:
-        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
 
         # 刪除舊記錄
         deleted = (

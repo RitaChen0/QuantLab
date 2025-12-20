@@ -135,8 +135,8 @@ def sync_fundamental_latest(self: Task) -> dict:
 
         # 只同步最近1年的數據
         from datetime import datetime, timedelta
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        start_date = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%d")
 
         for stock_id in hot_stocks:
             for indicator in important_indicators:

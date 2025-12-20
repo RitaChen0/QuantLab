@@ -157,6 +157,7 @@ definePageMeta({
 const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
+const { formatToTaiwanTime } = useDateTime()
 
 // 狀態
 const strategies = ref<any[]>([])
@@ -428,17 +429,11 @@ const pauseStrategy = async (id: number) => {
   }
 }
 
-// 格式化日期
+// 格式化日期（UTC → 台灣時間，含時分秒）
 const formatDate = (dateString: string) => {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  // 使用 formatToTaiwanTime 自動處理時區轉換
+  return formatToTaiwanTime(dateString)
 }
 
 // 狀態文字

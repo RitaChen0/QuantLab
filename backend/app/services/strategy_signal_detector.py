@@ -266,8 +266,9 @@ class StrategySignalDetector:
         Returns:
             DataFrame 或 None
         """
-        # 計算起始日期
-        end_date = datetime.now().date()
+        # 計算起始日期（使用台灣日期，因為股價數據基於台灣交易日）
+        from app.utils.timezone_helpers import today_taiwan
+        end_date = today_taiwan()
         start_date = end_date - timedelta(days=lookback_days)
 
         # 優先使用日線數據（更穩定）
@@ -376,7 +377,7 @@ class StrategySignalDetector:
             signal_type=signal['signal_type'],
             price=signal.get('price'),
             reason=signal.get('reason'),
-            detected_at=signal.get('datetime', datetime.now()),
+            detected_at=signal.get('datetime', datetime.now(timezone.utc)),
             notified=False
         )
 
@@ -407,7 +408,7 @@ class StrategySignalDetector:
         Returns:
             True 表示重複，False 表示非重複
         """
-        time_threshold = datetime.now() - timedelta(minutes=minutes)
+        time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
         duplicate = (
             self.db.query(StrategySignal)

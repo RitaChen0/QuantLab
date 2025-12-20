@@ -297,9 +297,10 @@ const deleteTask = async (taskId: number) => {
   }
 }
 
-// 格式化日期
+// 格式化日期（使用台灣時區）
+const { formatToTaiwanTime } = useDateTime()
 const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleString('zh-TW')
+  return formatToTaiwanTime(dateStr)
 }
 
 // 狀態標籤

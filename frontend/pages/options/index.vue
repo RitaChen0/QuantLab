@@ -650,8 +650,8 @@ watch(chartPeriod, () => {
 // 輔助函數
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  // 日期字符串格式: "YYYY-MM-DD" -> "YYYY/MM/DD"
+  return dateStr.replace(/-/g, '/')
 }
 
 const formatNumber = (value: any) => {

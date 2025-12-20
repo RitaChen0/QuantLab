@@ -3,7 +3,7 @@ Telegram Notification repository for database operations
 """
 
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.models.telegram_notification import TelegramNotification, TelegramNotificationPreference
@@ -149,7 +149,7 @@ class TelegramNotificationRepository:
             notification.error_message = error_message
 
         if status == "sent":
-            notification.sent_at = datetime.utcnow()
+            notification.sent_at = datetime.now(timezone.utc)
 
         db.add(notification)
         db.commit()
@@ -180,7 +180,7 @@ class TelegramNotificationRepository:
         Returns:
             Number of deleted notifications
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         deleted_count = (
             db.query(TelegramNotification)

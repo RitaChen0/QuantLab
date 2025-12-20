@@ -26,7 +26,7 @@ sys.path.insert(0, str(backend_dir))
 
 import argparse
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional
 import pandas as pd
@@ -149,7 +149,7 @@ class StockHistorySyncer:
             是否成功
         """
         # 計算日期範圍
-        end_date = datetime.now()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=self.years * 365)
 
         start_date_str = start_date.strftime("%Y-%m-%d")
@@ -208,7 +208,7 @@ class StockHistorySyncer:
 
     def run(self):
         """執行批次同步"""
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
 
         # 檢查 FinLab 客戶端
         if not self.client.is_available():
@@ -263,7 +263,7 @@ class StockHistorySyncer:
 
     def _print_progress(self):
         """印出進度統計"""
-        elapsed = datetime.now() - self.start_time
+        elapsed = datetime.now(timezone.utc) - self.start_time
         stocks_per_second = self.processed_stocks / elapsed.total_seconds()
         remaining_stocks = self.total_stocks - self.processed_stocks
         eta_seconds = remaining_stocks / stocks_per_second if stocks_per_second > 0 else 0
@@ -278,7 +278,7 @@ class StockHistorySyncer:
 
     def _print_final_report(self):
         """印出最終報告"""
-        elapsed = datetime.now() - self.start_time
+        elapsed = datetime.now(timezone.utc) - self.start_time
 
         logger.info("\n" + "=" * 80)
         logger.info("同步完成！")

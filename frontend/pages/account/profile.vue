@@ -217,16 +217,11 @@ const memberLevelText = computed(() => {
   return levels[level] || `未知等級 (${level})`
 })
 
-// 格式化日期
+// 格式化日期（使用台灣時區）
+const { formatToTaiwanTime } = useDateTime()
 const formatDate = (date: any) => {
   if (!date) return '未知'
-  return new Date(date).toLocaleString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  return formatToTaiwanTime(date, { showSeconds: false })
 }
 
 // 更新個人資料

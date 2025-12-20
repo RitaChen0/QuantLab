@@ -6,7 +6,7 @@
 
 from celery import Task
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from loguru import logger
 
 from app.core.celery_app import celery_app
@@ -50,7 +50,7 @@ def evaluate_factor_async(
             return {
                 "status": "error",
                 "error": f"Factor {factor_id} not found",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         # 執行評估
@@ -73,7 +73,7 @@ def evaluate_factor_async(
             "status": "success",
             "factor_id": factor_id,
             "results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -178,7 +178,7 @@ def batch_evaluate_factors(
             "failed": len(failed),
             "results": results,
             "failures": failed,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -189,7 +189,7 @@ def batch_evaluate_factors(
             "status": "error",
             "error": str(e),
             "partial_results": results,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     finally:
@@ -266,7 +266,7 @@ def update_factor_metrics(
                 "sharpe_ratio": factor.sharpe_ratio,
                 "annual_return": factor.annual_return,
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -277,7 +277,7 @@ def update_factor_metrics(
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     finally:

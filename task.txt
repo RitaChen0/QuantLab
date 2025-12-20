@@ -1,3 +1,8 @@
+  進行階段 4（文檔和規範）
+  - 更新 CLAUDE.md 時區處理規範
+  - 統一 Celery schedule 註解格式
+  - 創建時區最佳實踐文檔
+
 
 Qlib + RD_Agent 
 

@@ -55,7 +55,7 @@ def sync_option_daily_factors(
     Returns:
         Task result with sync statistics
     """
-    start_time = datetime.now()
+    start_time = datetime.now(timezone.utc)
 
     try:
         logger.info(
@@ -68,7 +68,8 @@ def sync_option_daily_factors(
             if target_date:
                 sync_date = datetime.strptime(target_date, "%Y-%m-%d").date()
             else:
-                sync_date = date.today()
+                from app.utils.timezone_helpers import today_taiwan
+                sync_date = today_taiwan()
         except ValueError as e:
             logger.error(f"[OPTION] ❌ Invalid date format: {target_date}. Expected YYYY-MM-DD")
             return {
@@ -268,7 +269,7 @@ def sync_option_daily_factors(
             }
 
         # 計算執行時間
-        duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
 
         # 記錄最終統計
         logger.info(
@@ -333,7 +334,7 @@ def sync_option_daily_factors(
         # Retry exceptions should propagate
         raise retry_exc
     except Exception as e:
-        duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         logger.error(
             f"[OPTION] ❌ Fatal error in sync_option_daily_factors after {duration:.1f}s: "
             f"{type(e).__name__}: {str(e)}",
@@ -417,9 +418,10 @@ def register_option_contracts(
                     logger.info(f"[OPTION] Registering contracts for {underlying_id}...")
 
                     # 獲取合約列表（使用今天的日期）
+                    from app.utils.timezone_helpers import today_taiwan
                     option_chain = data_source.get_option_chain(
                         underlying_id,
-                        date.today()
+                        today_taiwan()
                     )
 
                     if option_chain.empty:
@@ -547,7 +549,7 @@ def calculate_option_greeks(
     Returns:
         Task result with calculation statistics
     """
-    start_time = datetime.now()
+    start_time = datetime.now(timezone.utc)
 
     try:
         logger.info(
@@ -559,7 +561,8 @@ def calculate_option_greeks(
             if target_date:
                 calc_date = datetime.strptime(target_date, "%Y-%m-%d").date()
             else:
-                calc_date = date.today()
+                from app.utils.timezone_helpers import today_taiwan
+                calc_date = today_taiwan()
         except ValueError as e:
             logger.error(f"[GREEKS] ❌ Invalid date format: {target_date}")
             return {
@@ -755,7 +758,7 @@ def calculate_option_greeks(
             }
 
         # 計算執行時間
-        duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         stats['duration_seconds'] = duration
 
         # 記錄最終統計
@@ -788,7 +791,7 @@ def calculate_option_greeks(
             }
 
     except Exception as e:
-        duration = (datetime.now() - start_time).total_seconds()
+        duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         logger.error(
             f"[GREEKS] ❌ Fatal error after {duration:.1f}s: {type(e).__name__}: {str(e)}",
             exc_info=True

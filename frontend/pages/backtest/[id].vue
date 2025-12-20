@@ -257,12 +257,8 @@ const loadBacktestDetail = async () => {
 // 格式化日期
 const formatDate = (dateString: string) => {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
+  // 日期字符串格式: "YYYY-MM-DD" -> "YYYY/MM/DD"
+  return dateString.replace(/-/g, '/')
 }
 
 // 格式化金額
@@ -680,8 +676,11 @@ const renderTradeChart = async () => {
             color: '#6b7280'
           },
           labelFormatter: (value: number) => {
-            const date = new Date(dates[value])
-            return `${date.getFullYear()}/${date.getMonth() + 1}`
+            // dates[value] 格式: "YYYY-MM-DD"
+            const dateStr = dates[value]
+            if (!dateStr) return ''
+            const [year, month] = dateStr.split('-')
+            return `${year}/${month}`
           }
         },
         {
@@ -707,8 +706,9 @@ const renderTradeChart = async () => {
         axisLabel: {
           rotate: 45,
           formatter: (value: string) => {
-            const date = new Date(value)
-            return `${date.getMonth() + 1}/${date.getDate()}`
+            // value 格式: "YYYY-MM-DD"
+            const [year, month, day] = value.split('-')
+            return `${month}/${day}`
           }
         }
       },
@@ -833,7 +833,7 @@ const renderNavChart = () => {
         const dd = drawdownMap[date]
         return `
           <b>${date}</b><br/>
-          淨值: ${nav ? nav.toLocaleString('zh-TW', { style: 'currency', currency: 'TWD' }) : '-'}<br/>
+          淨值: ${nav ? new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD' }).format(nav) : '-'}<br/>
           ${dd ? `回撤: ${dd.toFixed(2)}%` : ''}
         `
       }
@@ -847,7 +847,7 @@ const renderNavChart = () => {
     yAxis: {
       type: 'value',
       axisLabel: {
-        formatter: (value: number) => value.toLocaleString()
+        formatter: (value: number) => new Intl.NumberFormat('zh-TW').format(value)
       }
     },
     series: [

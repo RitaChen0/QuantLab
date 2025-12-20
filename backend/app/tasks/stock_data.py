@@ -155,8 +155,8 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
             ]
 
         # Calculate date range
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
         synced_count = 0
         failed_count = 0
@@ -240,8 +240,8 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
             stock_ids = ["2330", "2317", "2454", "2412", "2882"]
 
         # Calculate date range
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
         synced_count = 0
         failed_count = 0

@@ -314,7 +314,9 @@
                   v-model="newBacktest.start_date"
                   type="date"
                   required
+                  title="選擇回測開始日期（台灣交易日）"
                 >
+                <small class="form-hint">選擇台灣市場交易日期</small>
               </div>
 
               <div class="form-group">
@@ -324,7 +326,9 @@
                   v-model="newBacktest.end_date"
                   type="date"
                   required
+                  title="選擇回測結束日期（台灣交易日）"
                 >
+                <small class="form-hint">選擇台灣市場交易日期</small>
               </div>
             </div>
 
@@ -394,6 +398,9 @@ definePageMeta({
 const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
+
+// 時區處理 composables
+const { formatToTaiwanTime } = useDateTime()
 
 // 狀態
 const backtests = ref<any[]>([])
@@ -675,11 +682,38 @@ const handleCreateBacktest = async () => {
   }
 }
 
+// 計算兩個日期字符串之間的天數
+// Note: Using `new Date()` here is acceptable for pure calculation (not display)
+// Purpose: Calculate the number of days between two dates for progress bar
+// Timezone is irrelevant because:
+// 1. Both dates are constructed from year/month/day components (no time part)
+// 2. .getTime() returns Unix timestamp, which is timezone-independent for calculation
+// 3. Result is only used for mathematical calculation, not displayed to user
+const calculateDaysBetween = (start: string, end: string): number => {
+  const [y1, m1, d1] = start.split('-').map(Number)
+  const [y2, m2, d2] = end.split('-').map(Number)
+  const date1 = new Date(y1, m1 - 1, d1)  // Acceptable: pure date calculation
+  const date2 = new Date(y2, m2 - 1, d2)  // Acceptable: pure date calculation
+  return Math.ceil((date2.getTime() - date1.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+// 增加天數並返回日期字符串
+// Note: Using `new Date()` here is acceptable for date arithmetic (not display)
+// Purpose: Add/subtract days from a date for progress calculation
+// Result is converted back to "YYYY-MM-DD" string format for calculation only
+const addDaysToDate = (dateStr: string, days: number): string => {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)  // Acceptable: date arithmetic
+  date.setDate(date.getDate() + days)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 // 計算進度和當前日期
 const calculateProgress = (backtest: any) => {
-  const startDate = new Date(backtest.start_date).getTime()
-  const endDate = new Date(backtest.end_date).getTime()
-  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+  const totalDays = calculateDaysBetween(backtest.start_date, backtest.end_date)
 
   // 預估執行時間：45秒（可根據實際情況調整）
   const estimatedDuration = 45000
@@ -697,8 +731,7 @@ const calculateProgress = (backtest: any) => {
 
   // 根據進度計算當前處理的日期
   const daysProcessed = Math.floor((totalDays * progress) / 100)
-  const currentDateMs = startDate + (daysProcessed * 24 * 60 * 60 * 1000)
-  const currentDate = new Date(currentDateMs).toISOString().split('T')[0]
+  const currentDate = addDaysToDate(backtest.start_date, daysProcessed)
 
   progressData.value[backtest.id].currentProgress = progress
   progressData.value[backtest.id].currentDate = currentDate
@@ -894,36 +927,27 @@ const deleteBacktest = async (id: number) => {
   }
 }
 
-// 格式化日期
+// 格式化日期（包含時間）
 const formatDate = (dateString: string) => {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  // 使用 formatToTaiwanTime 將 UTC 時間轉為台灣時間顯示
+  return formatToTaiwanTime(dateString)
 }
 
-// 格式化日期範圍
+// 格式化日期範圍（純日期，不含時間）
 const formatDateRange = (start: string, end: string) => {
   if (!start || !end) return '-'
-  const startDate = new Date(start).toLocaleDateString('zh-TW')
-  const endDate = new Date(end).toLocaleDateString('zh-TW')
-  return `${startDate} ~ ${endDate}`
+  // 日期字符串格式: "YYYY-MM-DD" -> "YYYY/MM/DD"
+  const startFormatted = start.replace(/-/g, '/')
+  const endFormatted = end.replace(/-/g, '/')
+  return `${startFormatted} ~ ${endFormatted}`
 }
 
-// 格式化簡單日期
+// 格式化簡單日期（純日期，不含時間）
 const formatDateSimple = (dateString: string) => {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
+  // 日期字符串格式: "YYYY-MM-DD" -> "YYYY/MM/DD"
+  return dateString.replace(/-/g, '/')
 }
 
 // 格式化金額

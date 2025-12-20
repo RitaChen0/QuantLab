@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>時區顯示測試</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        .utc {
+            color: #666;
+            font-family: monospace;
+        }
+        .taiwan {
+            color: #059669;
+            font-weight: bold;
+        }
+        .success {
+            color: #10b981;
+        }
+        .info {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🕐 時區轉換測試</h1>
+
+    <div class="info">
+        <strong>測試目的：</strong>驗證後端 UTC 時間在前端正確轉換為台灣時間（UTC+8）
+    </div>
+
+    <div class="test-section">
+        <h2>測試案例</h2>
+        <table id="test-table">
+            <thead>
+                <tr>
+                    <th>後端返回（UTC）</th>
+                    <th>前端顯示（台灣時間）</th>
+                    <th>預期結果</th>
+                    <th>狀態</th>
+                </tr>
+            </thead>
+            <tbody id="test-results">
+            </tbody>
+        </table>
+    </div>
+
+    <div class="test-section">
+        <h2>當前時間</h2>
+        <table>
+            <tr>
+                <th>時區</th>
+                <th>時間</th>
+            </tr>
+            <tr>
+                <td>UTC</td>
+                <td class="utc" id="current-utc"></td>
+            </tr>
+            <tr>
+                <td>台灣時間 (Asia/Taipei)</td>
+                <td class="taiwan" id="current-taiwan"></td>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        // 模擬前端的 formatToTaiwanTime 函數
+        function formatToTaiwanTime(dateStr) {
+            if (!dateStr) return '-';
+
+            const date = new Date(dateStr);
+
+            if (isNaN(date.getTime())) {
+                return '-';
+            }
+
+            return date.toLocaleString('zh-TW', {
+                timeZone: 'Asia/Taipei',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        // 測試案例
+        const testCases = [
+            {
+                utc: '2025-12-20T00:18:21+00:00',
+                expected: '2025/12/20 08:18:21',
+                description: 'Celery 任務執行時間'
+            },
+            {
+                utc: '2025-12-19T19:00:00+00:00',
+                expected: '2025/12/20 03:00:00',
+                description: '清理快取任務（台灣時間 03:00）'
+            },
+            {
+                utc: '2025-12-19T21:00:00+00:00',
+                expected: '2025/12/20 05:00:00',
+                description: '清理 Celery 元數據（台灣時間 05:00）'
+            },
+            {
+                utc: '2025-12-20T00:00:00+00:00',
+                expected: '2025/12/20 08:00:00',
+                description: '同步股票清單（台灣時間 08:00）'
+            },
+            {
+                utc: '2025-12-20T01:00:00+00:00',
+                expected: '2025/12/20 09:00:00',
+                description: '交易時段價格同步（台灣時間 09:00）'
+            },
+            {
+                utc: '2025-12-20T07:00:00+00:00',
+                expected: '2025/12/20 15:00:00',
+                description: 'Shioaji 分鐘線同步（台灣時間 15:00）'
+            },
+            {
+                utc: '2025-12-20T13:00:00+00:00',
+                expected: '2025/12/20 21:00:00',
+                description: '每日價格同步（台灣時間 21:00）'
+            }
+        ];
+
+        // 執行測試
+        const tbody = document.getElementById('test-results');
+        testCases.forEach(testCase => {
+            const result = formatToTaiwanTime(testCase.utc);
+            const passed = result === testCase.expected;
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td class="utc">${testCase.utc}<br><small>${testCase.description}</small></td>
+                <td class="taiwan">${result}</td>
+                <td>${testCase.expected}</td>
+                <td class="success">${passed ? '✅ 通過' : '❌ 失敗'}</td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        // 更新當前時間
+        function updateCurrentTime() {
+            const now = new Date();
+
+            const utcTime = now.toISOString();
+            document.getElementById('current-utc').textContent = utcTime;
+
+            const taiwanTime = now.toLocaleString('zh-TW', {
+                timeZone: 'Asia/Taipei',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+            document.getElementById('current-taiwan').textContent = taiwanTime;
+        }
+
+        updateCurrentTime();
+        setInterval(updateCurrentTime, 1000);
+    </script>
+</body>
+</html>

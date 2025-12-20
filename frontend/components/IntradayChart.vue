@@ -158,6 +158,9 @@ const loadIntradayData = async () => {
     }
 
     // 計算日期範圍
+    // Note: Using `new Date()` here is acceptable for date calculation (not display)
+    // Purpose: Calculate date range for API query parameters
+    // The dates are converted to ISO string format for API, not displayed to user
     const endDate = new Date()
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - selectedPeriod.value)

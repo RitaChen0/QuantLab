@@ -194,22 +194,22 @@ const retryTask = async () => {
   }
 }
 
-// 格式化日期
+// 格式化日期（使用台灣時區）
+const { formatToTaiwanTime } = useDateTime()
 const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
+  return formatToTaiwanTime(dateStr, { showSeconds: true })
 }
 
 // 計算執行時長
+// Note: Using `new Date()` here is acceptable for duration calculation (not display)
+// Purpose: Calculate time elapsed between start and end timestamps
+// Timezone is irrelevant because:
+// 1. .getTime() returns Unix timestamp (ms since 1970), which is timezone-independent
+// 2. The difference (diffMs) is always correct regardless of timezone
+// 3. Result is formatted as duration string ("X hours Y minutes"), not a timestamp
 const calculateDuration = (startStr: string, endStr: string) => {
-  const start = new Date(startStr).getTime()
-  const end = new Date(endStr).getTime()
+  const start = new Date(startStr).getTime()  // Acceptable: duration calculation
+  const end = new Date(endStr).getTime()      // Acceptable: duration calculation
   const diffMs = end - start
 
   const hours = Math.floor(diffMs / 3600000)

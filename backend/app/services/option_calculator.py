@@ -474,8 +474,9 @@ class OptionFactorCalculator:
             # 初始化計算器
             calculator = BlackScholesGreeksCalculator()
 
-            # 計算當前日期
-            current_date = date.today()
+            # 計算當前日期（使用台灣日期）
+            from app.utils.timezone_helpers import today_taiwan
+            current_date = today_taiwan()
 
             # 儲存 Greeks 計算結果
             call_deltas = []

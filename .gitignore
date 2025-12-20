@@ -93,3 +93,8 @@ data/
 # Alembic
 alembic/versions/*.pyc
 backend/pickle_cache/
+
+# Celery
+celerybeat-schedule*
+backend/celerybeat-schedule*
+*.pid

@@ -7,7 +7,7 @@
 import os
 import tempfile
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')  # 使用非交互式後端，避免在無 GUI 環境報錯
@@ -152,7 +152,7 @@ class BacktestChartGenerator(ChartGenerator):
             plt.tight_layout()
 
             # 保存圖表
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             filename = f"equity_curve_{backtest_id or timestamp}.png"
             output_path = self._get_output_path(filename)
 
@@ -265,7 +265,7 @@ class BacktestChartGenerator(ChartGenerator):
             plt.tight_layout()
 
             # 保存圖表
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             filename = f"metrics_summary_{backtest_id or timestamp}.png"
             output_path = self._get_output_path(filename)
 

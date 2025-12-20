@@ -211,6 +211,8 @@
 </template>
 
 <script setup lang="ts">
+import { getDateRange } from '~/composables/useDatePicker'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -218,6 +220,9 @@ definePageMeta({
 const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
+
+// 時區處理 composables
+const { formatToTaiwanTime } = useDateTime()
 
 // 搜尋狀態
 const searchKeyword = ref('')
@@ -326,14 +331,11 @@ const clearSelection = () => {
   dataError.value = ''
 }
 
-// 設定日期範圍
+// 設定日期範圍（使用 composable 確保時區處理正確）
 const setDateRange = (days: number) => {
-  const end = new Date()
-  const start = new Date()
-  start.setDate(start.getDate() - days)
-
-  endDate.value = end.toISOString().split('T')[0]
-  startDate.value = start.toISOString().split('T')[0]
+  const range = getDateRange(days)
+  startDate.value = range.startDate
+  endDate.value = range.endDate
 }
 
 // 載入最新數據日期
@@ -498,8 +500,9 @@ const renderInstitutionalChart = () => {
         axisLabel: {
           rotate: 45,
           formatter: (value: string) => {
-            const date = new Date(value)
-            return `${date.getMonth() + 1}/${date.getDate()}`
+            // 日期字符串格式: "YYYY-MM-DD"
+            const [year, month, day] = value.split('-')
+            return `${month}/${day}`
           }
         }
       },
@@ -608,14 +611,10 @@ onUnmounted(() => {
   }
 })
 
-// 格式化日期
+// 格式化日期（純日期，不含時間）
 const formatDate = (dateStr: string) => {
-  const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  })
+  // 日期字符串格式: "YYYY-MM-DD" -> "YYYY/MM/DD"
+  return dateStr.replace(/-/g, '/')
 }
 
 // 格式化成交量
