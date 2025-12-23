@@ -5,6 +5,7 @@ Celery tasks for Shioaji minute data synchronization
 from celery import Task
 from app.core.celery_app import celery_app
 from app.utils.task_history import record_task_history
+from app.utils.task_deduplication import skip_if_recently_executed
 from loguru import logger
 from datetime import datetime, timezone, date, timedelta
 from typing import List, Optional
@@ -166,6 +167,7 @@ def sync_shioaji_minute_data(
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_shioaji_top_stocks")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_shioaji_top_stocks(self: Task) -> dict:
     """
@@ -225,6 +227,7 @@ def sync_shioaji_top_stocks(self: Task) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_shioaji_futures")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_shioaji_futures(self: Task) -> dict:
     """

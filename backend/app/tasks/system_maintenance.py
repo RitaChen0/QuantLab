@@ -15,11 +15,13 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.utils.cache import cache
 from app.utils.task_history import record_task_history
+from app.utils.task_deduplication import skip_if_recently_executed
 
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name="app.tasks.cleanup_celery_metadata")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def cleanup_celery_metadata(
     self: Task,

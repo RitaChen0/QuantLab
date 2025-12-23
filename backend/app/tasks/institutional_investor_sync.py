@@ -9,8 +9,9 @@ from app.db.session import SessionLocal
 from app.services.institutional_investor_service import InstitutionalInvestorService
 from app.repositories.stock import StockRepository
 from app.utils.task_history import record_task_history
+from app.utils.task_deduplication import skip_if_recently_executed
 from loguru import logger
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 
@@ -144,6 +145,7 @@ def sync_single_stock_institutional(
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_top_stocks_institutional")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_top_stocks_institutional(
     self: Task,
@@ -220,6 +222,7 @@ def sync_top_stocks_institutional(
 
 
 @celery_app.task(bind=True, name="app.tasks.cleanup_old_institutional_data")
+@skip_if_recently_executed(min_interval_hours=168)  # 週任務：7 天 = 168 小時
 @record_task_history
 def cleanup_old_institutional_data(
     self: Task,

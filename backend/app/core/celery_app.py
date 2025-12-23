@@ -81,10 +81,11 @@ celery_app.conf.beat_schedule = {
     # Sync stock list once per day
     # Runs at: Taiwan 08:00 (UTC 00:00)
     # Duration: ~1-2 minutes
+    # Note: 使用 2 小時 expires + 任務內去重機制防止重複執行
     "sync-stock-list-daily": {
         "task": "app.tasks.sync_stock_list",
         "schedule": crontab(hour=0, minute=0),  # UTC 00:00 = Taiwan 08:00
-        "options": {"expires": 3600},
+        "options": {"expires": 7200},  # 2 hours
     },
 
     # Sync daily prices once per day
@@ -136,7 +137,7 @@ celery_app.conf.beat_schedule = {
     "cleanup-celery-metadata-daily": {
         "task": "app.tasks.cleanup_celery_metadata",
         "schedule": crontab(hour=21, minute=0),  # UTC 21:00 = Taiwan 05:00 next day
-        "options": {"expires": 3600},
+        "options": {"expires": 7200},  # 2 hours
     },
 
     # ==================== 基本面數據同步 ====================
@@ -200,7 +201,7 @@ celery_app.conf.beat_schedule = {
     "sync-shioaji-futures-daily": {
         "task": "app.tasks.sync_shioaji_futures",
         "schedule": crontab(hour=7, minute=30, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:30 = Taiwan 15:30
-        "options": {"expires": 3600},
+        "options": {"expires": 7200},  # 2 hours
     },
 
     # Generate continuous futures contracts (TX + MTX) once per week

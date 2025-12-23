@@ -7,6 +7,7 @@ from app.core.celery_app import celery_app
 from app.services.finlab_client import FinLabClient
 from app.utils.cache import cache
 from app.utils.task_history import record_task_history
+from app.utils.task_deduplication import skip_if_recently_executed
 from app.db.session import SessionLocal
 from app.repositories.stock import StockRepository
 from app.repositories.stock_price import StockPriceRepository
@@ -19,6 +20,7 @@ import pandas as pd
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_stock_list")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_stock_list(self: Task) -> dict:
     """
@@ -108,6 +110,7 @@ def sync_stock_list(self: Task) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_daily_prices")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict:
     """
@@ -209,6 +212,7 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_ohlcv_data")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
     """
@@ -480,6 +484,7 @@ def sync_latest_prices_shioaji(self: Task, stock_ids: list = None) -> dict:
 
 
 @celery_app.task(bind=True, name="app.tasks.cleanup_old_cache")
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def cleanup_old_cache(self: Task) -> dict:
     """

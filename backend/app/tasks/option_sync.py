@@ -10,6 +10,7 @@ Celery tasks for option data synchronization
 from celery import Task
 from app.core.celery_app import celery_app
 from app.utils.task_history import record_task_history
+from app.utils.task_deduplication import skip_if_recently_executed
 from app.db.session import get_db
 from loguru import logger
 from datetime import datetime, timezone, date, timedelta
@@ -32,6 +33,7 @@ from app.schemas.option import OptionDailyFactorCreate
     max_retries=3,
     default_retry_delay=300  # 5 minutes
 )
+@skip_if_recently_executed(min_interval_hours=24)
 @record_task_history
 def sync_option_daily_factors(
     self: Task,
@@ -357,6 +359,7 @@ def sync_option_daily_factors(
 
 
 @celery_app.task(bind=True, name="app.tasks.register_option_contracts")
+@skip_if_recently_executed(min_interval_hours=168)  # 週任務：7 天 = 168 小時
 @record_task_history
 def register_option_contracts(
     self: Task,
