@@ -262,3 +262,10 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   - TXCONT, MTXCONT - 連續合約（無到期日）
   - 期貨策略：配置 ["TX", "MTX"] 或 ["TXCONT"]
   - 選擇權策略：配置 ["TX"]（選擇權標的）
+
+✅ 重新構建並啟動（如果想確保所有變更生效）
+  docker compose down
+  docker compose up -d --build
+
+✅ # 進入 PostgreSQL 互動式介面
+  docker compose exec postgres psql -U quantlab quantlab

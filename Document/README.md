@@ -2,7 +2,7 @@
 
 > 📚 **QuantLab** 台股量化交易平台完整文檔索引
 >
-> 📅 最後更新：2025-12-12
+> 📅 最後更新：2025-12-23
 
 ---
 
@@ -66,23 +66,61 @@
 
 ---
 
-## 📋 參考文檔（待整合）
+### 🛠️ 系統操作與管理
 
-> ⚠️ 以下文檔將逐步整合到 `CLAUDE.md` 或 `docs/GUIDES.md`
+| 文檔 | 說明 | 重要性 |
+|------|------|--------|
+| [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) | 完整操作手冊 | ⭐⭐⭐ |
+| [DATA_SYNC_SCHEDULE.md](DATA_SYNC_SCHEDULE.md) | 數據同步排程總覽 | ⭐⭐⭐ |
+| [ADMIN_PANEL_GUIDE.md](ADMIN_PANEL_GUIDE.md) | 後台管理面板使用指南 | ⭐⭐ |
+| [STRATEGY_MONITORING_GUIDE.md](STRATEGY_MONITORING_GUIDE.md) | 策略實盤監控功能使用指南 | ⭐⭐ |
+| [TASK_RETRY_GUIDE.md](TASK_RETRY_GUIDE.md) | 任務重試機制使用指南 | ⭐⭐ |
 
-| 文檔 | 說明 | 狀態 | 整合目標 |
-|------|------|------|----------|
-| [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | API 端點快速參考 | 📌 待整合 | CLAUDE.md |
-| [CELERY_TASKS_GUIDE.md](CELERY_TASKS_GUIDE.md) | Celery 任務管理 | 📌 待整合 | docs/GUIDES.md |
-| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | 開發規範與工作流 | 📌 待整合 | CLAUDE.md |
-| [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) | 完整操作手冊 | 📌 待整合 | docs/GUIDES.md |
-| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 專案結構快速查找 | 📌 待整合 | CLAUDE.md |
-| [QLIB_SYNC_GUIDE.md](QLIB_SYNC_GUIDE.md) | Qlib 同步詳解 | 📌 待整合 | docs/QLIB.md |
-| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 常見問題快速解決 | 📌 待整合 | docs/GUIDES.md |
+**功能說明**：
+- 📊 數據同步排程與管理
+- 🎛️ 後台管理面板操作
+- 📡 策略監控與 Telegram 通知
+- 🔄 任務重試與故障恢復
 
-**說明**：
-- 這些文檔目前仍可使用，但未來會整合到對應的核心文檔中
-- 整合完成後將被刪除，以保持文檔結構簡潔
+---
+
+### 🔌 API 與整合文檔
+
+| 文檔 | 說明 | 重要性 |
+|------|------|--------|
+| [API_DATETIME_GUIDE.md](API_DATETIME_GUIDE.md) | API 日期時間處理完整指南 | ⭐⭐⭐ |
+| [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md) | API 端點快速參考 | ⭐⭐ |
+| [INSTITUTIONAL_API_GUIDE.md](INSTITUTIONAL_API_GUIDE.md) | 法人買賣超 API 使用指南 | ⭐⭐ |
+
+**功能說明**：
+- 🌐 API 日期時間參數解析與序列化規範
+- 📚 API 端點快速查詢
+- 💼 法人買賣超數據 API
+
+---
+
+### ⏰ Celery 與數據同步
+
+| 文檔 | 說明 | 重要性 |
+|------|------|--------|
+| [CELERY_TASKS_GUIDE.md](CELERY_TASKS_GUIDE.md) | Celery 任務管理 | ⭐⭐⭐ |
+| [QLIB_SYNC_GUIDE.md](QLIB_SYNC_GUIDE.md) | Qlib 同步詳解 | ⭐⭐⭐ |
+| [SHIOAJI_SYNC_GUIDE.md](SHIOAJI_SYNC_GUIDE.md) | Shioaji 數據同步指南 | ⭐⭐ |
+
+**功能說明**：
+- ⚙️ Celery 定時任務配置與管理
+- 📊 Qlib 數據同步與優化
+- 📈 Shioaji 期貨/股票數據同步
+
+---
+
+## 📋 其他參考文檔
+
+| 文檔 | 說明 | 狀態 |
+|------|------|------|
+| [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | 開發規範與工作流 | ✅ 保留 |
+| [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 專案結構快速查找 | ✅ 保留 |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 常見問題快速解決 | ✅ 保留 |
 
 ---
 
@@ -143,25 +181,20 @@
 | 資料庫 | 5 |
 | 因子評估 | 2 |
 | 系統管理 | 2 |
+| 系統操作與管理 | 5 |
+| API 與整合 | 3 |
+| Celery 與數據同步 | 3 |
+| 其他參考 | 3 |
 | 索引 | 1 |
-| **小計** | **10** |
-
-### 參考文檔（待整合）
-| 類別 | 文檔數量 |
-|------|---------|
-| 快速索引 | 3 |
-| 使用指南 | 4 |
-| **小計** | **7** |
+| **小計** | **24** |
 
 ### 總計
 | 類別 | 文檔數量 |
 |------|---------|
-| Document/ 目錄 | 17 |
+| Document/ 目錄 | 24 |
 | docs/ 目錄 | 6 |
-| 根目錄 | 4 |
-| **總計** | **27** |
-
-**目標**：整合完成後減少到 **20 個文檔**
+| 根目錄 | 6 |
+| **總計** | **36** |
 
 ---
 
@@ -263,5 +296,6 @@ grep -r "遷移" Document/
 ---
 
 **更新記錄**:
+- 2025-12-23 - 文檔整合與清理：移除 47 個過程文件，整合時區相關指南，新增 API 與操作文檔分類
 - 2025-12-12 - 重新規劃文檔結構，標示核心文檔與待整合文檔
 - 2025-12-09 - 新增改進路線圖與貢獻指南

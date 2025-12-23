@@ -392,7 +392,7 @@ celery_app.conf.update(
 - **應用層時區轉換**：應用代碼使用 `datetime.now(timezone.utc)` 獲取 UTC 時間，必要時轉換為台灣時間
 - **一致性策略**：資料庫、Celery、應用層全部統一使用 UTC，避免時區混亂
 - 高頻任務（15 分鐘間隔）不應設置 `expires`，避免任務立即過期
-- 詳見 [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) 和 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
+- 詳見 [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) 和 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
 
 **任務清單**（按時間排序）：
 | 時間 | 任務 | 用途 |
@@ -923,7 +923,7 @@ Code Review 時：
 - [ ] stock_minute_prices 操作有正確的時區轉換
 - [ ] Celery crontab 有正確的時區註解
 
-**詳細說明**：參見 [TIMEZONE_BEST_PRACTICES.md](TIMEZONE_BEST_PRACTICES.md)
+**詳細說明**：參見 [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md)
 
 ---
 
@@ -935,9 +935,8 @@ Code Review 時：
 - [OPERATIONS_GUIDE.md](Document/OPERATIONS_GUIDE.md) - 完整操作手冊
 - [QLIB_SYNC_GUIDE.md](Document/QLIB_SYNC_GUIDE.md) - Qlib 同步詳解
 - [CELERY_TASKS_GUIDE.md](Document/CELERY_TASKS_GUIDE.md) - Celery 任務管理
-- [CELERY_TIMEZONE_EXPLAINED.md](CELERY_TIMEZONE_EXPLAINED.md) - Celery 時區配置詳解
+- [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) - 時區處理完整指南（系統策略、各層規則、Celery 配置、前端顯示）
 - [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題解決方案
-- [TIMEZONE_BEST_PRACTICES.md](TIMEZONE_BEST_PRACTICES.md) - 時區處理最佳實踐
 
 **資料庫**：
 - [DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) - 16 個資料表

@@ -108,8 +108,9 @@ celery_app.conf.beat_schedule = {
     # Sync latest prices during trading hours (every 15 minutes)
     # Runs at: Taiwan 09:00-13:59 (UTC 01:00-05:59), Mon-Fri
     # Duration: ~1-2 minutes
+    # Data Source: Shioaji API (no quota limit)
     "sync-latest-prices-frequent": {
-        "task": "app.tasks.sync_latest_prices",
+        "task": "app.tasks.sync_latest_prices_shioaji",
         "schedule": crontab(
             minute='*/15',
             hour='1-5',  # UTC 01:00-05:59 = Taiwan 09:00-13:59

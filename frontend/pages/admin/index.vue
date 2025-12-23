@@ -122,10 +122,10 @@
                   管理員 <span class="sort-icon">{{ getSortIcon('is_superuser') }}</span>
                 </th>
                 <th @click="toggleSort('created_at')" class="sortable">
-                  註冊時間 <span class="sort-icon">{{ getSortIcon('created_at') }}</span>
+                  註冊時間 (台北時間) <span class="sort-icon">{{ getSortIcon('created_at') }}</span>
                 </th>
                 <th @click="toggleSort('last_login')" class="sortable">
-                  最後登入 <span class="sort-icon">{{ getSortIcon('last_login') }}</span>
+                  最後登入 (台北時間) <span class="sort-icon">{{ getSortIcon('last_login') }}</span>
                 </th>
                 <th>操作</th>
               </tr>
@@ -189,6 +189,7 @@
               </div>
               <div class="task-info" v-if="task.last_run">
                 <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span class="text-gray-500 text-sm">(台北時間)</span>
                 <span
                   v-if="task.last_run_status"
                   :class="['execution-status', 'status-' + task.last_run_status]"
@@ -273,6 +274,7 @@
               </div>
               <div class="task-info" v-if="task.last_run">
                 <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span class="text-gray-500 text-sm">(台北時間)</span>
                 <span
                   v-if="task.last_run_status"
                   :class="['execution-status', 'status-' + task.last_run_status]"
@@ -387,6 +389,7 @@
               </div>
               <div class="task-info" v-if="task.last_run">
                 <strong>最後執行:</strong> {{ formatDate(task.last_run) }}
+                <span class="text-gray-500 text-sm">(台北時間)</span>
                 <span
                   v-if="task.last_run_status"
                   :class="['execution-status', 'status-' + task.last_run_status]"

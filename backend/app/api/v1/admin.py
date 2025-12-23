@@ -42,25 +42,27 @@ def format_crontab_schedule(schedule) -> str:
     """
     將 crontab schedule 轉換為人類可讀的文字
 
-    重要：Celery 配置為 enable_utc=False + timezone="Asia/Taipei"
-    因此 crontab 的時間參數已經是台灣本地時間，不需要轉換！
+    重要：Celery 配置為 timezone="UTC", enable_utc=True
+    因此 crontab 的時間參數是 UTC 時間，需要轉換為台北時間顯示！
 
     Examples:
-        crontab(hour=15, minute=0) -> "交易日 15:00"（台灣時間 15:00）
-        crontab(hour=8, minute=0) -> "每天 08:00"（台灣時間 08:00）
+        crontab(hour=1, minute=0) -> "每天 09:00 (台北時間)"（UTC 01:00 = 台北 09:00）
+        crontab(hour='1-5', minute='*/15') -> "交易日 09:00-13:59 每 15 分鐘 (台北時間)"
     """
     if not isinstance(schedule, crontab):
         return str(schedule)
 
-    # 解析 crontab 各個欄位（已經是台灣本地時間）
+    # 解析 crontab 各個欄位（UTC 時間）
     minute = schedule._orig_minute
     hour = schedule._orig_hour
     day_of_month = schedule._orig_day_of_month
     month_of_year = schedule._orig_month_of_year
     day_of_week = schedule._orig_day_of_week
 
-    # 由於 enable_utc=False，crontab 使用台灣本地時間，不需要轉換！
-    # 注意：時間範圍處理仍需要特殊邏輯（見下方）
+    # Helper function: UTC → 台北時間（+8 小時）
+    def utc_to_taipei(hour_utc: int) -> int:
+        """Convert UTC hour to Taipei hour (UTC+8)"""
+        return (hour_utc + 8) % 24
 
     # 星期對照表
     weekday_map = {
@@ -77,19 +79,23 @@ def format_crontab_schedule(schedule) -> str:
 
     # 處理每週特定日期（非時間範圍）
     if day_of_week != '*' and hour != '*' and minute != '*' and not (isinstance(hour, str) and '-' in hour):
+        # 轉換 UTC → 台北時間
+        taipei_hour = utc_to_taipei(int(hour))
         if day_of_week == 'mon,tue,wed,thu,fri':
-            return f"交易日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
+            return f"交易日 {str(taipei_hour).zfill(2)}:{str(minute).zfill(2)} (台北時間)"
         weekday = weekday_map.get(str(day_of_week), f'週{day_of_week}')
-        return f"每{weekday} {str(hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每{weekday} {str(taipei_hour).zfill(2)}:{str(minute).zfill(2)} (台北時間)"
 
     # 處理每月特定日期
     if day_of_month != '*' and hour != '*' and minute != '*':
-        return f"每月 {day_of_month} 日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
+        taipei_hour = utc_to_taipei(int(hour))
+        return f"每月 {day_of_month} 日 {str(taipei_hour).zfill(2)}:{str(minute).zfill(2)} (台北時間)"
 
     # 處理每年特定日期
     if month_of_year != '*' and day_of_month != '*' and hour != '*' and minute != '*':
+        taipei_hour = utc_to_taipei(int(hour))
         month = month_map.get(str(month_of_year), f'{month_of_year}月')
-        return f"每年 {month} {day_of_month} 日 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
+        return f"每年 {month} {day_of_month} 日 {str(taipei_hour).zfill(2)}:{str(minute).zfill(2)} (台北時間)"
 
     # 處理每小時
     if hour == '*' and minute != '*':
@@ -100,8 +106,11 @@ def format_crontab_schedule(schedule) -> str:
 
     # 處理特定時間範圍（含 day_of_week）
     if hour != '*' and isinstance(hour, str) and '-' in hour:
-        start_hour, end_hour = hour.split('-')
-        # 直接使用台灣本地時間，不需要轉換
+        start_hour_utc, end_hour_utc = hour.split('-')
+        # 轉換 UTC → 台北時間
+        start_hour_taipei = utc_to_taipei(int(start_hour_utc))
+        end_hour_taipei = utc_to_taipei(int(end_hour_utc))
+
         if isinstance(minute, str) and minute.startswith('*/'):
             interval = minute.replace('*/', '')
             if day_of_week == 'mon,tue,wed,thu,fri':
@@ -110,7 +119,7 @@ def format_crontab_schedule(schedule) -> str:
                 prefix = f"每{weekday_map.get(str(day_of_week), '天')}"
             else:
                 prefix = "每天"
-            return f"{prefix} {str(start_hour).zfill(2)}:00-{str(end_hour).zfill(2)}:59 每 {interval} 分鐘"
+            return f"{prefix} {str(start_hour_taipei).zfill(2)}:00-{str(end_hour_taipei).zfill(2)}:59 每 {interval} 分鐘 (台北時間)"
 
     # 處理每天特定時間
     if day_of_week == '*' and day_of_month == '*' and hour != '*' and minute != '*':
@@ -119,10 +128,12 @@ def format_crontab_schedule(schedule) -> str:
             interval = hour.replace('*/', '')
             return f"每 {interval} 小時"
 
-        return f"每天 {str(hour).zfill(2)}:{str(minute).zfill(2)}"
+        # 轉換 UTC → 台北時間
+        taipei_hour = utc_to_taipei(int(hour))
+        return f"每天 {str(taipei_hour).zfill(2)}:{str(minute).zfill(2)} (台北時間)"
 
-    # 預設返回原始格式（台灣本地時間）
-    return f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week} (Taiwan)"
+    # 預設返回原始格式（UTC 時間 + 標註）
+    return f"{minute} {hour} {day_of_month} {month_of_year} {day_of_week} (UTC)"
 
 
 # ============ User Management ============
@@ -356,7 +367,7 @@ async def list_sync_tasks(
         "app.tasks.sync_stock_list",
         "app.tasks.sync_daily_prices",
         "app.tasks.sync_ohlcv_data",
-        "app.tasks.sync_latest_prices",
+        "app.tasks.sync_latest_prices_shioaji",
         "app.tasks.sync_fundamental_data",
         "app.tasks.sync_fundamental_latest",
         "app.tasks.sync_top_stocks_institutional",
@@ -387,7 +398,7 @@ async def list_sync_tasks(
         "app.tasks.sync_stock_list": "同步股票列表",
         "app.tasks.sync_daily_prices": "同步每日價格",
         "app.tasks.sync_ohlcv_data": "同步 OHLCV 數據",
-        "app.tasks.sync_latest_prices": "同步最新價格",
+        "app.tasks.sync_latest_prices_shioaji": "同步最新價格（Shioaji）",
         "app.tasks.sync_fundamental_data": "同步財務指標（完整）",
         "app.tasks.sync_fundamental_latest": "同步財務指標（快速）",
         "app.tasks.sync_top_stocks_institutional": "同步法人買賣超（全部股票）",

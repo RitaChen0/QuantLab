@@ -399,6 +399,86 @@ def sync_latest_prices(self: Task, stock_ids: list = None) -> dict:
         raise self.retry(exc=e, countdown=countdown, max_retries=5)
 
 
+@celery_app.task(bind=True, name="app.tasks.sync_latest_prices_shioaji")
+@record_task_history
+def sync_latest_prices_shioaji(self: Task, stock_ids: list = None) -> dict:
+    """
+    Sync latest prices using Shioaji API (no quota limit)
+    Runs frequently to keep prices up-to-date
+
+    Args:
+        stock_ids: List of stock IDs to sync (if None, syncs popular stocks)
+
+    Returns:
+        Task result with sync statistics
+    """
+    try:
+        logger.info("Starting latest price synchronization (Shioaji)...")
+
+        # Initialize Shioaji client
+        from app.services.shioaji_client import ShioajiClient
+
+        # If no stock_ids provided, sync popular stocks
+        if not stock_ids:
+            stock_ids = [
+                "2330", "2317", "2454", "2412", "2882",
+                "2881", "2886", "2891", "2892", "2002"
+            ]
+
+        synced_count = 0
+        failed_count = 0
+
+        # Use context manager for automatic login/logout
+        with ShioajiClient() as client:
+            if not client.is_available():
+                logger.error("Shioaji client not available")
+                return {
+                    "status": "error",
+                    "message": "Shioaji client not available"
+                }
+
+            for stock_id in stock_ids:
+                try:
+                    # Get latest quote from Shioaji
+                    quote_data = client.get_quote(stock_id)
+
+                    if quote_data and quote_data.get('price'):
+                        price = quote_data['price']
+
+                        # Cache for 5 minutes
+                        cache_key = f"latest_price:{stock_id}"
+                        cache.set(cache_key, price, expiry=300)
+
+                        synced_count += 1
+                        logger.debug(f"Synced latest price for {stock_id}: {price} (Shioaji)")
+                    else:
+                        failed_count += 1
+                        logger.warning(f"No quote data for {stock_id}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to sync latest price for {stock_id}: {str(e)}")
+                    failed_count += 1
+                    continue
+
+        logger.info(f"Latest price sync completed (Shioaji): {synced_count} success, {failed_count} failed")
+
+        return {
+            "status": "success",
+            "message": f"Synced latest prices for {synced_count} stocks (Shioaji)",
+            "synced_count": synced_count,
+            "failed_count": failed_count,
+            "data_source": "shioaji",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to sync latest prices (Shioaji): {str(e)}")
+        # 使用指數退避：1m, 2m, 4m, 8m, 16m
+        retry_count = self.request.retries
+        countdown = 60 * (2 ** retry_count)
+        raise self.retry(exc=e, countdown=countdown, max_retries=5)
+
+
 @celery_app.task(bind=True, name="app.tasks.cleanup_old_cache")
 @record_task_history
 def cleanup_old_cache(self: Task) -> dict:

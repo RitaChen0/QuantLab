@@ -3,6 +3,7 @@ from app.tasks.stock_data import (
     sync_daily_prices,
     sync_ohlcv_data,
     sync_latest_prices,
+    sync_latest_prices_shioaji,
     cleanup_old_cache,
 )
 from app.tasks.backtest import (
@@ -55,6 +56,7 @@ __all__ = [
     "sync_daily_prices",
     "sync_ohlcv_data",
     "sync_latest_prices",
+    "sync_latest_prices_shioaji",
     "cleanup_old_cache",
     "run_backtest_async",
     "get_backtest_progress",
