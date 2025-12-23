@@ -746,8 +746,16 @@ docker compose exec backend celery -A app.core.celery_app inspect conf | grep -E
 docker compose restart celery-worker celery-beat
 ```
 
-2. **永久修復**（已在配置中）：
-   - **移除短期 `expires`** - 確保 Beat 重啟補發的任務仍能執行
+2. **永久修復**（✅ 2025-12-23 已優化）：
+   - **智慧 expires 配置**：
+     - 每日任務：`expires: 82800`（23 小時）
+     - 每週任務：`expires: 604800`（7 天）
+     - 高頻任務（15 分鐘）：**無 expires**
+     - 長時間任務：`expires: 18000`（5 小時，例如同步所有股票）
+   - **三層防護機制**：
+     1. 充足的 expires 時間（覆蓋整個任務週期）
+     2. `@skip_if_recently_executed` 裝飾器去重
+     3. Redis 分佈式鎖防止並發
    - `task_acks_late=True` - 改善任務可靠性
    - `worker_max_memory_per_child=512000` - Worker 定期自動重啟，清空 revoked 列表
    - 每天 05:00 自動執行 `cleanup_celery_metadata` 任務
@@ -760,7 +768,10 @@ docker compose exec backend celery -A app.core.celery_app inspect revoked
 #            - empty -
 ```
 
-**詳細說明**：參見 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
+**詳細說明**：
+- [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題分析
+- [CELERY_EXPIRES_OPTIMIZATION.md](CELERY_EXPIRES_OPTIMIZATION.md) - Expires 智慧優化（2025-12-23）
+- [CELERY_SMART_REVOKED_CLEANUP.md](CELERY_SMART_REVOKED_CLEANUP.md) - 智慧 Revoked 清理機制（2025-12-23）✨
 
 ---
 

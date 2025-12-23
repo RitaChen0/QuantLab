@@ -58,27 +58,58 @@ def cleanup_celery_metadata(
         return stats
 
     try:
-        redis_client = cache.client
+        redis_client = cache.redis_client
+        if not redis_client:
+            logger.warning("⚠️  Redis 客戶端不可用，跳過清理")
+            stats["errors"].append("Redis client unavailable")
+            return stats
 
-        # 1. 清理 revoked task IDs
-        # Celery 將 revoked task IDs 存儲在 Redis set 中
-        # Key pattern: unacked_mutex (depends on Celery version)
-        # 直接清空 revoked 列表（Worker 重啟時會自動重建）
-        logger.info("🗑️  檢查 revoked tasks...")
+        # 1. 智慧清理 revoked task IDs
+        # 問題：過期的任務 ID 會永久留在 Worker 內存中，擋住未來的任務
+        # 解決：通過重啟 Worker 進程池來清空 revoked 列表
+        logger.info("🗑️  智慧清理 revoked tasks...")
 
-        # 使用 Celery control API 清理（推薦方式）
         from celery import current_app
         control = current_app.control
 
-        # 清空所有 Worker 的 revoked task 列表
+        # 1.1 檢查當前 revoked 列表
+        try:
+            inspect = control.inspect()
+            revoked_info = inspect.revoked()
+
+            if revoked_info:
+                total_revoked = sum(len(tasks) for tasks in revoked_info.values())
+                logger.info(f"📊 當前 revoked 任務數量: {total_revoked}")
+
+                # 如果有 revoked 任務，通過重啟進程池來清空
+                if total_revoked > 0 and not dry_run:
+                    logger.info("🔄 檢測到 revoked 任務，重啟 Worker 進程池以清空...")
+
+                    # 使用 pool_restart 命令重啟所有 Worker 的進程池
+                    # 這會清空內存中的 revoked 列表，但不影響正在執行的任務
+                    control.broadcast('pool_restart', arguments={'reload': False})
+
+                    logger.info("✅ 已通知所有 Worker 重啟進程池")
+                    stats["revoked_tasks_cleared"] = total_revoked
+                elif total_revoked > 0:
+                    logger.info(f"🔍 [DRY RUN] 將重啟 Worker 進程池以清空 {total_revoked} 個 revoked 任務")
+                else:
+                    logger.info("✅ Revoked 列表已空，無需清理")
+            else:
+                logger.warning("⚠️  無法獲取 revoked 列表資訊")
+
+        except Exception as e:
+            logger.warning(f"⚠️  清理 revoked 列表時出錯: {e}")
+            stats["errors"].append(f"Revoked cleanup error: {str(e)}")
+
+        # 1.2 清空隊列中未執行的過期任務（可選）
         if not dry_run:
-            # 注意：這會通知所有 Worker 清空其內存中的 revoked 列表
-            # Worker 會響應此命令並清空內部狀態
-            control.purge()  # 清空所有隊列中未執行的任務
-            logger.info("✅ 已清空任務隊列")
-            stats["revoked_tasks_cleared"] = 1
-        else:
-            logger.info("🔍 [DRY RUN] 將清空任務隊列")
+            try:
+                purged = control.purge()  # 清空所有隊列中未執行的任務
+                if purged:
+                    logger.info(f"🗑️  已清空 {purged} 個隊列中的未執行任務")
+            except Exception as e:
+                logger.warning(f"⚠️  清空隊列時出錯: {e}")
 
         # 2. 清理過期的任務結果
         # Celery 結果存儲在 Redis 中，key pattern: celery-task-meta-<task_id>

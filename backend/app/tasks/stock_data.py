@@ -114,7 +114,7 @@ def sync_stock_list(self: Task) -> dict:
 @record_task_history
 def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict:
     """
-    Sync daily price data for stocks
+    Sync daily price data for stocks (writes to database AND cache)
 
     Args:
         stock_ids: List of stock IDs to sync (if None, syncs popular stocks)
@@ -123,6 +123,11 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
     Returns:
         Task result with sync statistics
     """
+    from app.db.session import SessionLocal
+    from app.repositories.stock_price import StockPriceRepository
+    from app.schemas.stock_price import StockPriceCreate
+    from datetime import date as DateType
+
     try:
         logger.info(f"Starting daily price synchronization (last {days} days)...")
 
@@ -163,42 +168,70 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
 
         synced_count = 0
         failed_count = 0
+        db_records_count = 0
 
-        for stock_id in stock_ids:
-            try:
-                # Get price data
-                price_df = client.get_price(
-                    stock_id=stock_id,
-                    start_date=start_date,
-                    end_date=end_date
-                )
+        db = SessionLocal()
+        try:
+            for stock_id in stock_ids:
+                try:
+                    # Get price data from FinLab
+                    price_df = client.get_price(
+                        stock_id=stock_id,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
 
-                # Convert to dict and cache
-                data = {
-                    str(date): float(price)
-                    for date, price in price_df[stock_id].items()
-                    if pd.notna(price)
-                }
+                    # Convert to dict for cache
+                    data = {
+                        str(date): float(price)
+                        for date, price in price_df[stock_id].items()
+                        if pd.notna(price)
+                    }
 
-                # Cache for 10 minutes
-                cache_key = f"price:{stock_id}:{start_date}:{end_date}"
-                cache.set(cache_key, data, expiry=600)
+                    # Write to database (IMPORTANT!)
+                    for date_str, price_value in data.items():
+                        try:
+                            # Extract date part only (remove time if present)
+                            date_only = date_str.split()[0] if ' ' in date_str else date_str
+                            # FinLab price API只有收盤價，其他欄位用 close 填充（資料庫不允許 NULL）
+                            price_create = StockPriceCreate(
+                                stock_id=stock_id,
+                                date=DateType.fromisoformat(date_only),
+                                close=price_value,
+                                open=price_value,   # 使用 close 作為 open
+                                high=price_value,   # 使用 close 作為 high
+                                low=price_value,    # 使用 close 作為 low
+                                volume=0,           # 無成交量數據
+                                adj_close=None
+                            )
+                            StockPriceRepository.upsert(db, price_create)
+                            db_records_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to write {stock_id} {date_only if 'date_only' in locals() else date_str} to DB: {e}")
+                            continue
 
-                synced_count += 1
-                logger.debug(f"Synced price data for {stock_id}: {len(data)} days")
+                    # Cache for 10 minutes (for API performance)
+                    cache_key = f"price:{stock_id}:{start_date}:{end_date}"
+                    cache.set(cache_key, data, expiry=600)
 
-            except Exception as e:
-                logger.warning(f"Failed to sync {stock_id}: {str(e)}")
-                failed_count += 1
-                continue
+                    synced_count += 1
+                    logger.debug(f"Synced price data for {stock_id}: {len(data)} days ({db_records_count} DB records)")
 
-        logger.info(f"Daily price sync completed: {synced_count} success, {failed_count} failed")
+                except Exception as e:
+                    logger.warning(f"Failed to sync {stock_id}: {str(e)}")
+                    failed_count += 1
+                    continue
+        finally:
+            db.close()
+
+        logger.info(f"Daily price sync completed: {synced_count} success, {failed_count} failed, {db_records_count} DB records")
 
         return {
             "status": "success",
-            "message": f"Synced {synced_count} stocks",
+            "message": f"Synced {synced_count} stocks to DB",
             "synced_count": synced_count,
             "failed_count": failed_count,
+            "db_records": db_records_count,
             "date_range": f"{start_date} to {end_date}",
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
@@ -409,6 +442,8 @@ def sync_latest_prices_shioaji(self: Task, stock_ids: list = None) -> dict:
     """
     Sync latest prices using Shioaji API (no quota limit)
     Runs frequently to keep prices up-to-date
+
+    注意：此任務只更新即時報價快取，完整 OHLCV 數據由 sync_ohlcv_data 負責
 
     Args:
         stock_ids: List of stock IDs to sync (if None, syncs popular stocks)

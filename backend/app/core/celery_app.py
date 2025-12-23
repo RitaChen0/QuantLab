@@ -20,7 +20,6 @@ celery_app.conf.update(
     task_time_limit=30 * 60,  # 30 minutes
     task_soft_time_limit=25 * 60,  # 25 minutes
     worker_prefetch_multiplier=1,
-    worker_max_tasks_per_child=1000,
 
     # 結果過期設置 - 自動清理舊結果
     result_expires=3600,  # 結果 1 小時後過期
@@ -28,6 +27,15 @@ celery_app.conf.update(
     # Task acknowledgment settings
     task_acks_late=True,  # 任務執行完成後才確認（確保任務不會丟失）
     task_reject_on_worker_lost=False,  # Worker 丟失時重新排隊任務
+
+    # ⚠️ 關鍵配置：防止過期任務擋住未來任務
+    # 當任務過期時，靜默丟棄而不是標記為 revoked
+    task_ignore_result=False,  # 保留結果（用於監控）
+    task_store_errors_even_if_ignored=True,  # 即使 ignore_result=True 也存儲錯誤
+
+    # Worker 行為：自動清理過期任務
+    worker_disable_rate_limits=False,  # 保持速率限制
+    worker_send_task_events=True,  # 發送任務事件（用於監控）
 
     # Task routing - 專用隊列配置
     task_routes={
@@ -59,6 +67,11 @@ celery_app.conf.update(
 
     # Worker 自動重啟設置 - 防止內存洩漏和 revoked 列表積累
     worker_max_memory_per_child=512000,  # Worker 使用 512MB 後自動重啟（清空 revoked 列表）
+    worker_max_tasks_per_child=500,  # Worker 執行 500 個任務後自動重啟（清空 revoked 列表）
+    # 平均每天處理 ~100-200 個任務，500 個任務約 2-5 天重啟一次
+
+    # ⚠️ 智慧處理過期任務：配合每天 05:00 的 cleanup_celery_metadata 任務
+    # 該任務會主動重啟 Worker 進程池，確保過期任務不會擋住未來任務
 )
 
 # Celery Beat schedule (periodic tasks)
@@ -81,11 +94,11 @@ celery_app.conf.beat_schedule = {
     # Sync stock list once per day
     # Runs at: Taiwan 08:00 (UTC 00:00)
     # Duration: ~1-2 minutes
-    # Note: 使用 2 小時 expires + 任務內去重機制防止重複執行
+    # Note: expires 23 小時，確保 Beat 重啟補發的任務仍能執行
     "sync-stock-list-daily": {
         "task": "app.tasks.sync_stock_list",
         "schedule": crontab(hour=0, minute=0),  # UTC 00:00 = Taiwan 08:00
-        "options": {"expires": 7200},  # 2 hours
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # Sync daily prices once per day
@@ -94,7 +107,7 @@ celery_app.conf.beat_schedule = {
     "sync-daily-prices": {
         "task": "app.tasks.sync_daily_prices",
         "schedule": crontab(hour=13, minute=0),  # UTC 13:00 = Taiwan 21:00
-        "options": {"expires": 7200},
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # Sync OHLCV data once per day
@@ -103,7 +116,7 @@ celery_app.conf.beat_schedule = {
     "sync-ohlcv-daily": {
         "task": "app.tasks.sync_ohlcv_data",
         "schedule": crontab(hour=14, minute=0),  # UTC 14:00 = Taiwan 22:00
-        "options": {"expires": 7200},
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # Sync latest prices during trading hours (every 15 minutes)
@@ -137,7 +150,7 @@ celery_app.conf.beat_schedule = {
     "cleanup-celery-metadata-daily": {
         "task": "app.tasks.cleanup_celery_metadata",
         "schedule": crontab(hour=21, minute=0),  # UTC 21:00 = Taiwan 05:00 next day
-        "options": {"expires": 7200},  # 2 hours
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # ==================== 基本面數據同步 ====================
@@ -148,7 +161,7 @@ celery_app.conf.beat_schedule = {
     "sync-fundamental-weekly": {
         "task": "app.tasks.sync_fundamental_data",
         "schedule": crontab(hour=20, minute=0, day_of_week='saturday'),  # UTC Saturday 20:00 = Taiwan Sunday 04:00
-        "options": {"expires": 21600},
+        "options": {"expires": 604800},  # 7 days (weekly task)
     },
 
     # Sync latest fundamental data (incremental) once per day
@@ -157,7 +170,7 @@ celery_app.conf.beat_schedule = {
     "sync-fundamental-latest-daily": {
         "task": "app.tasks.sync_fundamental_latest",
         "schedule": crontab(hour=15, minute=0),  # UTC 15:00 = Taiwan 23:00
-        "options": {"expires": 7200},
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # ==================== 法人買賣數據同步 ====================
@@ -169,7 +182,7 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.sync_top_stocks_institutional",
         "schedule": crontab(hour=13, minute=0),  # UTC 13:00 = Taiwan 21:00
         "kwargs": {"limit": None, "days": 7},  # None = 同步全部股票
-        "options": {"expires": 7200},
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # Cleanup old institutional data once per week
@@ -179,18 +192,23 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.cleanup_old_institutional_data",
         "schedule": crontab(hour=18, minute=0, day_of_week='saturday'),  # UTC Saturday 18:00 = Taiwan Sunday 02:00
         "kwargs": {"days_to_keep": 365},
-        "options": {"expires": 3600},
+        "options": {"expires": 604800},  # 7 days (weekly task)
     },
 
     # ==================== Shioaji 分鐘線同步 ====================
 
-    # Sync Shioaji minute data (Top 50 stocks) once per day
+    # Sync Shioaji minute data (all stocks) once per day
     # Runs at: Taiwan 15:00 (UTC 07:00), Mon-Fri (after market close)
     # Duration: ~2-4 hours
+    # Note: 無 expires 限制 - 任務有 4 層防護（Redis 鎖、去重裝飾器、Worker 重啟、每日清理）
     "sync-shioaji-minute-daily": {
         "task": "app.tasks.sync_shioaji_top_stocks",
         "schedule": crontab(hour=7, minute=0, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:00 = Taiwan 15:00
-        "options": {"expires": 18000},  # 5 hours (task may take up to 4 hours)
+        # 無 expires - 已有 4 層防護：
+        # 1. Redis 鎖 (14400s = 4h)
+        # 2. @skip_if_recently_executed(24h)
+        # 3. worker_max_tasks_per_child=500
+        # 4. cleanup_celery_metadata 每天 05:00
     },
 
     # ==================== 期貨數據同步 ====================
@@ -198,10 +216,10 @@ celery_app.conf.beat_schedule = {
     # Sync futures minute data (TX + MTX) once per day
     # Runs at: Taiwan 15:30 (UTC 07:30), Mon-Fri (after market close)
     # Duration: ~5-10 minutes
+    # Note: 無 expires 限制，確保 Beat 重啟後補發的任務仍能執行
     "sync-shioaji-futures-daily": {
         "task": "app.tasks.sync_shioaji_futures",
         "schedule": crontab(hour=7, minute=30, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:30 = Taiwan 15:30
-        "options": {"expires": 7200},  # 2 hours
     },
 
     # Generate continuous futures contracts (TX + MTX) once per week
@@ -212,7 +230,7 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.generate_continuous_contracts",
         "schedule": crontab(hour=10, minute=0, day_of_week='saturday'),  # UTC Saturday 10:00 = Taiwan Saturday 18:00
         "kwargs": {"symbols": ["TX", "MTX"], "days_back": 90},
-        "options": {"expires": 3600},
+        "options": {"expires": 604800},  # 7 days (weekly task)
     },
 
     # Register new futures contracts once per year
@@ -222,7 +240,7 @@ celery_app.conf.beat_schedule = {
     "register-new-futures-contracts-yearly": {
         "task": "app.tasks.register_new_futures_contracts",
         "schedule": crontab(hour=16, minute=5, day_of_month='31', month_of_year='12'),  # UTC Dec 31 16:05 = Taiwan Jan 1 00:05
-        "options": {"expires": 3600},
+        "options": {"expires": 86400},  # 24 hours (yearly task)
     },
 
     # ==================== 選擇權相關任務 ====================
@@ -233,7 +251,7 @@ celery_app.conf.beat_schedule = {
     "sync-option-daily-factors": {
         "task": "app.tasks.sync_option_daily_factors",
         "schedule": crontab(hour=7, minute=40, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:40 = Taiwan 15:40
-        "options": {"expires": 3600},
+        "options": {"expires": 82800},  # 23 hours
     },
 
     # Register option contracts once per week
@@ -243,7 +261,7 @@ celery_app.conf.beat_schedule = {
     "register-option-contracts-weekly": {
         "task": "app.tasks.register_option_contracts",
         "schedule": crontab(hour=11, minute=0, day_of_week='sunday'),  # UTC Sunday 11:00 = Taiwan Sunday 19:00
-        "options": {"expires": 3600},
+        "options": {"expires": 604800},  # 7 days (weekly task)
     },
 
     # ==================== 策略實盤監控任務 ====================
@@ -296,7 +314,7 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.cleanup_old_signals",
         "schedule": crontab(hour=20, minute=0, day_of_week='saturday'),  # UTC Saturday 20:00 = Taiwan Sunday 04:00
         "kwargs": {"days_to_keep": 30},
-        "options": {"expires": 3600},
+        "options": {"expires": 604800},  # 7 days (weekly task)
     },
 }
 

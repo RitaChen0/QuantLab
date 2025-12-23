@@ -76,6 +76,10 @@ class StockMinutePriceRepository:
 
         Returns:
             StockMinutePrice 列表，按時間升序排列
+
+        Note:
+            - 如果指定時間範圍：返回範圍內的記錄（升序）
+            - 如果未指定時間範圍：返回最新的 N 筆記錄（升序）
         """
         # 時區轉換：如果傳入 UTC aware datetime，轉換為台灣 naive datetime
         if start_datetime and start_datetime.tzinfo is not None:
@@ -96,7 +100,14 @@ class StockMinutePriceRepository:
         if end_datetime:
             query = query.filter(StockMinutePrice.datetime <= end_datetime)
 
-        return query.order_by(StockMinutePrice.datetime.asc()).limit(limit).all()
+        # 關鍵修復：如果沒有指定時間範圍，返回最新的 N 筆記錄
+        if not start_datetime and not end_datetime:
+            # 先降序取最新 N 筆，再反轉為升序
+            records = query.order_by(StockMinutePrice.datetime.desc()).limit(limit).all()
+            return list(reversed(records))  # 反轉為升序（時間從早到晚）
+        else:
+            # 有時間範圍時，直接升序返回
+            return query.order_by(StockMinutePrice.datetime.asc()).limit(limit).all()
 
     @staticmethod
     def get_latest(
