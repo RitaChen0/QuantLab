@@ -19,7 +19,7 @@
 docker compose restart backend celery-worker
 
 ✅ 自動補齊所有缺失資料的指令
-docker compose exec backend python scripts/check_and_fill_gaps.py --auto-fix --min-records 4500
+docker compose exec backend python /app/scripts/check_and_fill_gaps.py --auto-fix --min-records 4500
 
 ✅ 監控回測 , 所有工具都已就緒，你可以隨時監控系統中正在執行的回測任務！
 # 方法 1: 使用監控腳本（最簡單）
@@ -163,9 +163,22 @@ My factor-based inspiration is that when a stock has risen sharply in the past s
       --smart
 
 ✅ 連線 Shioaji API , 補齊 PostgreSql & qlib 底下的所有一分鐘線資料 
-sync_shioaji_to_qlib.py
-nohup docker compose exec -T backend python /app/scripts/sync_shioaji_to_qlib.py --smart > /tmp/shioaji_sync.log 2>&1 &
+  sync_shioaji_to_qlib.py
+  nohup docker compose exec -T backend python /app/scripts/sync_shioaji_to_qlib.py --smart > /tmp/shioaji_sync.log 2>&1 &
 
+  | 參數                      | 說明                             | 範例                                          |
+  |---------------------------|----------------------------------|-----------------------------------------------|
+  | --smart                   | 智慧增量同步（自動檢測最後日期） | --smart                                       |
+  | --start-date + --end-date | 指定日期範圍                     | --start-date 2025-12-19 --end-date 2025-12-24 |
+  | --stocks                  | 指定股票（逗號分隔）             | --stocks 2330,2317,2454                       |
+  | --limit                   | 限制同步數量                     | --limit 100                                   |
+  | --test                    | 測試模式（只同步前 5 檔）        | --test                                        |
+  | --today                   | 同步今天                         | --today                                       |
+  | --yesterday               | 同步昨天                         | --yesterday                                   |
+
+  使用分鐘線補齊日線
+  docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart
+      
 ✅ 備份資料庫 PostgreSQL
 docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubuntu/QuantLab/backups/quantlab_$(date +%Y%m%d).sql.gz
 
@@ -216,17 +229,20 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
 
 
 ✅ # 第一步：測試回補（確認功能正常）
-  docker compose exec backend python scripts/backfill_option_data.py \
+  docker compose exec backend python /app/scripts/backfill_option_data.py \
+    --underlying TX \
     --days-back 3 \
     --dry-run
   # 第二步：回補最近 1 週
-  docker compose exec backend python scripts/backfill_option_data.py \
+  docker compose exec backend python /app/scripts/backfill_option_data.py \
+    --underlying TX \
     --days-back 7
   # 第三步：根據需要逐步回補更長時間
-  docker compose exec backend python scripts/backfill_option_data.py \
+  docker compose exec backend python /app/scripts/backfill_option_data.py \
+    --underlying TX \
     --days-back 30
 
-  docker compose exec backend python scripts/backfill_option_data.py \
+  docker compose exec backend python /app/scripts/backfill_option_data.py \
     --underlying TX \
     --days-back 90
 
@@ -269,3 +285,10 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
 
 ✅ # 進入 PostgreSQL 互動式介面
   docker compose exec postgres psql -U quantlab quantlab
+
+
+✅ 補齊分鐘線
+  # 1. 檢查缺失（預設最近 30 天）
+  docker compose exec backend python /app/scripts/backfill_daily_from_minute.py
+  # 4. 補齊後同步 Qlib
+  bash scripts/sync-qlib-smart.sh

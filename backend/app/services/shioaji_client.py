@@ -435,11 +435,12 @@ class ShioajiClient:
             data = []
             for i in range(len(kbars.ts)):
                 # ts 是 nanosecond 時間戳（台灣時區 UTC+8）
-                # Shioaji API 返回台灣證券交易所的本地時間
+                # Shioaji API 返回台灣證券交易所的本地時間（已經是台灣時間戳）
                 # 轉換為 naive datetime（無時區標記，但實際為台灣時間）
                 # 這是設計決策：stock_minute_prices 表使用台灣時間（見 TIMEZONE_STRATEGY.md）
                 timestamp_ns = kbars.ts[i]
-                dt = pd.to_datetime(timestamp_ns, unit='ns', utc=True).tz_convert('Asia/Taipei').tz_localize(None)
+                # 修復：Shioaji 時間戳已經是台灣時間，不需要 tz_convert
+                dt = pd.to_datetime(timestamp_ns, unit='ns').tz_localize('Asia/Taipei').tz_localize(None)
 
                 data.append({
                     'datetime': dt,

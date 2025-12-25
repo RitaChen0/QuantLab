@@ -153,6 +153,26 @@ celery_app.conf.beat_schedule = {
         "options": {"expires": 82800},  # 23 hours
     },
 
+    # Check database integrity once per day
+    # Runs at: Taiwan 06:00 (UTC 22:00 previous day)
+    # Duration: ~2-5 minutes
+    # Purpose: Ensure database completeness and consistency
+    "check-database-integrity-daily": {
+        "task": "app.tasks.check_database_integrity",
+        "schedule": crontab(hour=22, minute=0),  # UTC 22:00 = Taiwan 06:00 next day
+        "options": {"expires": 82800},  # 23 hours
+    },
+
+    # Auto-fix database missing data once per day
+    # Runs at: Taiwan 06:30 (UTC 22:30 previous day)
+    # Duration: ~5-30 minutes
+    # Purpose: Automatically backfill missing daily/minute data
+    "auto-fix-database-daily": {
+        "task": "app.tasks.auto_fix_database",
+        "schedule": crontab(hour=22, minute=30),  # UTC 22:30 = Taiwan 06:30 next day
+        "options": {"expires": 82800},  # 23 hours
+    },
+
     # ==================== 基本面數據同步 ====================
 
     # Sync fundamental data (full sync) once per week

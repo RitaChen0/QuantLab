@@ -1,0 +1,423 @@
+資料庫原則：
+    1.日線的資料庫：
+        儲存位置：PostgreSQL (stock_prices 表) + Qlib 二進制 (/data/qlib/tw_stock_v2/)
+        輸入來源：FinLab API（主要）/ Shioaji 分鐘線聚合（備援）
+        執行方式：
+            - PostgreSQL: Celery 定時任務 sync_daily_prices
+            - Qlib: 手動執行 bash scripts/sync-qlib-smart.sh (智慧增量同步)
+            - 備援補齊: python scripts/backfill_daily_from_minute.py
+        執行時間：每天 21:00 UTC (台北時間隔天 05:00)
+        資料範圍：2007 年至今
+        同步邏輯：PostgreSQL 為單一真實來源，Qlib 為高效能快取 (單向同步 PG → Qlib)
+
+        ** 日線缺失補齊方案 **：
+        當 FinLab API 斷線或日線資料缺失時，可使用分鐘線聚合補齊：
+
+        聚合邏輯：
+            - Open: 當天第一筆分鐘線的 open
+            - High: 當天所有分鐘線的最高價
+            - Low: 當天所有分鐘線的最低價
+            - Close: 當天最後一筆分鐘線的 close
+            - Volume: 當天所有分鐘線的 volume 總和
+
+        使用方式：
+            # 檢查缺失（預設最近 30 天）
+            docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --check
+
+            # 檢查最近 7 天的缺失
+            docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --check --days 7
+
+            # 補齊特定日期（測試模式）
+            docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --date 2025-12-23 --dry-run
+
+            # 實際補齊特定日期
+            docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --date 2025-12-23
+
+            # 補齊日期範圍
+            docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --start 2025-12-20 --end 2025-12-23
+
+        補齊限制：
+            - 只能補齊有分鐘線資料的股票（目前約 2,317 檔）
+            - PostgreSQL 分鐘線只保留最近 6 個月
+            - Qlib 分鐘線保留最近 7 年
+            - 補齊後仍需手動同步 Qlib: bash scripts/sync-qlib-smart.sh
+
+    2.分鐘線的資料庫：
+        儲存位置：PostgreSQL (stock_minute_prices 表) + Qlib 二進制 (/data/qlib/tw_stock_minute/)
+        輸入來源：Shioaji API (永豐證券)
+        執行方式：
+            - 自動：Celery 定時任務 sync_shioaji_minute_data (Top 50 股票)
+            - 手動：docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart
+        執行時間：每天 15:00 UTC (台北時間 23:00，盤後同步)
+        資料範圍：PostgreSQL 保留 6 個月 (TimescaleDB 自動刪除)，Qlib 保留 7 年
+        同步邏輯：Shioaji API 為唯一來源，雙向同步 API → [PG, Qlib]，確保兩邊最終一致
+
+    3.因子資料庫：
+        儲存位置：PostgreSQL (generated_factors 表 + rdagent_tasks 表)
+        輸入來源：RD-Agent AI 生成 (OpenAI/Anthropic API)
+        執行方式：
+            - 用戶在前端觸發 AI 因子挖掘
+            - API 層調用 Service 配置 RD-Agent
+            - Celery 異步執行因子生成
+            - 結果存入 generated_factors 表
+        執行時間：用戶觸發 (非定時任務)
+        跨引擎整合：
+            - Backtrader: 自動轉換為 bt.indicators
+            - Qlib: 直接插入 QLIB_FIELDS 陣列
+
+    4.即時盤資料庫：
+        儲存位置：PostgreSQL (stock_latest_prices 表)
+        輸入來源：FinLab API
+        執行方式：Celery 定時任務 sync_latest_prices
+        執行時間：交易時段 09:00-13:30 每 15 分鐘 (UTC 01:00-05:30，台北時間)
+        資料範圍：僅保留最新價格 (非歷史數據)
+
+    5.有關公司的公開資料的資料庫：
+        儲存位置：PostgreSQL (fundamental_data 表 + institutional_daily 表)
+        輸入來源：FinLab API
+        執行方式：
+            - 基本面資料：
+                * 每日增量: sync_fundamental_latest (每天 23:00 UTC)
+                * 完整同步: sync_fundamental_data (週日 04:00 UTC)
+            - 法人買賣超：
+                * sync_top_stocks_institutional (每天 21:00 UTC，Top 100 股票)
+                * cleanup_old_institutional_data (週日 02:00 UTC，清理舊資料)
+        執行時間：見上述各任務時間
+        資料範圍：基本面保留所有歷史，法人買賣超定期清理舊資料
+
+    6.期貨的資料庫：
+        儲存位置：
+            - PostgreSQL (stock_minute_prices 表): 月份合約 (TX202512, MTX202501)
+            - Qlib 二進制 (tw_stock_minute/): 連續合約 (TXCONT, MTXCONT)
+        輸入來源：Shioaji API (永豐證券期貨)
+        執行方式：
+            - 註冊合約: scripts/register_futures_contracts.py (手動 + 每年 1/1 00:05 自動註冊新年度)
+            - 同步月份合約: Celery 任務 sync_shioaji_futures (每天 15:30 UTC)
+            - 生成連續合約: Celery 任務 generate_continuous_contracts (週六 18:00 UTC)
+        執行時間：見上述
+        資料範圍：月份合約保留 6 個月，連續合約保留 7 年
+        換月邏輯：結算日 (每月第三個週三) 前 3 天自動切換到下月合約
+
+    7.選擇權的資料庫：
+        儲存位置：PostgreSQL (option_daily_factors 表)
+        輸入來源：Shioaji API TXO (台指選擇權) + Black-Scholes Greeks 計算
+        執行方式：手動執行 docker compose exec backend python /app/scripts/backfill_option_data.py
+        執行時間：手動觸發 (需要時回補歷史數據)
+        資料範圍：最多 90 天
+        重要限制：
+            - 僅 TX (台指期貨) 有選擇權，MTX (小台) 無選擇權產品
+            - Greeks 使用真實 Black-Scholes 計算 (Delta, Gamma, Theta, Vega, Rho, Vanna)
+            - 驗證腳本: bash /home/ubuntu/QuantLab/verify_option_quality.sh
+        數據因子：PCR, ATM IV, Greeks 彙總
+
+    8.使用者與認證的資料庫：
+        儲存位置：PostgreSQL (users 表)
+        輸入來源：使用者註冊、API Token 設定
+        執行方式：
+            - 使用者註冊: POST /api/v1/auth/register
+            - 登入: POST /api/v1/auth/login
+            - FinLab API Token 加密儲存
+        安全機制：
+            - 密碼使用 bcrypt (cost factor 12) 加密
+            - FinLab Token 使用 Fernet 對稱加密
+            - JWT Token 不存儲於資料庫（僅記憶體）
+        關聯關係：一對多 → strategies, backtests, custom_industry_categories
+
+    9.股票基礎資料的資料庫：
+        儲存位置：PostgreSQL (stocks 表)
+        輸入來源：FinLab API stock_list()
+        執行方式：Celery 定時任務 sync_stock_list
+        執行時間：每天 08:00 UTC (台北時間 16:00)
+        資料範圍：
+            - 總股票數: 2,671 檔
+            - 包含上市、上櫃、興櫃
+            - is_active 狀態標記 (active/delisted)
+        關聯關係：一對多 → stock_prices, trades, stock_industries
+
+    10.策略管理的資料庫：
+        儲存位置：PostgreSQL (strategies 表)
+        輸入來源：使用者在前端建立策略代碼
+        執行方式：POST /api/v1/strategies
+        安全驗證：
+            - AST 解析驗證（白名單模組、黑名單函數）
+            - 執行時使用受限 __builtins__
+        配額限制：每位使用者最多 50 個策略
+        狀態管理：draft (草稿) / active (已啟用) / archived (已封存)
+        關聯關係：多對一 → users，一對多 → backtests
+
+    11.回測的資料庫：
+        儲存位置：PostgreSQL (backtests, backtest_results, trades 表)
+        輸入來源：
+            - 回測配置: 使用者在前端設定回測參數
+            - 回測結果: Backtrader/Qlib 引擎執行後自動生成
+            - 交易記錄: Backtrader 引擎自動記錄每筆交易
+        執行方式：
+            - 建立回測: POST /api/v1/backtests
+            - Celery 異步執行回測任務
+            - 結果自動寫入 backtest_results 和 trades
+        配額限制：
+            - 每位使用者最多 200 個回測
+            - 每個策略最多 50 個回測
+        狀態管理：PENDING → RUNNING → COMPLETED/FAILED/CANCELLED
+        績效指標：總報酬率、年化報酬率、夏普比率、最大回撤、勝率、獲利因子等
+        關聯關係：
+            - backtests: 多對一 → users, strategies
+            - backtest_results: 一對一 → backtests
+            - trades: 多對一 → backtests, stocks
+
+    12.產業分類的資料庫：
+        儲存位置：PostgreSQL (industries, stock_industries, industry_metrics_cache 表)
+        輸入來源：
+            - industries: FinLab API company_basic_info 的「產業類別」欄位
+            - stock_industries: 手動匯入 (scripts/import_industries.py)
+            - industry_metrics_cache: API 自動計算並快取
+        執行方式：手動同步 + 快取自動更新
+        資料範圍：
+            - 總產業數: 41 個 (TWSE 台證所分類)
+            - 3 層階層式結構 (大類/中類/小類)
+            - 股票-產業映射: 1,935 筆 (覆蓋率 72.5%)
+        快取策略：
+            - TTL: 30 天
+            - 自動更新: 每次呼叫 /api/v1/industry/{code}/metrics 時檢查
+        支援聚合指標：avg_roe, avg_roa, avg_gross_margin, avg_eps 等 7 項
+        關聯關係：
+            - industries: 自引用 (parent_code → code)
+            - stock_industries: 多對一 → stocks, industries
+            - industry_metrics_cache: 多對一 → industries
+
+    13.FinMind 產業鏈的資料庫：
+        儲存位置：PostgreSQL (industry_chains, stock_industry_chains 表)
+        輸入來源：FinMind API TaiwanStockIndustryChain (需付費會員)
+        執行方式：手動同步
+        當前狀態：資料表已建立，待同步資料
+        關聯關係：
+            - industry_chains: 產業鏈主表
+            - stock_industry_chains: 多對多 → stocks, industry_chains
+
+    14.自定義產業分類的資料庫：
+        儲存位置：PostgreSQL (custom_industry_categories, stock_custom_categories 表)
+        輸入來源：使用者自訂分類
+        執行方式：
+            - 建立分類: POST /api/v1/custom-categories
+            - 新增股票到分類: POST /api/v1/custom-categories/{id}/stocks
+        功能特色：
+            - 支援階層結構 (類似 TWSE 分類)
+            - 每位使用者可建立自己的分類系統
+        唯一約束：同一使用者不能建立重複名稱的分類
+        關聯關係：
+            - custom_industry_categories: 多對一 → users，自引用 (parent_id)
+            - stock_custom_categories: 多對多 → custom_industry_categories, stocks
+
+    15.資料庫遷移版本的資料庫：
+        儲存位置：PostgreSQL (alembic_version 表)
+        用途：追蹤 Alembic 資料庫 schema 版本
+        當前版本：3f228b8913bf (加密 FinLab API Tokens)
+        管理指令：
+            - 查看版本: docker compose exec backend alembic current
+            - 升級: docker compose exec backend alembic upgrade head
+            - 回滾: docker compose exec backend alembic downgrade -1
+
+
+系統時間：
+    1.資料庫紀錄的時間系統：
+        - 標準：UTC (使用 TIMESTAMPTZ 類型，timezone-aware)
+        - 例外：stock_minute_prices 表使用台灣時間 (timezone-naive)
+            原因：60M+ 行數據，已壓縮，修改成本高
+            處理：使用 timezone_helpers.py 進行轉換
+
+    2.Docker 裡面執行的時間系統：
+        - 容器時區：UTC
+        - Celery 配置：timezone="UTC", enable_utc=True
+        - Python 應用：使用 datetime.now(timezone.utc) 或 timezone_helpers.now_utc()
+        - 所有定時任務 crontab 使用 UTC 時間（需註解標註台北時間對照）
+
+    3.Frontend 的執行時間系統：
+        - 內部處理：UTC (從 API 接收 ISO 8601 格式，如 "2025-12-20T00:18:21+00:00")
+        - 用戶顯示：台灣時間 (Asia/Taipei)
+        - 轉換工具：useDateTime composable (formatToTaiwanTime)
+        - 範例：API 傳回 UTC → 前端轉為台北時間 +08:00 顯示
+
+    4.API 的執行時間系統：
+        - 內部邏輯：UTC
+        - 輸入解析：parse_datetime_safe() 確保 timezone-aware
+        - 輸出序列化：Pydantic v2 自動序列化為 ISO 8601 with +00:00 (UTC)
+        - Model 層：DateTime(timezone=True) + func.now() (資料庫層級時間戳)
+        - 禁止使用：datetime.utcnow (Python 3.12+ 已棄用)
+
+
+時區轉換工具 (timezone_helpers.py)：
+    - now_utc()              # 當前 UTC 時間 (timezone-aware)
+    - now_taipei_naive()     # 當前台灣時間 (naive)
+    - today_taiwan()         # 台灣今日日期
+    - parse_datetime_safe()  # 解析並確保 timezone-aware
+    - utc_to_naive_taipei()  # UTC → 台灣 naive
+    - naive_taipei_to_utc()  # 台灣 naive → UTC
+
+
+核心原則：
+    1. 統一使用 UTC 儲存和處理時間
+    2. 僅在用戶界面顯示時轉換為台灣時間
+    3. stock_minute_prices 特殊處理 (使用 timezone_helpers 轉換)
+    4. 所有新功能嚴格遵守時區規範 (見 TIMEZONE_COMPLETE_GUIDE.md)
+
+
+實際硬碟儲存位置：
+    1.PostgreSQL 資料庫：
+        主機路徑：/var/lib/docker/volumes/quantlab_postgres_data/_data
+        容器內路徑：/var/lib/postgresql/data/pgdata
+        實際大小：約 3.7 GB
+        儲存內容：
+            - 所有 PostgreSQL 資料表（16 個表）
+            - TimescaleDB hypertable 分區資料
+            - WAL (Write-Ahead Log) 日誌
+            - 索引檔案
+        備註：Docker Named Volume，自動管理
+
+    2.Redis 快取與訊息佇列：
+        主機路徑：/var/lib/docker/volumes/quantlab_redis_data/_data
+        容器內路徑：/data
+        實際大小：約 39 MB
+        儲存內容：
+            - AOF (Append-Only File) 持久化資料
+            - Celery 任務佇列
+            - API 快取資料（股票清單、價格等）
+            - 速率限制計數器
+        備註：使用 AOF 模式確保資料持久化
+
+    3.Qlib 日線資料（二進制格式）：
+        主機路徑：/data/qlib/tw_stock_v2/
+        容器內路徑：/data/qlib/tw_stock_v2/
+        實際大小：約 2-3 GB（估計）
+        目錄結構：
+            - features/          # 2,674 個股票子目錄
+                ├── 2330/
+                │   ├── open.day.bin
+                │   ├── high.day.bin
+                │   ├── low.day.bin
+                │   ├── close.day.bin
+                │   ├── volume.day.bin
+                │   └── factor.day.bin
+                └── ...
+            - calendars/day.txt  # 交易日曆
+            - instruments/       # 股票清單
+        備註：主機掛載，直接訪問
+
+    4.Qlib 分鐘線資料（二進制格式）：
+        主機路徑：/data/qlib/tw_stock_minute/
+        容器內路徑：/data/qlib/tw_stock_minute/
+        實際大小：約 18-20 GB（估計）
+        目錄結構：
+            - features/          # 2,315 個股票/期貨子目錄
+                ├── 2330/
+                │   ├── open.1min.bin
+                │   ├── high.1min.bin
+                │   ├── low.1min.bin
+                │   ├── close.1min.bin
+                │   └── volume.1min.bin
+                ├── TXCONT/      # 台指期貨連續合約
+                ├── MTXCONT/     # 小台期貨連續合約
+                └── ...
+            - calendars/1min.txt # 分鐘級交易日曆
+        備註：主機掛載，直接訪問
+
+    5.Shioaji 原始資料（選用）：
+        主機路徑：/home/ubuntu/QuantLab/ShioajiData/
+        容器內路徑：/data/shioaji/
+        實際大小：目前為空
+        用途：Shioaji API 原始回應資料快取（如需要）
+        備註：專案子目錄掛載
+
+    6.Backend 應用代碼與快取：
+        主機路徑：/home/ubuntu/QuantLab/backend/
+        容器內路徑：/app/
+        實際大小：約 100-200 MB
+        儲存內容：
+            - Python 應用代碼
+            - Alembic 遷移腳本
+            - logs/ 目錄（應用日誌）
+            - shioaji.log（Shioaji API 日誌）
+
+        Backend 快取：
+        主機路徑：/var/lib/docker/volumes/quantlab_backend_cache/_data
+        容器內路徑：/root/.cache
+        實際大小：約 29 MB
+        儲存內容：pip 快取、Python 編譯快取
+
+    7.Celery Beat 排程資料庫：
+        主機路徑：/var/lib/docker/volumes/quantlab_celerybeat_schedule/_data
+        容器內路徑：/app/celerybeat-schedule.db
+        實際大小：< 1 MB
+        儲存內容：Celery Beat 定時任務排程狀態
+        備註：SQLite 資料庫
+
+    8.Prometheus 監控資料：
+        主機路徑：/var/lib/docker/volumes/quantlab_prometheus_data/_data
+        容器內路徑：/prometheus
+        實際大小：約 97 MB
+        儲存內容：
+            - 時序監控指標（30 天保留期）
+            - Celery 任務執行統計
+            - API 效能指標
+        備註：TSDB 格式
+
+    9.Grafana 儀表板與配置：
+        主機路徑：/var/lib/docker/volumes/quantlab_grafana_data/_data
+        容器內路徑：/var/lib/grafana
+        實際大小：約 43 MB
+        儲存內容：
+            - 儀表板配置
+            - 資料來源設定
+            - 使用者偏好設定
+        備註：SQLite 資料庫 + JSON 配置
+
+    10.Nginx 日誌與配置：
+        主機路徑：/home/ubuntu/QuantLab/nginx/logs/
+        容器內路徑：/var/log/nginx/
+        實際大小：視流量而定
+        儲存內容：
+            - access.log（訪問日誌）
+            - error.log（錯誤日誌）
+        備註：專案子目錄掛載
+
+    11.資料庫備份：
+        主機路徑：/home/ubuntu/QuantLab/backups/
+        備份腳本：./scripts/backup_database.sh
+        備份內容：
+            - 完整資料庫 SQL dump（gzip 壓縮）
+            - 產業分類資料備份
+            - 時間戳命名：backup_YYYYMMDD_HHMMSS.sql.gz
+        建議排程：每日凌晨 2:00（Cron）
+        備註：目前為空，需手動執行備份
+
+    12.應用日誌：
+        Backend 日誌：/home/ubuntu/QuantLab/backend/logs/
+        Nginx 日誌：/home/ubuntu/QuantLab/nginx/logs/
+        Shioaji 日誌：/home/ubuntu/QuantLab/backend/shioaji.log
+        Docker 容器日誌：docker compose logs -f <service>
+
+
+總儲存空間使用（估計）：
+    - PostgreSQL: 3.7 GB
+    - Qlib 日線: 2-3 GB
+    - Qlib 分鐘線: 18-20 GB
+    - Redis: 39 MB
+    - Prometheus: 97 MB
+    - Grafana: 43 MB
+    - Backend 快取: 29 MB
+    - 其他: < 1 GB
+    - 總計: 約 25-30 GB
+
+重要路徑快速參考：
+    - 專案根目錄: /home/ubuntu/QuantLab/
+    - PostgreSQL 資料: /var/lib/docker/volumes/quantlab_postgres_data/_data
+    - Qlib 資料: /data/qlib/
+    - 備份目錄: /home/ubuntu/QuantLab/backups/
+    - 應用日誌: /home/ubuntu/QuantLab/backend/logs/
+
+查看資料大小指令：
+    - Docker volumes: docker system df -v
+    - Qlib 資料: du -sh /data/qlib/*
+    - PostgreSQL 資料表大小: docker compose exec postgres psql -U quantlab quantlab -c "\dt+"
+    - 容器日誌大小: docker ps -s
+
+

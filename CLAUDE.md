@@ -68,6 +68,52 @@ docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart
 docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart --test
 ```
 
+### 資料庫完整性檢查（重要！）
+
+```bash
+# 🏥 快速檢查（推薦每日執行）
+bash scripts/db-integrity-check.sh
+
+# 檢查並自動修復
+bash scripts/db-integrity-check.sh --fix
+
+# 或使用 Python 腳本（更多選項）
+# 完整檢查（日線 + 分鐘線 + Qlib）
+docker compose exec backend python /app/scripts/check_database_integrity.py --check-all
+
+# 檢查並自動修復所有缺失
+docker compose exec backend python /app/scripts/check_database_integrity.py --fix-all
+
+# 只檢查特定類型
+docker compose exec backend python /app/scripts/check_database_integrity.py --check-daily
+docker compose exec backend python /app/scripts/check_database_integrity.py --check-minute
+
+# 生成報告
+docker compose exec backend python /app/scripts/check_database_integrity.py --check-all --report
+```
+
+**自動檢查**：系統每天 06:00 和 06:30 自動執行檢查和修復（Celery 定時任務）
+
+### 日線缺失補齊
+
+```bash
+# 🧠 智慧模式（推薦）：自動檢測分鐘線範圍內的所有缺失
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart
+
+# 智慧檢查（不修復）
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart --check
+
+# 智慧預覽（不寫入）
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart --dry-run
+
+# 補齊特定日期
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --date 2025-12-23
+
+# 補齊日期範圍
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py \
+  --start 2025-12-19 --end 2025-12-24
+```
+
 ### 選擇權數據回補
 
 ```bash
