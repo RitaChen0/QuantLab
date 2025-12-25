@@ -28,6 +28,7 @@ class TaskStatus(str, enum.Enum):
 class TaskType(str, enum.Enum):
     """任務類型"""
     FACTOR_MINING = "factor_mining"        # 因子挖掘
+    MODEL_GENERATION = "model_generation"  # 模型生成
     STRATEGY_OPTIMIZATION = "strategy_optimization"  # 策略優化
     MODEL_EXTRACTION = "model_extraction"  # 模型提取
 
@@ -62,6 +63,7 @@ class RDAgentTask(Base):
     # 關聯
     user = relationship("User", back_populates="rdagent_tasks")
     generated_factors = relationship("GeneratedFactor", back_populates="task", cascade="all, delete-orphan")
+    generated_models = relationship("GeneratedModel", back_populates="task", cascade="all, delete-orphan")
 
 
 class GeneratedFactor(Base):
@@ -133,3 +135,44 @@ class FactorEvaluation(Base):
 
     # 關聯
     factor = relationship("GeneratedFactor", back_populates="evaluations")
+
+
+class GeneratedModel(Base):
+    """AI 生成的量化模型"""
+    __tablename__ = "generated_models"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("rdagent_tasks.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # 模型資訊
+    name = Column(String(255), nullable=False, index=True, comment="模型名稱")
+    description = Column(Text, nullable=True, comment="模型描述")
+    model_type = Column(String(100), nullable=False, index=True, comment="模型類型（TimeSeries/Tabular）")
+
+    # 模型架構
+    formulation = Column(Text, nullable=True, comment="數學公式")
+    architecture = Column(Text, nullable=True, comment="架構描述")
+    variables = Column(JSON, nullable=True, comment="變數定義（JSON）")
+    hyperparameters = Column(JSON, nullable=True, comment="超參數（JSON）")
+
+    # 模型代碼
+    code = Column(Text, nullable=True, comment="模型實作代碼")
+    qlib_config = Column(JSON, nullable=True, comment="Qlib 配置（JSON）")
+
+    # 評估指標
+    sharpe_ratio = Column(Float, nullable=True, comment="Sharpe Ratio")
+    annual_return = Column(Float, nullable=True, comment="年化報酬率")
+    max_drawdown = Column(Float, nullable=True, comment="最大回撤")
+    information_ratio = Column(Float, nullable=True, comment="Information Ratio")
+
+    # 元數據
+    iteration = Column(Integer, nullable=True, comment="迭代次數")
+    model_metadata = Column(JSON, nullable=True, comment="其他元數據")
+
+    # 時間戳
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # 關聯
+    task = relationship("RDAgentTask", back_populates="generated_models")
+    user = relationship("User")

@@ -271,3 +271,195 @@ def run_strategy_optimization_task(self: Task, task_id: int):
 
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, name="app.tasks.run_model_generation_task")
+def run_model_generation_task(self: Task, task_id: int):
+    """執行模型生成任務
+
+    ⚠️ 注意：此任務需要 RD-Agent 環境和 LLM API 配置
+
+    使用 RD-Agent 的 model.py 模組自動生成量化模型架構
+
+    Args:
+        task_id: RD-Agent 任務 ID
+
+    Returns:
+        dict: 任務執行結果
+    """
+    db: Session = SessionLocal()
+
+    try:
+        service = RDAgentService(db)
+        task = db.query(RDAgentTask).filter(RDAgentTask.id == task_id).first()
+
+        if not task:
+            logger.error(f"Task {task_id} not found")
+            return {"status": "error", "message": "Task not found"}
+
+        # 更新為執行中
+        service.update_task_status(task_id, TaskStatus.RUNNING)
+
+        logger.info(f"Starting model generation task {task_id}")
+        logger.info(f"Task parameters: {task.input_params}")
+
+        # 提取任務參數
+        research_goal = task.input_params.get("research_goal", "Generate quantitative models")
+        max_iterations = task.input_params.get("max_iterations", 5)
+        llm_model = task.input_params.get("llm_model", "gpt-4-turbo")
+
+        # ========== 步驟 1: 執行 RD-Agent 模型生成 ==========
+        logger.info(f"Step 1: Executing RD-Agent model generation with {max_iterations} iterations...")
+        log_dir = service.execute_model_generation(
+            task_id=task_id,
+            research_goal=research_goal,
+            max_iterations=max_iterations,
+            llm_model=llm_model
+        )
+        logger.info(f"RD-Agent model generation completed. Log directory: {log_dir}")
+
+        # ========== 步驟 2: 解析 RD-Agent 結果 ==========
+        logger.info("Step 2: Parsing RD-Agent model generation results...")
+        models = service.parse_model_generation_results(log_dir)
+        logger.info(f"Parsed {len(models)} models from results")
+
+        # ========== 步驟 3: 保存生成的模型 ==========
+        logger.info("Step 3: Saving generated models to database...")
+        logger.info(f"Total models to save: {len(models)}")
+
+        saved_models = []
+        failed_models = []
+
+        for i, model_data in enumerate(models, 1):
+            model_name = model_data.get("name", "Unknown")
+            logger.info(f"[{i}/{len(models)}] Saving model: {model_name}")
+
+            # 重試機制：最多重試 3 次
+            max_retries = 3
+            retry_delay = 1  # 秒
+            saved = False
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    model = service.save_generated_model(
+                        task_id=task_id,
+                        user_id=task.user_id,
+                        name=model_data["name"],
+                        model_type=model_data["model_type"],
+                        description=model_data.get("description"),
+                        formulation=model_data.get("formulation"),
+                        architecture=model_data.get("architecture"),
+                        variables=model_data.get("variables"),
+                        hyperparameters=model_data.get("hyperparameters"),
+                        iteration=model_data.get("iteration"),
+                        metadata=model_data.get("metadata")
+                    )
+
+                    saved_models.append({
+                        "id": model.id,
+                        "name": model.name,
+                        "model_type": model.model_type,
+                        "architecture": model.architecture
+                    })
+
+                    logger.info(f"✅ Saved model {model.id}: {model.name}")
+                    saved = True
+                    break  # 儲存成功，跳出重試循環
+
+                except Exception as e:
+                    logger.error(f"❌ Attempt {attempt}/{max_retries} failed for model '{model_name}': {str(e)}")
+
+                    if attempt < max_retries:
+                        import time
+                        logger.warning(f"   Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                    else:
+                        # 最後一次重試也失敗了
+                        logger.error(f"   All {max_retries} attempts failed. Model will be skipped.")
+                        failed_models.append({
+                            "name": model_name,
+                            "error": str(e),
+                            "model_type": model_data.get("model_type", "")
+                        })
+
+            if not saved:
+                logger.warning(f"⚠️  Model '{model_name}' was not saved after {max_retries} attempts")
+
+        # ========== 步驟 3.5: 事務一致性檢查 ==========
+        logger.info("Step 3.5: Verifying transaction consistency...")
+        logger.info(f"Parsed models: {len(models)}")
+        logger.info(f"Successfully saved: {len(saved_models)}")
+        logger.info(f"Failed to save: {len(failed_models)}")
+
+        if len(failed_models) > 0:
+            logger.warning("⚠️  Some models failed to save:")
+            for failed in failed_models:
+                logger.warning(f"  - {failed['name']}: {failed['error']}")
+
+        if len(saved_models) != len(models):
+            logger.warning(f"⚠️  Transaction consistency issue detected!")
+            logger.warning(f"   Expected: {len(models)} models")
+            logger.warning(f"   Actually saved: {len(saved_models)} models")
+            logger.warning(f"   Missing: {len(models) - len(saved_models)} models")
+        else:
+            logger.info("✅ Transaction consistency verified: All models saved successfully")
+
+        # ========== 步驟 4: 計算 LLM 成本 ==========
+        logger.info("Step 4: Calculating LLM costs...")
+        llm_calls, llm_cost = service.calculate_llm_costs(log_dir)
+        logger.info(f"LLM API calls: {llm_calls}, Estimated cost: ${llm_cost}")
+
+        # ========== 步驟 5: 更新任務為完成 ==========
+        # 構建結果訊息
+        result_message = "Model generation completed successfully"
+        if len(failed_models) > 0:
+            result_message = f"Model generation completed with warnings: {len(failed_models)} models failed to save"
+
+        service.update_task_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            result={
+                "generated_models_count": len(models),
+                "saved_models_count": len(saved_models),
+                "failed_models_count": len(failed_models),
+                "log_directory": log_dir,
+                "models": saved_models,  # 只包含成功儲存的模型（含 ID）
+                "failed_models": failed_models if failed_models else None,
+                "consistency_check": {
+                    "parsed": len(models),
+                    "saved": len(saved_models),
+                    "failed": len(failed_models),
+                    "passed": len(saved_models) == len(models)
+                },
+                "message": result_message
+            },
+            llm_calls=llm_calls,
+            llm_cost=llm_cost
+        )
+
+        logger.info(f"Model generation task {task_id} completed")
+        logger.info(f"Parsed: {len(models)}, Saved: {len(saved_models)}, Failed: {len(failed_models)}")
+        logger.info(f"LLM calls: {llm_calls}, Cost: ${llm_cost}")
+
+        return {
+            "status": "success",
+            "task_id": task_id,
+            "models_generated": len(models),
+            "llm_calls": llm_calls,
+            "llm_cost": llm_cost,
+            "log_directory": log_dir
+        }
+
+    except Exception as e:
+        logger.error(f"Model generation task {task_id} failed: {str(e)}")
+
+        service.update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            error_message=str(e)
+        )
+
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        db.close()

@@ -9,14 +9,17 @@ from app.models.user import User
 from app.services.rdagent_service import RDAgentService
 from app.schemas.rdagent import (
     FactorMiningRequest,
+    ModelGenerationRequest,
     StrategyOptimizationRequest,
     RDAgentTaskResponse,
     GeneratedFactorResponse,
+    GeneratedModelResponse,
     UpdateGeneratedFactorRequest,
     TaskType,
 )
 from app.tasks.rdagent_tasks import (
     run_factor_mining_task,
+    run_model_generation_task,
     run_strategy_optimization_task,
 )
 from app.core.rate_limit import limiter, RateLimits
@@ -121,6 +124,76 @@ async def create_strategy_optimization_task(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create strategy optimization task: {str(e)}"
         )
+
+
+@router.post("/model-generation", response_model=RDAgentTaskResponse, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(RateLimits.RDAGENT_FACTOR_MINING)  # 使用相同的速率限制
+async def create_model_generation_task(
+    request: Request,
+    req: ModelGenerationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """建立模型生成任務（異步執行）
+
+    使用 RD-Agent 自動生成量化模型架構。任務會在背景執行，可通過任務 ID 查詢進度。
+
+    **會員等級限制**：
+    - Level 0-2: 不可使用
+    - Level 3: 1 次/小時
+    - Level 4: 2 次/小時
+    - Level 5: 3 次/小時
+    - Level 6: 6 次/小時
+    - Level 7-9: 3000 次/小時（管理員/創造者）
+    """
+    # 檢查會員等級限制
+    user_level = getattr(current_user, 'member_level', 0)
+
+    # Level 0-2 不允許使用模型生成功能
+    if user_level < 3:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="模型生成功能僅限 Level 3 以上會員使用。請升級會員等級以使用此功能。"
+        )
+
+    try:
+        service = RDAgentService(db)
+
+        # 創建任務
+        task = service.create_model_generation_task(current_user.id, req)
+
+        # 觸發 Celery 異步任務
+        run_model_generation_task.apply_async(args=[task.id])
+
+        api_log.log_operation(
+            "create", "rdagent_model_generation", task.id, current_user.id, success=True
+        )
+
+        return task
+
+    except Exception as e:
+        api_log.log_operation(
+            "create", "rdagent_model_generation", None, current_user.id, success=False
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create model generation task: {str(e)}"
+        )
+
+
+@router.get("/models", response_model=List[GeneratedModelResponse])
+async def get_generated_models(
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """獲取生成的模型列表
+
+    查詢 RD-Agent 自動生成的所有量化模型及其詳細資訊。
+    """
+    service = RDAgentService(db)
+    models = service.get_generated_models(current_user.id, limit)
+    return models
 
 
 @router.get("/tasks/{task_id}", response_model=RDAgentTaskResponse)
@@ -282,6 +355,8 @@ async def retry_task(
         from app.schemas.rdagent import TaskType
         if task.task_type == TaskType.FACTOR_MINING:
             run_factor_mining_task.apply_async(args=[task_id])
+        elif task.task_type == TaskType.MODEL_GENERATION:
+            run_model_generation_task.apply_async(args=[task_id])
         elif task.task_type == TaskType.STRATEGY_OPTIMIZATION:
             run_strategy_optimization_task.apply_async(args=[task_id])
 

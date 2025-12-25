@@ -222,6 +222,41 @@ bash scripts/reset-rate-limit.sh
 docker compose exec redis redis-cli --scan --pattern "slowapi:*" | xargs docker compose exec -T redis redis-cli del
 ```
 
+### RD-Agent LLM 因子挖掘
+
+```bash
+# 執行完整 LLM 因子挖掘（需要 OpenAI API Key）
+docker compose exec backend python /app/run_rdagent_llm.py
+
+# 背景執行（推薦，避免終端斷線）
+nohup docker compose exec -T backend python /app/run_rdagent_llm.py > /tmp/rdagent_output.log 2>&1 &
+
+# 查看執行日誌
+tail -f /tmp/rdagent_output.log
+
+# 檢查任務狀態
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT id, task_type, status, llm_calls, llm_cost, created_at
+FROM rdagent_tasks
+ORDER BY created_at DESC LIMIT 5;"
+
+# 查看生成的因子
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT id, name, category, formula, created_at
+FROM generated_factors
+ORDER BY created_at DESC LIMIT 5;"
+```
+
+**注意事項**：
+- **執行時間**：通常 5-10 分鐘（取決於迭代次數和因子複雜度）
+- **成本**：約 $0.5 - $2 USD per run（GPT-4-turbo）
+- **資料庫修復**：如遇 `created_at` 約束錯誤，執行：
+  ```bash
+  docker compose exec postgres psql -U quantlab quantlab -c "
+  ALTER TABLE rdagent_tasks ALTER COLUMN created_at SET DEFAULT NOW();
+  ALTER TABLE generated_factors ALTER COLUMN created_at SET DEFAULT NOW();"
+  ```
+
 ---
 
 ## 🏗️ 高層架構
@@ -818,6 +853,42 @@ docker compose exec backend celery -A app.core.celery_app inspect revoked
 - [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題分析
 - [CELERY_EXPIRES_OPTIMIZATION.md](CELERY_EXPIRES_OPTIMIZATION.md) - Expires 智慧優化（2025-12-23）
 - [CELERY_SMART_REVOKED_CLEANUP.md](CELERY_SMART_REVOKED_CLEANUP.md) - 智慧 Revoked 清理機制（2025-12-23）✨
+
+### 11. 資料庫 created_at 約束錯誤
+
+**症狀**：執行腳本時出現 `null value in column "created_at" violates not-null constraint`
+
+**原因**：資料庫表缺少 `created_at` 的 DEFAULT 值（Alembic 遷移不完整）
+
+**影響表**：
+- `rdagent_tasks`
+- `generated_factors`
+- `factor_evaluations`
+
+**快速修復**：
+```bash
+docker compose exec postgres psql -U quantlab quantlab -c "
+ALTER TABLE rdagent_tasks ALTER COLUMN created_at SET DEFAULT NOW();
+ALTER TABLE generated_factors ALTER COLUMN created_at SET DEFAULT NOW();
+ALTER TABLE factor_evaluations ALTER COLUMN created_at SET DEFAULT NOW();
+"
+```
+
+**驗證**：
+```bash
+docker compose exec postgres psql -U quantlab quantlab -c "\d rdagent_tasks" | grep created_at
+# 應顯示：created_at | timestamp with time zone | not null | now()
+```
+
+**根本解決**：
+確保所有模型定義包含 `server_default=func.now()`：
+```python
+from sqlalchemy.sql import func
+
+created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+```
+
+並執行 Alembic 遷移使資料庫同步。
 
 ---
 

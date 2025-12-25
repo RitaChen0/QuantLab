@@ -9,8 +9,8 @@ import pickle
 import re
 from pathlib import Path
 
-from app.models.rdagent import RDAgentTask, GeneratedFactor, FactorEvaluation, TaskStatus, TaskType
-from app.schemas.rdagent import FactorMiningRequest, StrategyOptimizationRequest
+from app.models.rdagent import RDAgentTask, GeneratedFactor, GeneratedModel, FactorEvaluation, TaskStatus, TaskType
+from app.schemas.rdagent import FactorMiningRequest, ModelGenerationRequest, StrategyOptimizationRequest
 
 
 class RDAgentService:
@@ -585,3 +585,237 @@ class RDAgentService:
         logger.info(f"Estimated LLM cost: ${llm_cost:.4f}")
 
         return llm_calls, round(llm_cost, 4)
+
+    # ========== 模型生成功能 ==========
+
+    def create_model_generation_task(
+        self, user_id: int, request: ModelGenerationRequest
+    ) -> RDAgentTask:
+        """建立模型生成任務"""
+        task = RDAgentTask(
+            user_id=user_id,
+            task_type=TaskType.MODEL_GENERATION,
+            status=TaskStatus.PENDING,
+            input_params={
+                "research_goal": request.research_goal,
+                "model_type": request.model_type,
+                "llm_model": request.llm_model,
+                "max_iterations": request.max_iterations,
+            }
+        )
+        self.db.add(task)
+        self.db.commit()
+        self.db.refresh(task)
+
+        logger.info(f"Created model generation task {task.id} for user {user_id}")
+        return task
+
+    def execute_model_generation(
+        self,
+        task_id: int,
+        research_goal: str,
+        max_iterations: int = 5,
+        llm_model: str = "gpt-4-turbo",
+    ) -> str:
+        """執行 RD-Agent 模型生成
+
+        Args:
+            task_id: 任務 ID
+            research_goal: 研究目標（用於日誌，實際 RD-Agent 會自動決定）
+            max_iterations: 最大迭代次數
+            llm_model: LLM 模型名稱
+
+        Returns:
+            log_dir: 日誌目錄路徑
+
+        Raises:
+            Exception: 執行失敗時拋出異常
+        """
+        logger.info(f"Starting model generation for task {task_id}")
+        logger.info(f"Research goal: {research_goal}")
+        logger.info(f"Max iterations: {max_iterations}")
+        logger.info(f"LLM model: {llm_model}")
+
+        # 設定環境變數
+        os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY", "")
+        os.environ["QLIB_DATA_PATH"] = os.getenv("QLIB_DATA_PATH", "/data/qlib/tw_stock_v2")
+
+        if not os.environ["OPENAI_API_KEY"]:
+            raise ValueError("OPENAI_API_KEY not configured")
+
+        try:
+            # 導入 RD-Agent 模型生成模組
+            from rdagent.app.qlib_rd_loop.model import main
+
+            # 執行模型生成
+            logger.info(f"Executing RD-Agent model generation with {max_iterations} iterations...")
+            main(step_n=max_iterations)
+
+            # 查找最新的日誌目錄
+            log_base_dir = Path("/app/log")
+            if not log_base_dir.exists():
+                raise FileNotFoundError("Log directory /app/log not found")
+
+            # 獲取最新的時間戳目錄
+            log_dirs = sorted(log_base_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if not log_dirs:
+                raise FileNotFoundError("No log directories found")
+
+            log_dir = str(log_dirs[0])
+            logger.info(f"RD-Agent model generation completed. Log directory: {log_dir}")
+
+            return log_dir
+
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            logger.error(f"Model generation execution failed: {str(e)}")
+            logger.error(f"Full traceback:\n{error_trace}")
+            raise
+
+    def parse_model_generation_results(self, log_dir: str) -> List[Dict[str, Any]]:
+        """解析 RD-Agent 模型生成結果
+
+        從 .pkl 日誌檔案中提取生成的模型定義
+
+        Args:
+            log_dir: RD-Agent 日誌目錄路徑
+
+        Returns:
+            models: 模型列表，每個模型包含 name, description, model_type, architecture, etc.
+        """
+        logger.info(f"Parsing RD-Agent model generation results from {log_dir}")
+
+        log_path = Path(log_dir)
+        if not log_path.exists():
+            raise FileNotFoundError(f"Log directory not found: {log_dir}")
+
+        models = []
+
+        # 遍歷所有迭代目錄 (Loop_0, Loop_1, ...)
+        for loop_dir in sorted(log_path.glob("Loop_*")):
+            loop_num = int(loop_dir.name.split("_")[1])
+            logger.info(f"Processing {loop_dir.name}...")
+
+            # 查找 experiment generation 結果 pickle 檔案
+            exp_gen_pattern = loop_dir / "direct_exp_gen" / "r" / "experiment generation" / "**" / "*.pkl"
+            exp_pkl_files = sorted(log_path.glob(str(exp_gen_pattern.relative_to(log_path))))
+
+            if not exp_pkl_files:
+                logger.warning(f"No experiment pickle files found in {loop_dir}")
+                continue
+
+            # 讀取所有實驗 pickle 檔案
+            for exp_file in exp_pkl_files:
+                try:
+                    with open(exp_file, "rb") as f:
+                        experiment_data = pickle.load(f)
+
+                    logger.info(f"Loaded experiment from {exp_file.name}")
+
+                    # experiment_data 應該是包含 ModelTask 物件的列表
+                    if isinstance(experiment_data, list):
+                        for task in experiment_data:
+                            model = self._extract_model_from_task(task, loop_num)
+                            if model:
+                                models.append(model)
+                                logger.info(f"Extracted model: {model['name']}")
+
+                except Exception as e:
+                    logger.error(f"Failed to load {exp_file}: {e}")
+
+        logger.info(f"Parsed {len(models)} models from RD-Agent results")
+        return models
+
+    def _extract_model_from_task(self, task: Any, loop_num: int) -> Optional[Dict[str, Any]]:
+        """從 ModelTask 物件中提取模型定義
+
+        Args:
+            task: ModelTask 物件
+            loop_num: 迭代編號
+
+        Returns:
+            model: 模型字典，包含 name, description, architecture, etc.
+        """
+        try:
+            # 提取模型屬性
+            model_name = getattr(task, 'name', None) or getattr(task, 'model_name', None) or f"Model_Loop{loop_num}"
+            model_description = getattr(task, 'description', '') or getattr(task, 'model_description', '')
+            model_type = getattr(task, 'model_type', 'TimeSeries')  # 默認為時間序列
+            formulation = getattr(task, 'formulation', '') or getattr(task, 'model_formulation', '')
+            architecture = getattr(task, 'architecture', '') or getattr(task, 'model_architecture', '')
+            variables = getattr(task, 'variables', {})
+            hyperparameters = getattr(task, 'hyperparameters', {})
+
+            # 清理模型名稱（移除特殊字元）
+            if model_name and '<' in model_name:
+                # 處理 <ModelTask[GRUFinancialModel]> 格式
+                match = re.search(r'\[(.+?)\]', model_name)
+                if match:
+                    model_name = match.group(1)
+
+            model = {
+                "name": model_name,
+                "description": model_description or f"Model generated in Loop {loop_num}",
+                "model_type": model_type,
+                "formulation": formulation,
+                "architecture": architecture,
+                "variables": variables if isinstance(variables, dict) else {},
+                "hyperparameters": hyperparameters if isinstance(hyperparameters, dict) else {},
+                "iteration": loop_num,
+                "metadata": {
+                    "loop_num": loop_num,
+                    "task_type": type(task).__name__
+                }
+            }
+
+            return model
+
+        except Exception as e:
+            logger.error(f"Failed to extract model from task: {e}")
+            return None
+
+    def save_generated_model(
+        self,
+        task_id: int,
+        user_id: int,
+        name: str,
+        model_type: str,
+        description: Optional[str] = None,
+        formulation: Optional[str] = None,
+        architecture: Optional[str] = None,
+        variables: Optional[Dict[str, Any]] = None,
+        hyperparameters: Optional[Dict[str, Any]] = None,
+        iteration: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> GeneratedModel:
+        """保存生成的模型"""
+        model = GeneratedModel(
+            task_id=task_id,
+            user_id=user_id,
+            name=name,
+            model_type=model_type,
+            description=description,
+            formulation=formulation,
+            architecture=architecture,
+            variables=variables,
+            hyperparameters=hyperparameters,
+            iteration=iteration,
+            model_metadata=metadata
+        )
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+
+        logger.info(f"Saved generated model {model.id}: {name}")
+        return model
+
+    def get_generated_models(
+        self, user_id: int, limit: int = 100
+    ) -> List[GeneratedModel]:
+        """獲取生成的模型列表"""
+        return self.db.query(GeneratedModel).filter(
+            GeneratedModel.user_id == user_id
+        ).order_by(
+            GeneratedModel.created_at.desc()
+        ).limit(limit).all()

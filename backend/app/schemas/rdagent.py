@@ -8,6 +8,7 @@ from enum import Enum
 
 class TaskType(str, Enum):
     FACTOR_MINING = "factor_mining"
+    MODEL_GENERATION = "model_generation"
     STRATEGY_OPTIMIZATION = "strategy_optimization"
     MODEL_EXTRACTION = "model_extraction"
 
@@ -29,6 +30,14 @@ class FactorMiningRequest(BaseModel):
     max_factors: int = Field(5, ge=1, le=20, description="最多生成幾個因子")
     llm_model: str = Field("gpt-4", description="使用的 LLM 模型")
     max_iterations: int = Field(3, ge=1, le=10, description="最大迭代次數")
+
+
+class ModelGenerationRequest(BaseModel):
+    """模型生成請求"""
+    research_goal: str = Field(..., description="研究目標描述（如：為台指期貨創建時間序列預測模型）")
+    model_type: Optional[str] = Field(None, description="模型類型偏好（TimeSeries/Tabular，不指定則自動選擇）")
+    llm_model: str = Field("gpt-4", description="使用的 LLM 模型")
+    max_iterations: int = Field(5, ge=1, le=20, description="最大迭代次數")
 
 
 class StrategyOptimizationRequest(BaseModel):
@@ -68,6 +77,30 @@ class UpdateGeneratedFactorRequest(BaseModel):
     description: Optional[str] = None
 
 
+class GeneratedModelResponse(BaseModel):
+    """生成的模型響應"""
+    id: int
+    name: str
+    description: Optional[str]
+    model_type: str
+    formulation: Optional[str]
+    architecture: Optional[str]
+    variables: Optional[Dict[str, Any]]
+    hyperparameters: Optional[Dict[str, Any]]
+    code: Optional[str] = None
+    qlib_config: Optional[Dict[str, Any]]
+    sharpe_ratio: Optional[float]
+    annual_return: Optional[float]
+    max_drawdown: Optional[float]
+    information_ratio: Optional[float]
+    iteration: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+        # Pydantic v2 自動正確序列化 timezone-aware datetime
+
+
 class RDAgentTaskResponse(BaseModel):
     """RD-Agent 任務響應"""
     id: int
@@ -83,6 +116,7 @@ class RDAgentTaskResponse(BaseModel):
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     generated_factors: Optional[List[GeneratedFactorResponse]] = []
+    generated_models: Optional[List[GeneratedModelResponse]] = []
 
     class Config:
         from_attributes = True
