@@ -50,6 +50,9 @@ from app.tasks.futures_continuous import (
     generate_continuous_contracts,
     register_new_futures_contracts,
 )
+from app.tasks.futures_daily_aggregation import (
+    generate_tx_daily_from_minute,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -82,4 +85,5 @@ __all__ = [
     "cleanup_celery_metadata",
     "generate_continuous_contracts",
     "register_new_futures_contracts",
+    "generate_tx_daily_from_minute",
 ]

@@ -57,6 +57,8 @@ dist/
 # Logs
 logs/
 *.log
+log/
+backend/log/
 
 # Docker
 docker-compose.override.yml
@@ -93,6 +95,10 @@ data/
 # Alembic
 alembic/versions/*.pyc
 backend/pickle_cache/
+
+# RD-Agent
+git_ignore_folder/
+backend/git_ignore_folder/
 
 # Celery
 celerybeat-schedule*

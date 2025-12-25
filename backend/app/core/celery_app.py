@@ -242,6 +242,20 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=7, minute=30, day_of_week='mon,tue,wed,thu,fri'),  # UTC 07:30 = Taiwan 15:30
     },
 
+    # Generate TX futures daily data from minute data for RD-Agent
+    # Runs at: Taiwan 16:00 (UTC 08:00), Mon-Fri
+    # Duration: ~1-2 minutes
+    # Purpose: Aggregate minute bars into daily OHLCV for RD-Agent factor mining
+    # Note: Runs 30 mins after sync-shioaji-futures-daily to ensure latest minute data
+    "generate-tx-daily-from-minute": {
+        "task": "app.tasks.generate_tx_daily_from_minute",
+        "schedule": crontab(hour=8, minute=0, day_of_week='mon,tue,wed,thu,fri'),  # UTC 08:00 = Taiwan 16:00
+        "options": {
+            "expires": 82800,  # 23 hours
+            "kwargs": {"contract": "TXCONT"}  # 使用 TXCONT 連續合約（永不過期，自動換約）
+        },
+    },
+
     # Generate continuous futures contracts (TX + MTX) once per week
     # Runs at: Taiwan Saturday 18:00 (UTC Saturday 10:00)
     # Duration: ~1-2 minutes
