@@ -11,6 +11,7 @@ from app.services.fundamental_service import FundamentalService
 from app.services.finlab_client import FinLabClient
 from app.utils.task_history import record_task_history
 from app.utils.task_deduplication import skip_if_recently_executed
+from app.utils.cache import cache
 from loguru import logger
 from datetime import datetime, timezone
 from typing import List
@@ -34,6 +35,25 @@ def sync_fundamental_data(
     Returns:
         同步結果統計
     """
+    # 🔒 Distributed lock - prevent concurrent execution
+    redis_client = cache.redis_client
+    lock_key = f"task_lock:{self.name}"
+    # 2 小時超時（任務預計執行時間：30-60 分鐘，取決於股票和指標數量）
+    lock = redis_client.lock(lock_key, timeout=7200)
+
+    # 嘗試獲取鎖（非阻塞）
+    if not lock.acquire(blocking=False):
+        logger.warning(f"⚠️  任務 {self.name} 已在執行中，跳過此次觸發")
+        logger.info(f"   鎖定 Key: {lock_key}")
+        return {
+            "status": "skipped",
+            "reason": "task_already_running",
+            "message": f"Task {self.name} is already running, skipped duplicate execution",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    logger.info(f"🔐 已獲取任務鎖: {lock_key}")
+
     db: Session = SessionLocal()
 
     try:
@@ -103,6 +123,12 @@ def sync_fundamental_data(
 
     finally:
         db.close()
+        # 確保釋放鎖
+        try:
+            lock.release()
+            logger.info("🔓 任務鎖已釋放")
+        except Exception as e:
+            logger.error(f"Failed to release lock: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_fundamental_latest")

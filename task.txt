@@ -1,4 +1,68 @@
- 
+步骤 1：训练模型（必须）
+
+  在使用前，需要先训练模型：
+
+  # 使用 Qlib 训练模型
+  import qlib
+  from qlib.data.dataset import DatasetH
+  from qlib.model.trainer import TrainerR
+
+  # 1. 准备数据（台股历史数据）
+  dataset = DatasetH(
+      handler="Alpha158",
+      segments={
+          "train": ("2015-01-01", "2020-12-31"),
+          "valid": ("2021-01-01", "2021-12-31"),
+          "test": ("2022-01-01", "2023-12-31")
+      }
+  )
+
+  # 2. 加载你生成的模型
+  from custom_models.gru_financial_model import GRUFinancialModel
+
+  # 3. 训练模型
+  model = GRUFinancialModel(d_feat=20, hidden_dim=128, num_layers=2)
+  trainer = TrainerR(model=model, dataset=dataset)
+  trainer.train()  # 训练 50 个 epoch
+
+  # 4. 保存训练好的模型
+  trainer.save("gru_model_weights.pth")
+
+  训练时间：约 30-60 分钟（取决于数据量）
+
+步骤 2：使用模型预测
+
+  训练完成后，可以用来预测股价：
+
+  # 预测未来收益
+  predictions = model.predict(latest_data)
+
+  # 例如：
+  # 股票 2330：预测明天涨 +2.5%
+  # 股票 2454：预测明天跌 -1.2%
+
+步骤 3：建立交易策略
+
+  将模型预测整合到交易策略中：
+
+  class MLStrategy:
+      def __init__(self, model):
+          self.model = model
+
+      def generate_signals(self, date):
+          # 1. 获取今天的特征数据
+          features = get_features(date)
+
+          # 2. 模型预测明天涨跌
+          predictions = self.model.predict(features)
+
+          # 3. 选出预测最高的前 10 只股票
+          top10 = predictions.nlargest(10)
+
+          # 4. 买入这 10 只股票
+          return {"buy": top10.index.tolist()}
+
+
 
 Qlib + RD_Agent 
 

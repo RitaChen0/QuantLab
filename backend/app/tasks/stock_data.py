@@ -13,6 +13,7 @@ from app.repositories.stock import StockRepository
 from app.repositories.stock_price import StockPriceRepository
 from app.schemas.stock import StockCreate
 from app.schemas.stock_price import StockPriceCreate
+from app.utils.price_validator import PriceValidationError
 from loguru import logger
 from datetime import datetime, timezone, timedelta, date as date_type
 from decimal import Decimal
@@ -27,6 +28,25 @@ def sync_stock_list(self: Task) -> dict:
     Sync stock list from FinLab API to database
     Runs daily to update the list of available stocks
     """
+    # 🔒 Distributed lock - prevent concurrent execution
+    redis_client = cache.redis_client
+    lock_key = f"task_lock:{self.name}"
+    # 5 分鐘超時（任務預計執行時間：1-2 分鐘）
+    lock = redis_client.lock(lock_key, timeout=300)
+
+    # 嘗試獲取鎖（非阻塞）
+    if not lock.acquire(blocking=False):
+        logger.warning(f"⚠️  任務 {self.name} 已在執行中，跳過此次觸發")
+        logger.info(f"   鎖定 Key: {lock_key}")
+        return {
+            "status": "skipped",
+            "reason": "task_already_running",
+            "message": f"Task {self.name} is already running, skipped duplicate execution",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    logger.info(f"🔐 已獲取任務鎖: {lock_key}")
+
     db = SessionLocal()
     try:
         logger.info("Starting stock list synchronization...")
@@ -107,6 +127,12 @@ def sync_stock_list(self: Task) -> dict:
         raise self.retry(exc=e, countdown=countdown, max_retries=3)
     finally:
         db.close()
+        # 確保釋放鎖
+        try:
+            lock.release()
+            logger.info("🔓 任務鎖已釋放")
+        except Exception as e:
+            logger.error(f"Failed to release lock: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_daily_prices")
@@ -127,6 +153,25 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
     from app.repositories.stock_price import StockPriceRepository
     from app.schemas.stock_price import StockPriceCreate
     from datetime import date as DateType
+
+    # 🔒 Distributed lock - prevent concurrent execution
+    redis_client = cache.redis_client
+    lock_key = f"task_lock:{self.name}"
+    # 30 分鐘超時（任務預計執行時間：5-10 分鐘）
+    lock = redis_client.lock(lock_key, timeout=1800)
+
+    # 嘗試獲取鎖（非阻塞）
+    if not lock.acquire(blocking=False):
+        logger.warning(f"⚠️  任務 {self.name} 已在執行中，跳過此次觸發")
+        logger.info(f"   鎖定 Key: {lock_key}")
+        return {
+            "status": "skipped",
+            "reason": "task_already_running",
+            "message": f"Task {self.name} is already running, skipped duplicate execution",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    logger.info(f"🔐 已獲取任務鎖: {lock_key}")
 
     try:
         logger.info(f"Starting daily price synchronization (last {days} days)...")
@@ -188,7 +233,8 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
                         if pd.notna(price)
                     }
 
-                    # Write to database (IMPORTANT!)
+                    # Write to database (IMPORTANT!) 帶驗證
+                    validation_errors = 0
                     for date_str, price_value in data.items():
                         try:
                             # Extract date part only (remove time if present)
@@ -204,11 +250,21 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
                                 volume=0,           # 無成交量數據
                                 adj_close=None
                             )
-                            StockPriceRepository.upsert(db, price_create)
+                            StockPriceRepository.upsert(db, price_create)  # 預設會驗證
                             db_records_count += 1
+                        except PriceValidationError as e:
+                            # 價格驗證失敗 - 記錄但不中斷同步
+                            validation_errors += 1
+                            logger.warning(f"⚠️  [VALIDATION] {stock_id} {date_only if 'date_only' in locals() else date_str}: {str(e)}")
+                            continue
                         except Exception as e:
                             logger.warning(f"Failed to write {stock_id} {date_only if 'date_only' in locals() else date_str} to DB: {e}")
                             continue
+
+                    if validation_errors > 0:
+                        logger.warning(
+                            f"⚠️  {stock_id} 驗證失敗: {validation_errors} 筆記錄被拒絕"
+                        )
 
                     # Cache for 10 minutes (for API performance)
                     cache_key = f"price:{stock_id}:{start_date}:{end_date}"
@@ -242,6 +298,13 @@ def sync_daily_prices(self: Task, stock_ids: list = None, days: int = 7) -> dict
         retry_count = self.request.retries
         countdown = 300 * (2 ** retry_count)
         raise self.retry(exc=e, countdown=countdown, max_retries=3)
+    finally:
+        # 確保釋放鎖
+        try:
+            lock.release()
+            logger.info("🔓 任務鎖已釋放")
+        except Exception as e:
+            logger.error(f"Failed to release lock: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_ohlcv_data")
@@ -258,6 +321,25 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
     Returns:
         Task result with sync statistics
     """
+    # 🔒 Distributed lock - prevent concurrent execution
+    redis_client = cache.redis_client
+    lock_key = f"task_lock:{self.name}"
+    # 30 分鐘超時（任務預計執行時間：10-15 分鐘）
+    lock = redis_client.lock(lock_key, timeout=1800)
+
+    # 嘗試獲取鎖（非阻塞）
+    if not lock.acquire(blocking=False):
+        logger.warning(f"⚠️  任務 {self.name} 已在執行中，跳過此次觸發")
+        logger.info(f"   鎖定 Key: {lock_key}")
+        return {
+            "status": "skipped",
+            "reason": "task_already_running",
+            "message": f"Task {self.name} is already running, skipped duplicate execution",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+    logger.info(f"🔐 已獲取任務鎖: {lock_key}")
+
     db = SessionLocal()
     try:
         logger.info(f"Starting OHLCV synchronization (last {days} days)...")
@@ -294,7 +376,8 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
                     end_date=end_date
                 )
 
-                # Save to database using upsert
+                # Save to database using upsert（帶驗證）
+                validation_errors = 0
                 for date, row in ohlcv_df.iterrows():
                     try:
                         price_create = StockPriceCreate(
@@ -307,11 +390,21 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
                             volume=int(row['volume']) if pd.notna(row['volume']) else 0,
                             adj_close=None
                         )
-                        StockPriceRepository.upsert(db, price_create)
+                        StockPriceRepository.upsert(db, price_create)  # 預設會驗證
                         db_saved += 1
+                    except PriceValidationError as e:
+                        # 價格驗證失敗 - 記錄但不中斷同步
+                        validation_errors += 1
+                        logger.warning(f"⚠️  [VALIDATION] {stock_id} {date}: {str(e)}")
+                        continue
                     except Exception as e:
                         logger.warning(f"Failed to save {stock_id} on {date}: {str(e)}")
                         continue
+
+                if validation_errors > 0:
+                    logger.warning(
+                        f"⚠️  {stock_id} 驗證失敗: {validation_errors} 筆記錄被拒絕"
+                    )
 
                 # Convert to dict for caching
                 data = {
@@ -360,6 +453,12 @@ def sync_ohlcv_data(self: Task, stock_ids: list = None, days: int = 30) -> dict:
         raise self.retry(exc=e, countdown=countdown, max_retries=3)
     finally:
         db.close()
+        # 確保釋放鎖
+        try:
+            lock.release()
+            logger.info("🔓 任務鎖已釋放")
+        except Exception as e:
+            logger.error(f"Failed to release lock: {e}")
 
 
 @celery_app.task(bind=True, name="app.tasks.sync_latest_prices")

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 from app.models.stock_price import StockPrice
 from app.schemas.stock_price import StockPriceCreate, StockPriceUpdate
+from app.utils.price_validator import PriceValidator, PriceValidationError
+from loguru import logger
 
 
 class StockPriceRepository:
@@ -106,17 +108,38 @@ class StockPriceRepository:
         return query.order_by(StockPrice.date).all()
 
     @staticmethod
-    def create(db: Session, price_create: StockPriceCreate) -> StockPrice:
+    def create(db: Session, price_create: StockPriceCreate, skip_validation: bool = False) -> StockPrice:
         """
         Create new stock price
 
         Args:
             db: Database session
             price_create: Stock price creation data
+            skip_validation: 跳過價格驗證（預設 False，不建議使用）
 
         Returns:
             Created stock price object
+
+        Raises:
+            PriceValidationError: 如果價格數據無效
         """
+        # 應用層驗證（第一層防護）
+        if not skip_validation:
+            is_valid, error_msg = PriceValidator.validate_price_data(
+                open=price_create.open,
+                high=price_create.high,
+                low=price_create.low,
+                close=price_create.close,
+                volume=price_create.volume,
+                stock_id=price_create.stock_id,
+                date=str(price_create.date),
+                allow_zero_placeholder=True
+            )
+
+            if not is_valid:
+                logger.error(f"❌ [VALIDATION] {error_msg}")
+                raise PriceValidationError(error_msg)
+
         db_price = StockPrice(
             stock_id=price_create.stock_id,
             date=price_create.date,
@@ -135,17 +158,46 @@ class StockPriceRepository:
         return db_price
 
     @staticmethod
-    def create_bulk(db: Session, prices: List[StockPriceCreate]) -> int:
+    def create_bulk(db: Session, prices: List[StockPriceCreate], skip_validation: bool = False) -> dict:
         """
         Bulk create stock prices
 
         Args:
             db: Database session
             prices: List of stock price creation data
+            skip_validation: 跳過價格驗證（預設 False，不建議使用）
 
         Returns:
-            Number of records created
+            包含統計信息的字典：
+            - created: 成功創建的記錄數
+            - skipped: 因驗證失敗而跳過的記錄數
+            - total: 總輸入記錄數
         """
+        valid_prices = []
+        skipped_count = 0
+
+        for price in prices:
+            # 應用層驗證（第一層防護）
+            if not skip_validation:
+                is_valid, error_msg = PriceValidator.validate_price_data(
+                    open=price.open,
+                    high=price.high,
+                    low=price.low,
+                    close=price.close,
+                    volume=price.volume,
+                    stock_id=price.stock_id,
+                    date=str(price.date),
+                    allow_zero_placeholder=True
+                )
+
+                if not is_valid:
+                    logger.warning(f"⚠️  [BULK_VALIDATION] 跳過無效記錄: {error_msg}")
+                    skipped_count += 1
+                    continue
+
+            valid_prices.append(price)
+
+        # 批量插入有效記錄
         db_prices = [
             StockPrice(
                 stock_id=price.stock_id,
@@ -157,13 +209,26 @@ class StockPriceRepository:
                 volume=price.volume,
                 adj_close=price.adj_close,
             )
-            for price in prices
+            for price in valid_prices
         ]
 
-        db.bulk_save_objects(db_prices)
-        db.commit()
+        if db_prices:
+            db.bulk_save_objects(db_prices)
+            db.commit()
 
-        return len(db_prices)
+        created_count = len(db_prices)
+        if skipped_count > 0:
+            logger.warning(
+                f"⚠️  [BULK_VALIDATION] 批量插入完成: "
+                f"{created_count} 成功, {skipped_count} 跳過, "
+                f"{len(prices)} 總計"
+            )
+
+        return {
+            "created": created_count,
+            "skipped": skipped_count,
+            "total": len(prices)
+        }
 
     @staticmethod
     def update(
@@ -194,17 +259,38 @@ class StockPriceRepository:
         return stock_price
 
     @staticmethod
-    def upsert(db: Session, price_create: StockPriceCreate) -> StockPrice:
+    def upsert(db: Session, price_create: StockPriceCreate, skip_validation: bool = False) -> StockPrice:
         """
         Upsert (insert or update) stock price
 
         Args:
             db: Database session
             price_create: Stock price data
+            skip_validation: 跳過價格驗證（預設 False，不建議使用）
 
         Returns:
             Stock price object
+
+        Raises:
+            PriceValidationError: 如果價格數據無效
         """
+        # 應用層驗證（第一層防護）
+        if not skip_validation:
+            is_valid, error_msg = PriceValidator.validate_price_data(
+                open=price_create.open,
+                high=price_create.high,
+                low=price_create.low,
+                close=price_create.close,
+                volume=price_create.volume,
+                stock_id=price_create.stock_id,
+                date=str(price_create.date),
+                allow_zero_placeholder=True
+            )
+
+            if not is_valid:
+                logger.error(f"❌ [VALIDATION] {error_msg}")
+                raise PriceValidationError(error_msg)
+
         existing = StockPriceRepository.get_by_stock_and_date(
             db, price_create.stock_id, price_create.date
         )
@@ -218,8 +304,8 @@ class StockPriceRepository:
             db.refresh(existing)
             return existing
         else:
-            # Create new record
-            return StockPriceRepository.create(db, price_create)
+            # Create new record (skip_validation=True 因為已經驗證過了)
+            return StockPriceRepository.create(db, price_create, skip_validation=True)
 
     @staticmethod
     def delete(db: Session, stock_price: StockPrice) -> None:
