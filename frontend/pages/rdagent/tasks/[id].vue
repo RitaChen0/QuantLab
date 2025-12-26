@@ -86,29 +86,171 @@
           </div>
         </div>
 
-        <!-- 生成的因子列表 -->
-        <div v-if="task.result.factors && task.result.factors.length > 0" class="factors-list">
-          <h3>生成的因子</h3>
-          <div class="factor-item" v-for="(factor, index) in task.result.factors" :key="index">
-            <div class="factor-header">
-              <span class="factor-name">{{ factor.name }}</span>
-              <span class="factor-category" v-if="factor.category">{{ factor.category }}</span>
+        <!-- 策略優化結果 -->
+        <div v-if="task.task_type === 'strategy_optimization'">
+          <!-- 策略資訊 -->
+          <div v-if="task.result.strategy_info" class="strategy-info">
+            <h3>📋 策略資訊</h3>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="label">策略 ID</span>
+                <span class="value">{{ task.result.strategy_info.id }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">策略名稱</span>
+                <span class="value">{{ task.result.strategy_info.name }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">引擎類型</span>
+                <span class="value">{{ task.result.strategy_info.engine_type }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">最近回測 ID</span>
+                <span class="value">{{ task.result.strategy_info.latest_backtest_id }}</span>
+              </div>
             </div>
-            <div class="factor-formula">
-              <code>{{ factor.formula }}</code>
+          </div>
+
+          <!-- 當前績效 -->
+          <div v-if="task.result.current_performance" class="current-performance">
+            <h3>📈 當前績效指標</h3>
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-label">Sharpe Ratio</div>
+                <div class="metric-value" :class="getMetricClass('sharpe', task.result.current_performance.sharpe_ratio)">
+                  {{ formatNumber(task.result.current_performance.sharpe_ratio, 2) }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">年化報酬率</div>
+                <div class="metric-value" :class="getMetricClass('return', task.result.current_performance.annual_return)">
+                  {{ formatPercent(task.result.current_performance.annual_return) }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">最大回撤</div>
+                <div class="metric-value" :class="getMetricClass('drawdown', task.result.current_performance.max_drawdown)">
+                  {{ formatPercent(task.result.current_performance.max_drawdown) }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">勝率</div>
+                <div class="metric-value" :class="getMetricClass('winrate', task.result.current_performance.win_rate)">
+                  {{ formatPercent(task.result.current_performance.win_rate) }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">總交易次數</div>
+                <div class="metric-value">
+                  {{ task.result.current_performance.total_trades }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">盈利因子</div>
+                <div class="metric-value" :class="getMetricClass('profit_factor', task.result.current_performance.profit_factor)">
+                  {{ formatNumber(task.result.current_performance.profit_factor, 2) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 問題診斷 -->
+          <div v-if="task.result.issues_diagnosed && task.result.issues_diagnosed.length > 0" class="issues-diagnosed">
+            <h3>🔍 問題診斷</h3>
+            <div class="issues-list">
+              <div v-for="(issue, index) in task.result.issues_diagnosed" :key="index"
+                   class="issue-item" :class="'severity-' + issue.severity">
+                <div class="issue-header">
+                  <span class="severity-badge" :class="'severity-' + issue.severity">
+                    {{ issue.severity.toUpperCase() }}
+                  </span>
+                  <span class="issue-type">{{ issue.type }}</span>
+                </div>
+                <div class="issue-body">
+                  <p class="issue-description">{{ issue.description }}</p>
+                  <div class="issue-metrics">
+                    <span class="current-value">當前值: {{ formatMetricValue(issue.current_value) }}</span>
+                    <span class="target-value">目標值: {{ formatMetricValue(issue.target_value) }}</span>
+                  </div>
+                  <p class="issue-recommendation">💡 建議: {{ issue.recommendation }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 優化建議 -->
+          <div v-if="task.result.optimization_suggestions && task.result.optimization_suggestions.length > 0" class="optimization-suggestions">
+            <h3>💡 優化建議</h3>
+            <div class="suggestions-list">
+              <div v-for="(suggestion, index) in task.result.optimization_suggestions" :key="index"
+                   class="suggestion-card" :class="'priority-' + (suggestion.priority || 'medium')">
+                <div class="suggestion-header">
+                  <span class="suggestion-number">建議 {{ index + 1 }}</span>
+                  <span class="priority-badge" :class="'priority-' + (suggestion.priority || 'medium')">
+                    {{ (suggestion.priority || 'medium').toUpperCase() }}
+                  </span>
+                </div>
+                <div class="suggestion-body">
+                  <div class="suggestion-field">
+                    <strong>類型:</strong> {{ suggestion.type || 'N/A' }}
+                  </div>
+                  <div class="suggestion-field">
+                    <strong>問題:</strong> {{ suggestion.problem || 'N/A' }}
+                  </div>
+                  <div class="suggestion-field">
+                    <strong>解決方案:</strong>
+                    <p class="solution-text">{{ suggestion.solution || 'N/A' }}</p>
+                  </div>
+                  <div class="suggestion-field">
+                    <strong>預期效果:</strong> {{ suggestion.expected_improvement || 'N/A' }}
+                  </div>
+                  <div v-if="suggestion.code_changes" class="suggestion-field">
+                    <strong>代碼修改:</strong>
+                    <pre class="code-block">{{ suggestion.code_changes }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 預期改進 -->
+          <div v-if="task.result.estimated_improvements" class="estimated-improvements">
+            <h3>📊 預期改進</h3>
+            <div class="improvements-grid">
+              <div v-for="(value, key) in task.result.estimated_improvements" :key="key" class="improvement-item">
+                <span class="improvement-label">{{ formatImprovementLabel(key) }}</span>
+                <span class="improvement-value">{{ value }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- 其他結果訊息 -->
-        <div v-if="task.result.message" class="result-message">
-          <p>{{ task.result.message }}</p>
-        </div>
+        <!-- 因子挖掘結果 -->
+        <div v-if="task.task_type === 'factor_mining'">
+          <!-- 生成的因子列表 -->
+          <div v-if="task.result.factors && task.result.factors.length > 0" class="factors-list">
+            <h3>生成的因子</h3>
+            <div class="factor-item" v-for="(factor, index) in task.result.factors" :key="index">
+              <div class="factor-header">
+                <span class="factor-name">{{ factor.name }}</span>
+                <span class="factor-category" v-if="factor.category">{{ factor.category }}</span>
+              </div>
+              <div class="factor-formula">
+                <code>{{ factor.formula }}</code>
+              </div>
+            </div>
+          </div>
 
-        <!-- 日誌目錄 -->
-        <div v-if="task.result.log_directory" class="log-directory">
-          <span class="label">日誌目錄：</span>
-          <code>{{ task.result.log_directory }}</code>
+          <!-- 其他結果訊息 -->
+          <div v-if="task.result.message" class="result-message">
+            <p>{{ task.result.message }}</p>
+          </div>
+
+          <!-- 日誌目錄 -->
+          <div v-if="task.result.log_directory" class="log-directory">
+            <span class="label">日誌目錄：</span>
+            <code>{{ task.result.log_directory }}</code>
+          </div>
         </div>
       </div>
 
@@ -265,6 +407,78 @@ const getTypeLabel = (type: string) => {
     model_extraction: '模型提取'
   }
   return labels[type] || type
+}
+
+// 格式化數值
+const formatNumber = (value: number | null | undefined, decimals: number = 2) => {
+  if (value === null || value === undefined) return 'N/A'
+  return value.toFixed(decimals)
+}
+
+// 格式化百分比
+const formatPercent = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return 'N/A'
+  return (value * 100).toFixed(2) + '%'
+}
+
+// 格式化指標值
+const formatMetricValue = (value: any) => {
+  if (value === null || value === undefined) return 'N/A'
+  if (typeof value === 'number') {
+    // 假設小於 1 的是百分比
+    if (value < 1 && value > -1) {
+      return formatPercent(value)
+    }
+    return formatNumber(value, 2)
+  }
+  return String(value)
+}
+
+// 格式化改進標籤
+const formatImprovementLabel = (key: string) => {
+  const labels: Record<string, string> = {
+    sharpe_ratio: 'Sharpe Ratio',
+    annual_return: '年化報酬率',
+    max_drawdown: '最大回撤',
+    win_rate: '勝率',
+    profit_factor: '盈利因子'
+  }
+  return labels[key] || key
+}
+
+// 獲取指標樣式類別
+const getMetricClass = (metricType: string, value: number | null | undefined) => {
+  if (value === null || value === undefined) return ''
+
+  switch (metricType) {
+    case 'sharpe':
+      if (value >= 2.0) return 'metric-excellent'
+      if (value >= 1.0) return 'metric-good'
+      return 'metric-poor'
+
+    case 'return':
+      if (value >= 0.20) return 'metric-excellent'
+      if (value >= 0.10) return 'metric-good'
+      return 'metric-poor'
+
+    case 'drawdown':
+      if (value <= -0.30) return 'metric-poor'
+      if (value <= -0.20) return 'metric-good'
+      return 'metric-excellent'
+
+    case 'winrate':
+      if (value >= 0.60) return 'metric-excellent'
+      if (value >= 0.40) return 'metric-good'
+      return 'metric-poor'
+
+    case 'profit_factor':
+      if (value >= 1.5) return 'metric-excellent'
+      if (value >= 1.2) return 'metric-good'
+      return 'metric-poor'
+
+    default:
+      return ''
+  }
 }
 
 onMounted(() => {
@@ -633,6 +847,283 @@ onMounted(() => {
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+  }
+}
+
+// 策略優化專用樣式
+.strategy-info,
+.current-performance,
+.issues-diagnosed,
+.optimization-suggestions,
+.estimated-improvements {
+  margin-top: 2rem;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+
+  .info-item {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 0.375rem;
+
+    .label {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+
+    .value {
+      font-weight: 500;
+      color: #111827;
+    }
+  }
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+
+  .metric-card {
+    padding: 1.25rem;
+    background: #f9fafb;
+    border-radius: 0.5rem;
+    text-align: center;
+    transition: transform 0.2s;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .metric-label {
+      font-size: 0.875rem;
+      color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+
+    .metric-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+
+      &.metric-excellent {
+        color: #10b981;
+      }
+
+      &.metric-good {
+        color: #3b82f6;
+      }
+
+      &.metric-poor {
+        color: #ef4444;
+      }
+    }
+  }
+}
+
+.issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  .issue-item {
+    border-left: 4px solid;
+    padding: 1rem;
+    background: #f9fafb;
+    border-radius: 0.375rem;
+
+    &.severity-high {
+      border-left-color: #ef4444;
+    }
+
+    &.severity-medium {
+      border-left-color: #f59e0b;
+    }
+
+    &.severity-low {
+      border-left-color: #3b82f6;
+    }
+
+    .issue-header {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 0.75rem;
+
+      .severity-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: white;
+
+        &.severity-high {
+          background: #ef4444;
+        }
+
+        &.severity-medium {
+          background: #f59e0b;
+        }
+
+        &.severity-low {
+          background: #3b82f6;
+        }
+      }
+
+      .issue-type {
+        font-weight: 600;
+        color: #111827;
+      }
+    }
+
+    .issue-body {
+      .issue-description {
+        color: #374151;
+        margin-bottom: 0.75rem;
+      }
+
+      .issue-metrics {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.875rem;
+        color: #6b7280;
+      }
+
+      .issue-recommendation {
+        color: #10b981;
+        font-style: italic;
+        margin: 0;
+      }
+    }
+  }
+}
+
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  .suggestion-card {
+    border: 2px solid;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    background: white;
+
+    &.priority-high {
+      border-color: #ef4444;
+    }
+
+    &.priority-medium {
+      border-color: #f59e0b;
+    }
+
+    &.priority-low {
+      border-color: #3b82f6;
+    }
+
+    .suggestion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #e5e7eb;
+
+      .suggestion-number {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: #111827;
+      }
+
+      .priority-badge {
+        padding: 0.375rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: white;
+
+        &.priority-high {
+          background: #ef4444;
+        }
+
+        &.priority-medium {
+          background: #f59e0b;
+        }
+
+        &.priority-low {
+          background: #3b82f6;
+        }
+      }
+    }
+
+    .suggestion-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+
+      .suggestion-field {
+        line-height: 1.6;
+
+        strong {
+          color: #111827;
+        }
+
+        .solution-text {
+          margin: 0.5rem 0 0 0;
+          padding: 0.75rem;
+          background: #f9fafb;
+          border-radius: 0.375rem;
+          color: #374151;
+          line-height: 1.6;
+        }
+
+        .code-block {
+          background: #1f2937;
+          color: #f3f4f6;
+          padding: 1rem;
+          border-radius: 0.375rem;
+          overflow-x: auto;
+          font-family: 'Monaco', 'Courier New', monospace;
+          font-size: 0.875rem;
+          line-height: 1.5;
+          margin: 0.5rem 0 0 0;
+        }
+      }
+    }
+  }
+}
+
+.improvements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+
+  .improvement-item {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    background: #ecfdf5;
+    border-radius: 0.375rem;
+    border-left: 4px solid #10b981;
+
+    .improvement-label {
+      font-size: 0.875rem;
+      color: #059669;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .improvement-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #111827;
     }
   }
 }

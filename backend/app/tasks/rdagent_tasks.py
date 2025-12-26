@@ -202,9 +202,7 @@ def run_factor_mining_task(self: Task, task_id: int):
 def run_strategy_optimization_task(self: Task, task_id: int):
     """執行策略優化任務
 
-    ⚠️ 注意：此任務需要 RD-Agent 環境和 LLM API 配置
-
-    當前版本為模擬執行，實際使用時需要整合 RD-Agent 核心邏輯。
+    使用 LLM 分析策略代碼和回測結果，提供優化建議
 
     Args:
         task_id: RD-Agent 任務 ID
@@ -215,6 +213,8 @@ def run_strategy_optimization_task(self: Task, task_id: int):
     db: Session = SessionLocal()
 
     try:
+        from app.services.strategy_optimizer import StrategyOptimizer
+
         service = RDAgentService(db)
         task = db.query(RDAgentTask).filter(RDAgentTask.id == task_id).first()
 
@@ -226,40 +226,87 @@ def run_strategy_optimization_task(self: Task, task_id: int):
         service.update_task_status(task_id, TaskStatus.RUNNING)
 
         logger.info(f"Starting strategy optimization task {task_id}")
+        logger.info(f"Task parameters: {task.input_params}")
 
-        # ========== RD-Agent 核心邏輯 ==========
-        # TODO: 實作 RD-Agent 策略優化邏輯
-        # 參考：https://github.com/microsoft/RD-Agent/blob/main/rdagent/scenarios/qlib/model/
+        # 提取任務參數
+        strategy_id = task.input_params.get("strategy_id")
+        optimization_goal = task.input_params.get("optimization_goal", "提升整體績效表現")
+        llm_model = task.input_params.get("llm_model", "gpt-4-turbo")
+        max_iterations = task.input_params.get("max_iterations", 1)
 
-        # ========== 暫時模擬結果 ==========
-        import time
-        time.sleep(8)  # 模擬處理時間
+        if not strategy_id:
+            raise ValueError("strategy_id is required in input_params")
 
-        # 更新為完成
+        # ========== 步驟 1: 初始化優化器 ==========
+        logger.info("Step 1: Initializing strategy optimizer...")
+        optimizer = StrategyOptimizer(db)
+
+        # ========== 步驟 2: 分析策略並生成優化建議 ==========
+        logger.info(f"Step 2: Analyzing strategy {strategy_id}...")
+        analysis_result = optimizer.analyze_strategy(
+            strategy_id=strategy_id,
+            optimization_goal=optimization_goal,
+            llm_model=llm_model
+        )
+
+        logger.info(f"✅ Strategy analysis completed")
+        logger.info(f"   Current Sharpe Ratio: {analysis_result['current_performance']['sharpe_ratio']}")
+        logger.info(f"   Issues diagnosed: {len(analysis_result['issues_diagnosed'])}")
+        logger.info(f"   Suggestions generated: {len(analysis_result['optimization_suggestions'])}")
+
+        # ========== 步驟 3: 提取關鍵指標 ==========
+        current_perf = analysis_result["current_performance"]
+        suggestions = analysis_result["optimization_suggestions"]
+
+        # 估算改進幅度（基於建議的優先級）
+        high_priority_count = sum(1 for s in suggestions if s.get("priority") == "high")
+        estimated_improvement = min(high_priority_count * 15, 50)  # 每個高優先級建議預計改善 15%，最多 50%
+
+        current_sharpe = current_perf.get("sharpe_ratio") or 0.0
+        estimated_sharpe = current_sharpe * (1 + estimated_improvement / 100)
+
+        # ========== 步驟 4: 構建結果 ==========
+        optimization_result = {
+            "strategy_info": analysis_result["strategy_info"],
+            "current_performance": current_perf,
+            "issues_diagnosed": analysis_result["issues_diagnosed"],
+            "optimization_suggestions": suggestions,
+            "optimized_code": analysis_result.get("optimized_code"),
+            "estimated_improvements": {
+                "sharpe_ratio_before": current_sharpe,
+                "sharpe_ratio_estimated": round(estimated_sharpe, 2),
+                "improvement_pct": estimated_improvement,
+                "high_priority_suggestions": high_priority_count,
+                "total_suggestions": len(suggestions)
+            },
+            "message": f"策略優化分析完成，生成 {len(suggestions)} 條優化建議"
+        }
+
+        # ========== 步驟 5: 更新任務狀態 ==========
+        llm_metadata = analysis_result.get("llm_metadata", {})
         service.update_task_status(
             task_id,
             TaskStatus.COMPLETED,
-            result={
-                "optimization_improvements": {
-                    "sharpe_ratio_before": 1.2,
-                    "sharpe_ratio_after": 1.8,
-                    "improvement_pct": 50.0
-                },
-                "message": "Strategy optimization completed (DEMO MODE)"
-            },
-            llm_calls=25,
-            llm_cost=0.60
+            result=optimization_result,
+            llm_calls=llm_metadata.get("calls", 1),
+            llm_cost=llm_metadata.get("cost", 0.0)
         )
 
         logger.info(f"Strategy optimization task {task_id} completed")
+        logger.info(f"LLM calls: {llm_metadata.get('calls')}, Cost: ${llm_metadata.get('cost')}")
 
         return {
             "status": "success",
-            "task_id": task_id
+            "task_id": task_id,
+            "suggestions_count": len(suggestions),
+            "llm_calls": llm_metadata.get("calls", 0),
+            "llm_cost": llm_metadata.get("cost", 0.0)
         }
 
     except Exception as e:
         logger.error(f"Strategy optimization task {task_id} failed: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
         service.update_task_status(
             task_id,

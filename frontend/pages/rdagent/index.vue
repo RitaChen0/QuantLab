@@ -16,6 +16,12 @@
         因子挖掘
       </button>
       <button
+        :class="['tab', { active: activeTab === 'strategy-optimization' }]"
+        @click="activeTab = 'strategy-optimization'"
+      >
+        策略優化
+      </button>
+      <button
         :class="['tab', { active: activeTab === 'tasks' }]"
         @click="activeTab = 'tasks'"
       >
@@ -73,6 +79,87 @@
 
         <button type="submit" class="btn-primary" :disabled="isSubmitting">
           {{ isSubmitting ? '提交中...' : '🚀 開始挖掘' }}
+        </button>
+      </form>
+    </div>
+
+    <!-- 策略優化表單 -->
+    <div v-if="activeTab === 'strategy-optimization'" class="section">
+      <h2>🎯 策略優化</h2>
+      <p class="section-description">使用 AI 分析策略代碼和回測結果，提供專業優化建議</p>
+
+      <form @submit.prevent="submitStrategyOptimization" class="optimization-form">
+        <!-- 策略選擇 -->
+        <div class="form-group">
+          <label>
+            選擇要優化的策略
+            <span class="label-hint">（必須有至少一次完成的回測記錄）</span>
+          </label>
+          <select v-model.number="optimizationForm.strategy_id" required>
+            <option value="">-- 請選擇策略 --</option>
+            <option v-for="strategy in strategiesWithBacktests" :key="strategy.id" :value="strategy.id">
+              {{ strategy.name }} ({{ strategy.engine_type }}) - 最近回測: {{ formatStrategyBacktestInfo(strategy) }}
+            </option>
+          </select>
+        </div>
+
+        <!-- 當前績效顯示 -->
+        <div v-if="selectedStrategyPerformance" class="current-performance-preview">
+          <h4>📊 當前績效</h4>
+          <div class="metrics-row">
+            <div class="metric-item">
+              <span class="metric-label">Sharpe Ratio</span>
+              <span class="metric-value">{{ formatNumber(selectedStrategyPerformance.sharpe_ratio, 2) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">年化報酬率</span>
+              <span class="metric-value">{{ formatPercent(selectedStrategyPerformance.annual_return) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">最大回撤</span>
+              <span class="metric-value">{{ formatPercent(selectedStrategyPerformance.max_drawdown) }}</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-label">勝率</span>
+              <span class="metric-value">{{ formatPercent(selectedStrategyPerformance.win_rate) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 優化目標 -->
+        <div class="form-group">
+          <label>優化目標</label>
+          <textarea
+            v-model="optimizationForm.optimization_goal"
+            placeholder="例如：提升 Sharpe Ratio 至 2.0 以上，同時降低最大回撤至 15% 以內"
+            rows="3"
+            required
+          ></textarea>
+          <p class="field-hint">💡 具體描述您的優化目標，AI 會根據目標提供針對性建議</p>
+        </div>
+
+        <!-- 高級選項 -->
+        <div class="form-row">
+          <div class="form-group">
+            <label>LLM 模型</label>
+            <select v-model="optimizationForm.llm_model">
+              <option value="gpt-4-turbo">GPT-4 Turbo（推薦）</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo（省成本）</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>分析深度</label>
+            <select v-model.number="optimizationForm.max_iterations">
+              <option value="1">基礎分析（約 $0.05-0.10）</option>
+              <option value="3">深度分析（約 $0.15-0.30）</option>
+              <option value="5">完整分析（約 $0.30-0.50）</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" :disabled="isSubmitting || !optimizationForm.strategy_id">
+          {{ isSubmitting ? '分析中...' : '🔍 開始優化分析' }}
         </button>
       </form>
     </div>
@@ -250,7 +337,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const config = useRuntimeConfig()
@@ -266,13 +353,34 @@ const miningForm = ref({
   max_iterations: 3
 })
 
+const optimizationForm = ref({
+  strategy_id: '',
+  optimization_goal: '提升 Sharpe Ratio 至 2.0 以上，同時降低最大回撤至 15% 以內',
+  llm_model: 'gpt-4-turbo',
+  max_iterations: 1
+})
+
 const tasks = ref([])
 const factors = ref([])
 const models = ref([])
+const strategiesWithBacktests = ref([])
 const expandedFactors = ref(new Set())
 const expandedSections = ref(new Set())
 const editingFactorId = ref(null)
 const editingFactorName = ref('')
+
+// 選中策略的當前績效
+const selectedStrategyPerformance = computed(() => {
+  if (!optimizationForm.value.strategy_id) return null
+
+  const strategy = strategiesWithBacktests.value.find(
+    s => s.id === optimizationForm.value.strategy_id
+  )
+
+  if (!strategy || !strategy.latest_backtest_result) return null
+
+  return strategy.latest_backtest_result
+})
 
 // 切換因子代碼顯示
 const toggleFactorCode = (factorId: number) => {
@@ -347,6 +455,97 @@ const submitFactorMining = async () => {
   } finally {
     isSubmitting.value = false
   }
+}
+
+// 提交策略優化
+const submitStrategyOptimization = async () => {
+  if (!optimizationForm.value.strategy_id) {
+    alert('請選擇要優化的策略')
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    const token = localStorage.getItem('access_token')
+    const response = await $fetch(`${config.public.apiBase}/api/v1/rdagent/strategy-optimization`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: optimizationForm.value
+    })
+
+    alert('策略優化任務已提交！任務 ID: ' + response.id + '\n\n分析通常需要 30-60 秒，請稍後在「任務列表」查看結果。')
+    activeTab.value = 'tasks'
+    loadTasks()
+  } catch (error: any) {
+    alert('提交失敗：' + (error.data?.detail || error.message))
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+// 載入有回測記錄的策略列表
+const loadStrategiesWithBacktests = async () => {
+  try {
+    const token = localStorage.getItem('access_token')
+    const strategies = await $fetch(`${config.public.apiBase}/api/v1/strategies?limit=100`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+
+    // 為每個策略載入最近的回測結果
+    const strategiesWithResults = []
+    for (const strategy of strategies) {
+      try {
+        // 獲取該策略最近的完成回測
+        const backtests = await $fetch(
+          `${config.public.apiBase}/api/v1/backtests?strategy_id=${strategy.id}&status=COMPLETED&limit=1`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        )
+
+        if (backtests && backtests.length > 0) {
+          const backtest = backtests[0]
+          strategiesWithResults.push({
+            ...strategy,
+            latest_backtest_id: backtest.id,
+            latest_backtest_result: backtest.result || null,
+            latest_backtest_date: backtest.completed_at
+          })
+        }
+      } catch (error) {
+        // 忽略單個策略的錯誤
+        console.error(`Failed to load backtests for strategy ${strategy.id}:`, error)
+      }
+    }
+
+    strategiesWithBacktests.value = strategiesWithResults
+  } catch (error) {
+    console.error('Failed to load strategies:', error)
+  }
+}
+
+// 格式化策略回測資訊
+const formatStrategyBacktestInfo = (strategy: any) => {
+  if (!strategy.latest_backtest_result) return '無回測記錄'
+
+  const result = strategy.latest_backtest_result
+  const sharpe = result.sharpe_ratio != null ? result.sharpe_ratio.toFixed(2) : 'N/A'
+  const returnPct = result.annual_return != null ? (result.annual_return * 100).toFixed(2) + '%' : 'N/A'
+
+  return `Sharpe ${sharpe}, 年化 ${returnPct}`
+}
+
+// 格式化數字
+const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
+  if (value == null) return 'N/A'
+  return value.toFixed(decimals)
+}
+
+// 格式化百分比
+const formatPercent = (value: number | null | undefined): string => {
+  if (value == null) return 'N/A'
+  return (value * 100).toFixed(2) + '%'
 }
 
 // 載入任務列表
@@ -464,6 +663,14 @@ onMounted(async () => {
   loadTasks()
   loadFactors()
   loadModels()
+  loadStrategiesWithBacktests()
+})
+
+// 當切換到策略優化標籤時，重新載入策略列表
+watch(activeTab, (newTab) => {
+  if (newTab === 'strategy-optimization') {
+    loadStrategiesWithBacktests()
+  }
 })
 </script>
 

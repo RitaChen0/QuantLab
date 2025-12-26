@@ -63,140 +63,149 @@
           return {"buy": top10.index.tolist()}
 
 
+根據我的檢查，RD-Agent 功能的完成度如下：
 
-Qlib + RD_Agent 
+  ✅ 已完成功能（約 85%）
 
-  - 支援更多表達式（RSI, MACD, Bollinger Bands 等）
-  - 回測結果視覺化（表達式值圖表）
+  1. 因子挖掘（Factor Mining） - 100% 完成
 
-  - 調整模型參數以優化績效
-  - 新增其他 ML 模型（如 XGBoost、LSTM）
-  - 實作 MLflow 實驗追蹤
-  - 擴展更多技術指標
+  - ✅ API 端點：POST /api/v1/rdagent/factor-mining
+  - ✅ Celery 異步任務執行
+  - ✅ RD-Agent 核心整合（rdagent.app.qlib_rd_loop.factor.main）
+  - ✅ 結果解析和因子保存
+  - ✅ LLM 成本計算
+  - ✅ 前端頁面
 
+  2. 模型生成（Model Generation） - 100% 完成
 
-  🤖 AI 策略整合方案
+  - ✅ API 端點：POST /api/v1/rdagent/model-generation
+  - ✅ Celery 異步任務執行
+  - ✅ RD-Agent 核心整合（rdagent.app.qlib_rd_loop.model.main）
+  - ✅ PyTorch 代碼自動生成（GRU/LSTM）
+  - ✅ Qlib 配置自動生成
+  - ✅ 結果保存到 generated_models 表
 
-  1️⃣ AI 策略生成器（程式碼生成）
+  3. 任務管理 - 100% 完成
 
-  最直接的做法，讓 AI 根據用戶描述自動生成回測策略代碼：
+  - ✅ 獲取任務列表：GET /api/v1/rdagent/tasks
+  - ✅ 獲取任務詳情：GET /api/v1/rdagent/tasks/{task_id}
+  - ✅ 重試失敗任務：POST /api/v1/rdagent/tasks/{task_id}/retry
+  - ✅ 刪除任務：DELETE /api/v1/rdagent/tasks/{task_id}
 
-  實作方式：
-  # 用戶輸入：「我想做均線交叉策略，5日線上穿20日線買入」
-  # AI 生成 Backtrader 策略代碼
+  4. 因子/模型查詢 - 100% 完成
 
-  import backtrader as bt
-
-  class MAStrategy(bt.Strategy):
-      params = (('fast', 5), ('slow', 20))
-
-      def __init__(self):
-          self.fast_ma = bt.indicators.SMA(period=self.params.fast)
-          self.slow_ma = bt.indicators.SMA(period=self.params.slow)
-          self.crossover = bt.indicators.CrossOver(self.fast_ma, self.slow_ma)
-
-      def next(self):
-          if self.crossover > 0:  # 黃金交叉
-              self.buy()
-          elif self.crossover < 0:  # 死亡交叉
-              self.sell()
-
-  技術實現：
-  - OpenAI GPT-4：擅長程式碼生成，支援 function calling
-  - Claude 3.5 Sonnet：更好的推理能力，適合複雜策略
-  - 提示詞模板：包含 Backtrader API 文檔、常用指標、安全規範
+  - ✅ 獲取因子列表：GET /api/v1/rdagent/factors
+  - ✅ 獲取模型列表：GET /api/v1/rdagent/models
+  - ✅ 更新因子：PATCH /api/v1/rdagent/factors/{factor_id}
 
   ---
-  2️⃣ AI 參數優化建議
+  ❌ 未完成功能（約 15%）
 
-  分析歷史回測結果，建議最佳參數組合：
+  1. 策略優化（Strategy Optimization） - ⚠️ 僅 DEMO 模式
 
-  實作方式：
-  # 輸入：策略代碼 + 過去 100 次回測結果
-  # AI 輸出：「建議將 RSI 閾值從 30/70 調整為 25/75，
-  #          停損點從 2% 提高到 3%，預期報酬率提升 15%」
+  位置：backend/app/tasks/rdagent_tasks.py:232-272
 
-  技術架構：
-  - 使用 LangChain 串接多個 AI 工具
-  - 整合 回測結果分析：勝率、報酬率、最大回撤
-  - 使用 Optuna 進行參數搜索，AI 解釋最佳參數背後邏輯
+  當前狀態：
+  # ========== RD-Agent 核心邏輯 ==========
+  # TODO: 實作 RD-Agent 策略優化邏輯
+  # 參考：https://github.com/microsoft/RD-Agent/blob/main/rdagent/scenarios/qlib/model/
 
-  ---
-  3️⃣ AI 交易信號輔助
+  # ========== 暫時模擬結果 ==========
+  import time
+  time.sleep(8)  # 模擬處理時間
 
-  結合技術指標 + 新聞情緒 + AI 判斷：
+  service.update_task_status(
+      task_id,
+      TaskStatus.COMPLETED,
+      result={
+          "optimization_improvements": {
+              "sharpe_ratio_before": 1.2,
+              "sharpe_ratio_after": 1.8,
+              "improvement_pct": 50.0
+          },
+          "message": "Strategy optimization completed (DEMO MODE)"  # ← 假數據
+      },
+      llm_calls=25,
+      llm_cost=0.60
+  )
 
-  實作方式：
-  # 多模態輸入：
-  # 1. 技術指標數據（RSI、MACD、成交量）
-  # 2. 新聞標題爬蟲（「台積電獲大單」）
-  # 3. 財報數據（營收年增率 20%）
-
-  # AI 輸出：
-  # "綜合技術面黃金交叉 + 基本面利多，建議買入，信心度 85%"
-
-  技術實現：
-  - 情緒分析：使用 FinBERT 或 GPT-4 分析財經新聞
-  - RAG 架構：向量數據庫存儲歷史新聞與股價關聯
-  - 多因子模型：AI 動態調整因子權重
-
-  ---
-  4️⃣ 自然語言策略編輯器
-
-  讓非技術用戶用對話方式建立策略：
-
-  用戶體驗：
-  用戶："當台積電跌破5日均線時賣出"
-  AI：「我幫你添加了這個條件，需要設定停損點嗎？」
-  用戶："是的，跌破 3% 就停損"
-  AI：「策略已更新，要立即回測嗎？」
-
-  技術實現：
-  - Conversational Agent：使用 LangChain Agent 框架
-  - 狀態管理：追蹤多輪對話上下文
-  - 策略 DSL：將自然語言轉換為結構化策略描述
+  缺少的實作：
+  - 讀取現有策略代碼
+  - 調用 RD-Agent 策略優化 API
+  - 解析優化建議
+  - 生成優化後的策略代碼
+  - 執行回測驗證改進
 
   ---
-  🛠️ 針對 QuantLab 的具體實作建議
+  2. Transformer 模型代碼生成 - 未實現
 
-  基於你目前的架構，我建議分階段實作：
+  位置：backend/app/utils/model_code_generator.py:314-327
 
-  Phase 1：AI 策略生成器（最快見效）
+  當前狀態：
+  def _generate_transformer_model(...):
+      """生成 Transformer 模型代码"""
+      # TODO: 实现 Transformer 代码生成
+      # 暂时返回 GRU 代码作为占位符
+      logger.warning(f"Transformer code generation not yet implemented, using GRU as fallback")
+      return ModelCodeGenerator._generate_gru_model(...)  # ← fallback
 
-  # 新增 API 端點
-  POST /api/v1/ai/generate-strategy
-  {
-    "description": "RSI 超賣買入，超買賣出",
-    "stocks": ["2330", "2454"],
-    "timeframe": "daily"
-  }
-
-  # 回傳生成的策略代碼 + 解釋
-
-  需要新增的模組：
-  - app/services/ai_service.py：調用 OpenAI/Claude API
-  - app/api/v1/ai.py：AI 相關端點
-  - 提示詞模板庫：app/prompts/strategy_generation.py
+  影響：當 RD-Agent 生成 Transformer 架構時，會回退為 GRU 代碼
 
   ---
-  Phase 2：策略性能分析
+  3. MLP 模型代碼生成 - 未實現
 
-  POST /api/v1/ai/analyze-backtest
-  {
-    "backtest_id": 123
-  }
+  位置：backend/app/utils/model_code_generator.py:329-341
 
-  # AI 分析回測結果，給出改進建議
+  當前狀態：
+  def _generate_mlp_model(...):
+      """生成 MLP 模型代码（用于 Tabular 类型）"""
+      # TODO: 实现 MLP 代码生成
+      logger.warning(f"MLP code generation not yet implemented, using GRU as fallback")
+      return ModelCodeGenerator._generate_gru_model(...)  # ← fallback
 
-  ---
-  Phase 3：對話式策略編輯器
-
-  - 前端集成聊天界面（類似 ChatGPT）
-  - WebSocket 實時對話
-  - 策略即時預覽與修改
+  影響：當 RD-Agent 生成 MLP（多層感知器）架構時，會回退為 GRU 代碼
 
   ---
-  📚 參考案例
+  📊 功能完成度總結
+
+  | 功能模組             | 完成度  | 備註                     |
+  |----------------------|---------|--------------------------|
+  | 因子挖掘             | 100% ✅ | 完整整合 RD-Agent        |
+  | 模型生成             | 100% ✅ | 支援 GRU/LSTM 代碼生成   |
+  | 策略優化             | 10% ❌  | 僅 DEMO 模式，未實際整合 |
+  | Transformer 代碼生成 | 0% ❌   | Fallback 到 GRU          |
+  | MLP 代碼生成         | 0% ❌   | Fallback 到 GRU          |
+  | 任務管理 API         | 100% ✅ | CRUD 完整                |
+  | 前端介面             | 100% ✅ | /rdagent 頁面            |
+  | 總體完成度           | 85%     | 核心功能已完成           |
+
+  ---
+  🎯 建議優先級
+
+  如果要完成剩餘功能，建議順序：
+
+  P0（高優先級）
+
+  1. 策略優化核心邏輯
+    - 影響：用戶無法使用策略優化功能（目前返回假數據）
+    - 工作量：約 2-3 天
+    - 需要整合 RD-Agent 的 strategy_optimization 模組
+
+  P1（中優先級）
+
+  2. Transformer 代碼生成
+    - 影響：無法生成 Transformer 模型代碼
+    - 工作量：約 1-2 天
+    - 參考 GRU 實現，添加 Multi-Head Attention 層
+
+  P2（低優先級）
+
+  3. MLP 代碼生成
+    - 影響：無法生成 MLP 模型代碼
+    - 工作量：約 0.5-1 天
+    - MLP 結構簡單，容易實現
+
+
 
   1. QuantConnect LEAN：支援 AI 驅動的 Alpha 生成
   2. Alpaca AutoTrader：GPT-4 生成交易邏輯
@@ -204,188 +213,145 @@ Qlib + RD_Agent
   4. Bloomberg Terminal GPT：財經新聞情緒分析
 
 
+根據我的檢查，RD-Agent 功能的完成度如下：
 
-整合 Shioaji
+  ✅ 已完成功能（約 85%）
 
-● 根據 QuantLab 現有架構，我建議採用分層存儲 + 用途分離的策略。以下是詳細分析：
+  1. 因子挖掘（Factor Mining） - 100% 完成
 
-  📊 資料特性對比
+  - ✅ API 端點：POST /api/v1/rdagent/factor-mining
+  - ✅ Celery 異步任務執行
+  - ✅ RD-Agent 核心整合（rdagent.app.qlib_rd_loop.factor.main）
+  - ✅ 結果解析和因子保存
+  - ✅ LLM 成本計算
+  - ✅ 前端頁面
 
-  | 維度   | 日線資料 (FinLab)             | 分鐘線資料 (Shioaji)                       |
-  |------|---------------------------|---------------------------------------|
-  | 資料量  | ~2,671 檔 × 10 年 ≈ 1000 萬筆 | ~2,671 檔 × 270 分/日 × 250 天 ≈ 1.8 億筆/年 |
-  | 更新頻率 | 每日收盤後                     | 即時 or 每分鐘                             |
-  | 適用場景 | 長期策略、基本面分析                | 日內交易、高頻策略                             |
-  | 存儲成本 | 低（目前約 500MB）              | 高（預估 10-50GB/年）                       |
+  2. 模型生成（Model Generation） - 100% 完成
 
-  🎯 推薦方案：混合架構
+  - ✅ API 端點：POST /api/v1/rdagent/model-generation
+  - ✅ Celery 異步任務執行
+  - ✅ RD-Agent 核心整合（rdagent.app.qlib_rd_loop.model.main）
+  - ✅ PyTorch 代碼自動生成（GRU/LSTM）
+  - ✅ Qlib 配置自動生成
+  - ✅ 結果保存到 generated_models 表
 
-  1. 資料表設計（TimescaleDB hypertable）
+  3. 任務管理 - 100% 完成
 
-  -- 分鐘線資料表（使用 TimescaleDB 時序資料庫）
-  CREATE TABLE stock_minute_prices (
-      time TIMESTAMPTZ NOT NULL,           -- 時間戳（精確到分鐘）
-      stock_id VARCHAR(10) NOT NULL,       -- 股票代碼
-      open NUMERIC(10, 2),
-      high NUMERIC(10, 2),
-      low NUMERIC(10, 2),
-      close NUMERIC(10, 2),
-      volume BIGINT,
-      source VARCHAR(20) DEFAULT 'shioaji', -- 資料來源標記
-      PRIMARY KEY (time, stock_id)
-  );
+  - ✅ 獲取任務列表：GET /api/v1/rdagent/tasks
+  - ✅ 獲取任務詳情：GET /api/v1/rdagent/tasks/{task_id}
+  - ✅ 重試失敗任務：POST /api/v1/rdagent/tasks/{task_id}/retry
+  - ✅ 刪除任務：DELETE /api/v1/rdagent/tasks/{task_id}
 
-  -- 轉換為 TimescaleDB hypertable（自動分區）
-  SELECT create_hypertable('stock_minute_prices', 'time');
+  4. 因子/模型查詢 - 100% 完成
 
-  -- 設定資料保留政策（例如只保留最近 3 個月）
-  SELECT add_retention_policy('stock_minute_prices', INTERVAL '90 days');
+  - ✅ 獲取因子列表：GET /api/v1/rdagent/factors
+  - ✅ 獲取模型列表：GET /api/v1/rdagent/models
+  - ✅ 更新因子：PATCH /api/v1/rdagent/factors/{factor_id}
 
-  優點：
-  - TimescaleDB 已在系統中（docker-compose.yml:9 使用 timescale/timescaledb:latest-pg15）
-  - 自動時間分區，查詢效能佳
-  - 內建壓縮功能（可節省 90% 存儲空間）
-  - 自動資料保留政策（舊資料自動刪除）
+  ---
+  ❌ 未完成功能（約 15%）
 
-  2. 資料同步策略
+  1. 策略優化（Strategy Optimization） - ⚠️ 僅 DEMO 模式
 
-  # backend/app/tasks/shioaji_sync.py
+  位置：backend/app/tasks/rdagent_tasks.py:232-272
 
-  @celery_app.task(bind=True, name="app.tasks.sync_minute_prices")
-  def sync_minute_prices(self: Task, stock_ids: list[str], date: str) -> dict:
-      """
-      同步分鐘線資料（歷史資料補齊）
-      
-      Args:
-          stock_ids: 股票代碼列表
-          date: 日期 (YYYY-MM-DD)
-      """
-      # 使用 Shioaji API 獲取歷史分鐘線
-      # 批次寫入 TimescaleDB
-      pass
+  當前狀態：
+  # ========== RD-Agent 核心邏輯 ==========
+  # TODO: 實作 RD-Agent 策略優化邏輯
+  # 參考：https://github.com/microsoft/RD-Agent/blob/main/rdagent/scenarios/qlib/model/
 
-  @celery_app.task(bind=True, name="app.tasks.sync_realtime_minute_prices")
-  def sync_realtime_minute_prices(self: Task) -> dict:
-      """
-      同步即時分鐘線資料（僅交易時段）
-      
-      Celery Beat 配置：每 1 分鐘執行一次（9:00-13:30）
-      """
-      pass
+  # ========== 暫時模擬結果 ==========
+  import time
+  time.sleep(8)  # 模擬處理時間
 
-  建議同步策略：
-  - 歷史資料：一次性批次匯入（過去 3-6 個月）
-  - 即時資料：交易時段每分鐘同步（僅熱門股票，如台積電、鴻海等前 50 大）
-  - 全市場資料：收盤後批次同步當日分鐘線（所有股票）
+  service.update_task_status(
+      task_id,
+      TaskStatus.COMPLETED,
+      result={
+          "optimization_improvements": {
+              "sharpe_ratio_before": 1.2,
+              "sharpe_ratio_after": 1.8,
+              "improvement_pct": 50.0
+          },
+          "message": "Strategy optimization completed (DEMO MODE)"  # ← 假數據
+      },
+      llm_calls=25,
+      llm_cost=0.60
+  )
 
-  3. Qlib 分鐘線支援
+  缺少的實作：
+  - 讀取現有策略代碼
+  - 調用 RD-Agent 策略優化 API
+  - 解析優化建議
+  - 生成優化後的策略代碼
+  - 執行回測驗證改進
 
-  # backend/app/core/qlib_config.py
+  ---
+  2. Transformer 模型代碼生成 - 未實現
 
-  def init_qlib_minute_data():
-      """初始化 Qlib 分鐘線引擎"""
-      import qlib
-      from qlib.config import C
+  位置：backend/app/utils/model_code_generator.py:314-327
 
-      qlib.init(
-          provider_uri="/data/qlib/tw_stock_minute",  # 分鐘線資料路徑
-          region="cn",  # 使用中國日曆（最接近台股）
-          freq="1min",  # 分鐘線頻率 ✅
-          expression_cache=None,
-          dataset_cache=None,
-      )
+  當前狀態：
+  def _generate_transformer_model(...):
+      """生成 Transformer 模型代码"""
+      # TODO: 实现 Transformer 代码生成
+      # 暂时返回 GRU 代码作为占位符
+      logger.warning(f"Transformer code generation not yet implemented, using GRU as fallback")
+      return ModelCodeGenerator._generate_gru_model(...)  # ← fallback
 
-  Qlib 資料轉換：
-  # 將 TimescaleDB 分鐘線匯出為 Qlib 格式
-  docker compose exec backend python scripts/export_minute_to_qlib.py \
-    --output-dir /data/qlib/tw_stock_minute \
-    --freq 1min
+  影響：當 RD-Agent 生成 Transformer 架構時，會回退為 GRU 代碼
 
-  4. API 端點設計
+  ---
+  3. MLP 模型代碼生成 - 未實現
 
-  # backend/app/api/v1/data.py
+  位置：backend/app/utils/model_code_generator.py:329-341
 
-  @router.get("/minute-price/{stock_id}")
-  async def get_minute_price(
-      stock_id: str,
-      start_date: str,
-      end_date: str,
-      interval: int = 1,  # 1, 5, 15, 30, 60 分鐘
-      current_user: User = Depends(get_current_user),
-  ):
-      """
-      獲取分鐘線資料
-      
-      Args:
-          interval: K 線週期（1/5/15/30/60 分鐘）
-      """
-      # 查詢 stock_minute_prices
-      # 根據 interval 進行聚合（resample）
-      pass
+  當前狀態：
+  def _generate_mlp_model(...):
+      """生成 MLP 模型代码（用于 Tabular 类型）"""
+      # TODO: 实现 MLP 代码生成
+      logger.warning(f"MLP code generation not yet implemented, using GRU as fallback")
+      return ModelCodeGenerator._generate_gru_model(...)  # ← fallback
 
-  5. 回測引擎整合
+  影響：當 RD-Agent 生成 MLP（多層感知器）架構時，會回退為 GRU 代碼
 
-  # backend/app/services/qlib_backtest_engine.py
+  ---
+  📊 功能完成度總結
 
-  class QlibBacktestEngine:
-      def run_backtest(
-          self,
-          strategy_code: str,
-          freq: str = "day",  # "day" or "1min" ✅
-          **kwargs
-      ):
-          if freq == "1min":
-              # 切換到分鐘線 Qlib 引擎
-              init_qlib_minute_data()
-          else:
-              # 使用日線 Qlib 引擎
-              init_qlib()
+  | 功能模組             | 完成度  | 備註                     |
+  |----------------------|---------|--------------------------|
+  | 因子挖掘             | 100% ✅ | 完整整合 RD-Agent        |
+  | 模型生成             | 100% ✅ | 支援 GRU/LSTM 代碼生成   |
+  | 策略優化             | 10% ❌  | 僅 DEMO 模式，未實際整合 |
+  | Transformer 代碼生成 | 0% ❌   | Fallback 到 GRU          |
+  | MLP 代碼生成         | 0% ❌   | Fallback 到 GRU          |
+  | 任務管理 API         | 100% ✅ | CRUD 完整                |
+  | 前端介面             | 100% ✅ | /rdagent 頁面            |
+  | 總體完成度           | 85%     | 核心功能已完成           |
 
-          # 執行回測...
+  ---
+  🎯 建議優先級
 
-  ⚖️ 方案比較
+  如果要完成剩餘功能，建議順序：
 
-  | 方案                 | 優點        | 缺點       | 適用場景      |
-  |--------------------|-----------|----------|-----------|
-  | A. 全部存 TimescaleDB | 統一管理、查詢靈活 | 存儲成本高    | 需要歷史分鐘線回測 |
-  | B. 僅存最近 N 天        | 成本低、效能佳   | 無法回測長期策略 | 只做日內交易    |
-  | C. 日線 + 分鐘線混合      | 平衡成本與功能   | 架構較複雜    | 推薦方案 ✅    |
+  P0（高優先級）
 
-  🚀 實作優先順序
+  1. 策略優化核心邏輯
+    - 影響：用戶無法使用策略優化功能（目前返回假數據）
+    - 工作量：約 2-3 天
+    - 需要整合 RD-Agent 的 strategy_optimization 模組
 
-  Phase 1：基礎設施（1-2 週）
+  P1（中優先級）
 
-  1. ✅ 建立 stock_minute_prices TimescaleDB hypertable
-  2. ✅ 實作 Shioaji API 客戶端（app/services/shioaji_client.py）
-  3. ✅ 新增 Alembic 遷移腳本
+  2. Transformer 代碼生成
+    - 影響：無法生成 Transformer 模型代碼
+    - 工作量：約 1-2 天
+    - 參考 GRU 實現，添加 Multi-Head Attention 層
 
-  Phase 2：資料同步（2-3 週）
+  P2（低優先級）
 
-  4. ✅ 實作歷史分鐘線批次同步任務
-  5. ✅ 實作即時分鐘線同步任務（Celery Beat）
-  6. ✅ 設定資料保留政策（保留 90 天）
+  3. MLP 代碼生成
+    - 影響：無法生成 MLP 模型代碼
+    - 工作量：約 0.5-1 天
+    - MLP 結構簡單，容易實現
 
-  Phase 3：回測整合（2-3 週）
-
-  7. ✅ 將分鐘線匯出為 Qlib v2 格式
-  8. ✅ 支援分鐘線回測（Backtrader + Qlib）
-  9. ✅ 前端新增「時間粒度」選擇器
-
-  Phase 4：最佳化（選配）
-
-  10. ⭐ TimescaleDB 壓縮（節省 90% 空間）
-  11. ⭐ 即時 WebSocket 推送（交易時段）
-  12. ⭐ 分鐘線技術指標快取
-
-  💡 關鍵決策建議
-
-  1. 存儲策略：使用 TimescaleDB 自動分區 + 壓縮 + 保留政策
-  2. 同步策略：歷史批次 + 即時增量（僅熱門股）
-  3. 資料保留：分鐘線保留 3-6 個月，日線永久保留
-  4. 回測引擎：Qlib 支援日線/分鐘線切換
-  5. 監控重點：TimescaleDB 磁碟用量、Shioaji API 配額
-
-  需要我協助實作哪個部分嗎？例如：
-  - 建立資料表遷移腳本
-  - 實作 Shioaji API 客戶端
-  - 設定 Celery 同步任務
