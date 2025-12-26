@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.models.rdagent import RDAgentTask, GeneratedFactor, GeneratedModel, FactorEvaluation, TaskStatus, TaskType
 from app.schemas.rdagent import FactorMiningRequest, ModelGenerationRequest, StrategyOptimizationRequest
+from app.utils.model_code_generator import ModelCodeGenerator
 
 
 class RDAgentService:
@@ -728,14 +729,14 @@ class RDAgentService:
         return models
 
     def _extract_model_from_task(self, task: Any, loop_num: int) -> Optional[Dict[str, Any]]:
-        """從 ModelTask 物件中提取模型定義
+        """從 ModelTask 物件中提取模型定義並生成代碼
 
         Args:
             task: ModelTask 物件
             loop_num: 迭代編號
 
         Returns:
-            model: 模型字典，包含 name, description, architecture, etc.
+            model: 模型字典，包含 name, description, architecture, code, qlib_config 等
         """
         try:
             # 提取模型屬性
@@ -754,6 +755,29 @@ class RDAgentService:
                 if match:
                     model_name = match.group(1)
 
+            # ========== 新增：生成 PyTorch 代碼和 Qlib 配置 ==========
+            code = None
+            qlib_config = None
+
+            if architecture:  # 只有當有架構描述時才生成代碼
+                try:
+                    logger.info(f"Generating PyTorch code for {model_name}...")
+                    code, qlib_config = ModelCodeGenerator.generate_pytorch_code(
+                        model_name=model_name,
+                        model_type=model_type,
+                        architecture=architecture,
+                        hyperparameters=hyperparameters,
+                        formulation=formulation
+                    )
+                    logger.info(f"✅ Successfully generated code for {model_name}")
+                    logger.info(f"   Code length: {len(code)} characters")
+                    logger.info(f"   Qlib config keys: {list(qlib_config.keys())}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to generate code for {model_name}: {e}")
+                    logger.warning(f"   Model will be saved without code")
+            else:
+                logger.warning(f"No architecture description for {model_name}, skipping code generation")
+
             model = {
                 "name": model_name,
                 "description": model_description or f"Model generated in Loop {loop_num}",
@@ -762,10 +786,13 @@ class RDAgentService:
                 "architecture": architecture,
                 "variables": variables if isinstance(variables, dict) else {},
                 "hyperparameters": hyperparameters if isinstance(hyperparameters, dict) else {},
+                "code": code,  # 新增：生成的代碼
+                "qlib_config": qlib_config,  # 新增：Qlib 配置
                 "iteration": loop_num,
                 "metadata": {
                     "loop_num": loop_num,
-                    "task_type": type(task).__name__
+                    "task_type": type(task).__name__,
+                    "code_generated": code is not None,  # 標記是否生成了代碼
                 }
             }
 
@@ -786,6 +813,8 @@ class RDAgentService:
         architecture: Optional[str] = None,
         variables: Optional[Dict[str, Any]] = None,
         hyperparameters: Optional[Dict[str, Any]] = None,
+        code: Optional[str] = None,  # 新增：模型代碼
+        qlib_config: Optional[Dict[str, Any]] = None,  # 新增：Qlib 配置
         iteration: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> GeneratedModel:
@@ -800,6 +829,8 @@ class RDAgentService:
             architecture=architecture,
             variables=variables,
             hyperparameters=hyperparameters,
+            code=code,  # 新增：保存代碼
+            qlib_config=qlib_config,  # 新增：保存 Qlib 配置
             iteration=iteration,
             model_metadata=metadata
         )
@@ -808,6 +839,10 @@ class RDAgentService:
         self.db.refresh(model)
 
         logger.info(f"Saved generated model {model.id}: {name}")
+        if code:
+            logger.info(f"  ✅ Model includes generated code ({len(code)} characters)")
+        if qlib_config:
+            logger.info(f"  ✅ Model includes Qlib config")
         return model
 
     def get_generated_models(

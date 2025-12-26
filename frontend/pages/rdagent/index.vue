@@ -27,6 +27,12 @@
       >
         生成的因子
       </button>
+      <button
+        :class="['tab', { active: activeTab === 'models' }]"
+        @click="activeTab = 'models'"
+      >
+        生成的模型
+      </button>
     </div>
 
     <!-- 因子挖掘表單 -->
@@ -147,6 +153,99 @@
         </div>
       </div>
     </div>
+
+    <!-- 生成的模型 -->
+    <div v-if="activeTab === 'models'" class="section">
+      <h2>🧠 生成的模型</h2>
+      <div v-if="models.length === 0" class="empty-state">
+        尚無生成的模型
+      </div>
+      <div v-else class="models-grid">
+        <div v-for="model in models" :key="model.id" class="model-card">
+          <div class="model-header">
+            <div class="model-title">
+              <h3>{{ model.name }}</h3>
+              <span class="model-type-badge">{{ model.model_type }}</span>
+            </div>
+            <div class="model-meta">
+              <span class="model-date">{{ formatDate(model.created_at) }}</span>
+            </div>
+          </div>
+
+          <p v-if="model.description" class="model-description">{{ model.description }}</p>
+
+          <!-- 評估指標 -->
+          <div v-if="model.sharpe_ratio || model.annual_return" class="model-metrics">
+            <div v-if="model.sharpe_ratio" class="metric-item">
+              <span class="metric-label">Sharpe Ratio</span>
+              <span class="metric-value">{{ model.sharpe_ratio.toFixed(2) }}</span>
+            </div>
+            <div v-if="model.annual_return" class="metric-item">
+              <span class="metric-label">年化報酬率</span>
+              <span class="metric-value">{{ (model.annual_return * 100).toFixed(2) }}%</span>
+            </div>
+            <div v-if="model.max_drawdown" class="metric-item">
+              <span class="metric-label">最大回撤</span>
+              <span class="metric-value">{{ (model.max_drawdown * 100).toFixed(2) }}%</span>
+            </div>
+          </div>
+
+          <!-- 架構描述 -->
+          <div v-if="model.architecture" class="model-architecture">
+            <strong>架構：</strong>
+            <p>{{ model.architecture }}</p>
+          </div>
+
+          <!-- 數學公式 -->
+          <div v-if="model.formulation" class="model-formulation">
+            <strong>數學公式：</strong>
+            <pre><code>{{ model.formulation }}</code></pre>
+          </div>
+
+          <!-- 超參數 -->
+          <div v-if="model.hyperparameters && Object.keys(model.hyperparameters).length > 0" class="model-hyperparameters">
+            <button
+              type="button"
+              @click="toggleModelSection(model.id, 'hyperparameters')"
+              class="btn-toggle-section"
+            >
+              {{ expandedSections.has(`${model.id}-hyperparameters`) ? '隱藏超參數 ▲' : '查看超參數 ▼' }}
+            </button>
+            <div v-show="expandedSections.has(`${model.id}-hyperparameters`)" class="section-content">
+              <pre><code>{{ JSON.stringify(model.hyperparameters, null, 2) }}</code></pre>
+            </div>
+          </div>
+
+          <!-- 模型代碼 -->
+          <div v-if="model.code" class="model-code-section">
+            <button
+              type="button"
+              @click="toggleModelSection(model.id, 'code')"
+              class="btn-toggle-section"
+            >
+              {{ expandedSections.has(`${model.id}-code`) ? '隱藏代碼 ▲' : '查看代碼 ▼' }}
+            </button>
+            <div v-show="expandedSections.has(`${model.id}-code`)" class="section-content">
+              <pre><code>{{ model.code }}</code></pre>
+            </div>
+          </div>
+
+          <!-- Qlib 配置 -->
+          <div v-if="model.qlib_config && Object.keys(model.qlib_config).length > 0" class="model-qlib-config">
+            <button
+              type="button"
+              @click="toggleModelSection(model.id, 'qlib_config')"
+              class="btn-toggle-section"
+            >
+              {{ expandedSections.has(`${model.id}-qlib_config`) ? '隱藏 Qlib 配置 ▲' : '查看 Qlib 配置 ▼' }}
+            </button>
+            <div v-show="expandedSections.has(`${model.id}-qlib_config`)" class="section-content">
+              <pre><code>{{ JSON.stringify(model.qlib_config, null, 2) }}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -169,7 +268,9 @@ const miningForm = ref({
 
 const tasks = ref([])
 const factors = ref([])
+const models = ref([])
 const expandedFactors = ref(new Set())
+const expandedSections = ref(new Set())
 const editingFactorId = ref(null)
 const editingFactorName = ref('')
 
@@ -272,6 +373,30 @@ const loadFactors = async () => {
   }
 }
 
+// 載入模型列表
+const loadModels = async () => {
+  try {
+    const token = localStorage.getItem('access_token')
+    models.value = await $fetch(`${config.public.apiBase}/api/v1/rdagent/models`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+  } catch (error) {
+    console.error('Failed to load models:', error)
+  }
+}
+
+// 切換模型區段顯示
+const toggleModelSection = (modelId: number, section: string) => {
+  const key = `${modelId}-${section}`
+  if (expandedSections.value.has(key)) {
+    expandedSections.value.delete(key)
+  } else {
+    expandedSections.value.add(key)
+  }
+  // 強制更新視圖
+  expandedSections.value = new Set(expandedSections.value)
+}
+
 // 查看任務詳情
 const viewTaskDetail = (taskId: number) => {
   navigateTo(`/rdagent/tasks/${taskId}`)
@@ -338,6 +463,7 @@ onMounted(async () => {
 
   loadTasks()
   loadFactors()
+  loadModels()
 })
 </script>
 
@@ -465,9 +591,10 @@ onMounted(async () => {
 }
 
 .tasks-grid,
-.factors-grid {
+.factors-grid,
+.models-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1.5rem;
 }
 
@@ -717,5 +844,175 @@ onMounted(async () => {
   text-align: center;
   padding: 3rem;
   color: #9ca3af;
+}
+
+// ========== 模型卡片樣式 ==========
+.model-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  background: white;
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.model-header {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f3f4f6;
+
+  .model-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+
+    h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #111827;
+      flex: 1;
+    }
+
+    .model-type-badge {
+      padding: 0.25rem 0.75rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.025em;
+    }
+  }
+
+  .model-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .model-date {
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+  }
+}
+
+.model-description {
+  color: #4b5563;
+  line-height: 1.6;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+.model-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+  border-radius: 0.5rem;
+
+  .metric-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    .metric-label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #667eea;
+    }
+  }
+}
+
+.model-architecture,
+.model-formulation {
+  margin-bottom: 1rem;
+
+  strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #374151;
+    font-size: 0.875rem;
+  }
+
+  p {
+    color: #4b5563;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  pre {
+    background: #f9fafb;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    overflow-x: auto;
+    margin: 0;
+
+    code {
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 0.875rem;
+      color: #1f2937;
+    }
+  }
+}
+
+.model-hyperparameters,
+.model-code-section,
+.model-qlib-config {
+  margin-top: 1rem;
+}
+
+.btn-toggle-section {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+
+  &:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+  }
+}
+
+.section-content {
+  margin-top: 0.75rem;
+  background: #1f2937;
+  border-radius: 0.375rem;
+  overflow: hidden;
+
+  pre {
+    margin: 0;
+    padding: 1rem;
+    overflow-x: auto;
+
+    code {
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      color: #e5e7eb;
+    }
+  }
 }
 </style>

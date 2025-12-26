@@ -351,6 +351,8 @@ def run_model_generation_task(self: Task, task_id: int):
                         architecture=model_data.get("architecture"),
                         variables=model_data.get("variables"),
                         hyperparameters=model_data.get("hyperparameters"),
+                        code=model_data.get("code"),  # 新增：保存代碼
+                        qlib_config=model_data.get("qlib_config"),  # 新增：保存 Qlib 配置
                         iteration=model_data.get("iteration"),
                         metadata=model_data.get("metadata")
                     )
