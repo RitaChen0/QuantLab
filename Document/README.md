@@ -28,7 +28,8 @@
 | [DATABASE_ER_DIAGRAM.md](DATABASE_ER_DIAGRAM.md) | ER 圖與關聯關係視覺化 | ⭐⭐⭐ |
 | [DATABASE_CHANGE_CHECKLIST.md](DATABASE_CHANGE_CHECKLIST.md) | 資料庫變更檢查清單（56 項） | ⭐⭐⭐ |
 | [DATABASE_MAINTENANCE.md](DATABASE_MAINTENANCE.md) | 數據庫維護指南 | ⭐⭐ |
-| [DATABASE_DOCUMENTATION_SUMMARY.md](DATABASE_DOCUMENTATION_SUMMARY.md) | 數據庫文檔總覽 | ⭐⭐ |
+| [DATABASE_INTEGRITY_SYSTEM.md](DATABASE_INTEGRITY_SYSTEM.md) | 資料庫完整性檢查系統 | ⭐⭐ |
+| [DATABASE_INTEGRITY_COMPLETE_SUMMARY.md](DATABASE_INTEGRITY_COMPLETE_SUMMARY.md) | 資料庫完整性修復總結 | ⭐⭐ |
 
 **使用場景**：
 - 📝 添加/修改資料表前，必讀 `DATABASE_CHANGE_CHECKLIST.md`
@@ -106,11 +107,28 @@
 | [CELERY_TASKS_GUIDE.md](CELERY_TASKS_GUIDE.md) | Celery 任務管理 | ⭐⭐⭐ |
 | [QLIB_SYNC_GUIDE.md](QLIB_SYNC_GUIDE.md) | Qlib 同步詳解 | ⭐⭐⭐ |
 | [SHIOAJI_SYNC_GUIDE.md](SHIOAJI_SYNC_GUIDE.md) | Shioaji 數據同步指南 | ⭐⭐ |
+| [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) | Celery Revoked Tasks 完整解決方案 | ⭐⭐⭐ |
+| [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) | 時區處理完整指南 | ⭐⭐⭐ |
 
 **功能說明**：
 - ⚙️ Celery 定時任務配置與管理
 - 📊 Qlib 數據同步與優化
 - 📈 Shioaji 期貨/股票數據同步
+- 🔧 Celery 任務問題排查與修復
+- ⏰ 系統時區統一處理規範
+
+---
+
+### 🛡️ 系統維護與故障恢復
+
+| 文檔 | 說明 | 重要性 |
+|------|------|--------|
+| [SHUTDOWN_RECOVERY_GUIDE.md](SHUTDOWN_RECOVERY_GUIDE.md) | 系統關機恢復指南 | ⭐⭐⭐ |
+| [QLIB_STRATEGY_OPTIMIZATION_GUIDE.md](QLIB_STRATEGY_OPTIMIZATION_GUIDE.md) | Qlib 策略優化指南 | ⭐⭐ |
+
+**功能說明**：
+- 🔄 系統異常關機後的恢復流程
+- 📈 Qlib 策略優化與調參
 
 ---
 
@@ -178,23 +196,24 @@
 ### 核心文檔（長期維護）
 | 類別 | 文檔數量 |
 |------|---------|
-| 資料庫 | 5 |
+| 資料庫 | 6 |
 | 因子評估 | 2 |
 | 系統管理 | 2 |
 | 系統操作與管理 | 5 |
 | API 與整合 | 3 |
-| Celery 與數據同步 | 3 |
+| Celery 與數據同步 | 5 |
+| 系統維護與故障恢復 | 2 |
 | 其他參考 | 3 |
 | 索引 | 1 |
-| **小計** | **24** |
+| **小計** | **29** |
 
 ### 總計
 | 類別 | 文檔數量 |
 |------|---------|
-| Document/ 目錄 | 24 |
+| Document/ 目錄 | 30 |
 | docs/ 目錄 | 6 |
-| 根目錄 | 6 |
-| **總計** | **36** |
+| 根目錄 | 4 |
+| **總計** | **40** |
 
 ---
 
@@ -212,8 +231,11 @@
 | 配置外部訪問 | [../docs/EXTERNAL_ACCESS.md](../docs/EXTERNAL_ACCESS.md) |
 | 使用 Qlib | [../docs/QLIB.md](../docs/QLIB.md) |
 | 使用 RD-Agent | [../docs/RDAGENT.md](../docs/RDAGENT.md) |
+| 解決 Celery 任務問題 | [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) |
+| 處理時區問題 | [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) |
+| 系統關機恢復 | [SHUTDOWN_RECOVERY_GUIDE.md](SHUTDOWN_RECOVERY_GUIDE.md) |
+| 優化 Qlib 策略 | [QLIB_STRATEGY_OPTIMIZATION_GUIDE.md](QLIB_STRATEGY_OPTIMIZATION_GUIDE.md) |
 | 查看變更記錄 | [../CHANGELOG.md](../CHANGELOG.md) |
-| 了解文檔規劃 | [../DOCUMENTATION_PLAN.md](../DOCUMENTATION_PLAN.md) |
 
 ---
 
@@ -296,6 +318,7 @@ grep -r "遷移" Document/
 ---
 
 **更新記錄**:
+- 2025-12-27 - 文檔整理完成：移除 14 個過程文件，移動 4 個重要文檔到 Document/，更新所有交叉引用
 - 2025-12-23 - 文檔整合與清理：移除 47 個過程文件，整合時區相關指南，新增 API 與操作文檔分類
 - 2025-12-12 - 重新規劃文檔結構，標示核心文檔與待整合文檔
 - 2025-12-09 - 新增改進路線圖與貢獻指南

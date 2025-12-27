@@ -473,7 +473,7 @@ celery_app.conf.update(
 - **應用層時區轉換**：應用代碼使用 `datetime.now(timezone.utc)` 獲取 UTC 時間，必要時轉換為台灣時間
 - **一致性策略**：資料庫、Celery、應用層全部統一使用 UTC，避免時區混亂
 - 高頻任務（15 分鐘間隔）不應設置 `expires`，避免任務立即過期
-- 詳見 [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) 和 [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md)
+- 詳見 [Document/TIMEZONE_COMPLETE_GUIDE.md](Document/TIMEZONE_COMPLETE_GUIDE.md) 和 [Document/CELERY_REVOKED_TASKS_FIX.md](Document/CELERY_REVOKED_TASKS_FIX.md)
 
 **任務清單**（按時間排序）：
 | 時間 | 任務 | 用途 |
@@ -850,9 +850,7 @@ docker compose exec backend celery -A app.core.celery_app inspect revoked
 ```
 
 **詳細說明**：
-- [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題分析
-- [CELERY_EXPIRES_OPTIMIZATION.md](CELERY_EXPIRES_OPTIMIZATION.md) - Expires 智慧優化（2025-12-23）
-- [CELERY_SMART_REVOKED_CLEANUP.md](CELERY_SMART_REVOKED_CLEANUP.md) - 智慧 Revoked 清理機制（2025-12-23）✨
+- [Document/CELERY_REVOKED_TASKS_FIX.md](Document/CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題完整解決方案（包含 Expires 智慧優化和智慧 Revoked 清理機制）
 
 ### 11. 資料庫 created_at 約束錯誤
 
@@ -1051,7 +1049,7 @@ Code Review 時：
 - [ ] stock_minute_prices 操作有正確的時區轉換
 - [ ] Celery crontab 有正確的時區註解
 
-**詳細說明**：參見 [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md)
+**詳細說明**：參見 [Document/TIMEZONE_COMPLETE_GUIDE.md](Document/TIMEZONE_COMPLETE_GUIDE.md)
 
 ---
 
@@ -1063,8 +1061,10 @@ Code Review 時：
 - [OPERATIONS_GUIDE.md](Document/OPERATIONS_GUIDE.md) - 完整操作手冊
 - [QLIB_SYNC_GUIDE.md](Document/QLIB_SYNC_GUIDE.md) - Qlib 同步詳解
 - [CELERY_TASKS_GUIDE.md](Document/CELERY_TASKS_GUIDE.md) - Celery 任務管理
-- [TIMEZONE_COMPLETE_GUIDE.md](TIMEZONE_COMPLETE_GUIDE.md) - 時區處理完整指南（系統策略、各層規則、Celery 配置、前端顯示）
-- [CELERY_REVOKED_TASKS_FIX.md](CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題解決方案
+- [Document/TIMEZONE_COMPLETE_GUIDE.md](Document/TIMEZONE_COMPLETE_GUIDE.md) - 時區處理完整指南（系統策略、各層規則、Celery 配置、前端顯示）
+- [Document/CELERY_REVOKED_TASKS_FIX.md](Document/CELERY_REVOKED_TASKS_FIX.md) - Revoked Tasks 問題解決方案
+- [Document/SHUTDOWN_RECOVERY_GUIDE.md](Document/SHUTDOWN_RECOVERY_GUIDE.md) - 系統關機恢復指南
+- [Document/QLIB_STRATEGY_OPTIMIZATION_GUIDE.md](Document/QLIB_STRATEGY_OPTIMIZATION_GUIDE.md) - Qlib 策略優化指南
 
 **資料庫**：
 - [DATABASE_SCHEMA_REPORT.md](Document/DATABASE_SCHEMA_REPORT.md) - 16 個資料表
