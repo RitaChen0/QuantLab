@@ -274,6 +274,79 @@ class StrategySignalRepository:
         return duplicate is not None
 
     @staticmethod
+    def get_unnotified(db: Session, limit: int = 100) -> List[StrategySignal]:
+        """
+        Get unnotified signals
+
+        Args:
+            db: Database session
+            limit: Maximum number of records to return
+
+        Returns:
+            List of unnotified strategy signals
+        """
+        return (
+            db.query(StrategySignal)
+            .filter(StrategySignal.notified == False)
+            .order_by(desc(StrategySignal.detected_at))
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def mark_as_notified(db: Session, signal: StrategySignal) -> StrategySignal:
+        """
+        Mark signal as notified (alias for mark_notified)
+
+        Args:
+            db: Database session
+            signal: Strategy signal object
+
+        Returns:
+            Updated strategy signal object
+        """
+        return StrategySignalRepository.mark_notified(db, signal)
+
+    @staticmethod
+    def count(
+        db: Session,
+        strategy_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> int:
+        """
+        Count strategy signals with optional filters
+
+        Args:
+            db: Database session
+            strategy_id: Filter by strategy ID (optional)
+            user_id: Filter by user ID (optional)
+
+        Returns:
+            Number of signals matching the filters
+        """
+        query = db.query(StrategySignal)
+
+        if strategy_id is not None:
+            query = query.filter(StrategySignal.strategy_id == strategy_id)
+
+        if user_id is not None:
+            query = query.filter(StrategySignal.user_id == user_id)
+
+        return query.count()
+
+    @staticmethod
+    def delete(db: Session, signal: StrategySignal) -> None:
+        """
+        Delete a strategy signal
+
+        Args:
+            db: Database session
+            signal: Strategy signal object to delete
+        """
+        db.delete(signal)
+        db.commit()
+
+    @staticmethod
     def delete_old_signals(db: Session, days: int = 30) -> int:
         """
         Delete signals older than specified days
