@@ -57,13 +57,11 @@ services:
       - /data/qlib:/data/qlib  # Qlib 數據持久化
       - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for RD-Agent
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     # 🔒 安全設置：僅暴露給內部網絡，通過 Nginx 反向代理訪問
     expose:
       - "8000"
     environment:
-      TZ: Asia/Taipei
+      TZ: UTC  # 統一使用 UTC 時區（與 Celery 和 PostgreSQL 一致）
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
@@ -126,10 +124,8 @@ services:
       - /data/qlib:/data/qlib  # Qlib 數據持久化
       - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for RD-Agent
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     environment:
-      TZ: Asia/Taipei
+      TZ: UTC  # 統一使用 UTC 時區（與 Celery 和 PostgreSQL 一致）
       CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-4}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -171,10 +167,8 @@ services:
       - ./backend:/app
       - /data/qlib:/data/qlib  # Qlib 數據持久化
       - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     environment:
-      TZ: Asia/Taipei
+      TZ: UTC  # 統一使用 UTC 時區（與 Celery 和 PostgreSQL 一致）
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL}
@@ -212,10 +206,8 @@ services:
     volumes:
       - ./backend:/app
       - backend_cache:/root/.cache
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
     environment:
-      TZ: Asia/Taipei
+      TZ: UTC  # 統一使用 UTC 時區（前端負責顯示台灣時間）
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}

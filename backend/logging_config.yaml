@@ -1,0 +1,60 @@
+# Uvicorn 日誌配置 - 添加 UTC 時間戳 + 過濾監控端點
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    # 使用 Uvicorn 的自定義 Formatter（支持彩色輸出和 levelprefix）
+    "()": uvicorn.logging.DefaultFormatter
+    fmt: '[%(asctime)s] %(levelprefix)s %(message)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+    use_colors: null
+
+  access:
+    # 使用 Uvicorn 的訪問日誌 Formatter
+    "()": uvicorn.logging.AccessFormatter
+    fmt: '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+    datefmt: '%Y-%m-%d %H:%M:%S'
+    use_colors: null
+
+filters:
+  # 過濾 /health 和 /metrics 的訪問日誌
+  exclude_health_metrics:
+    "()": uvicorn_filters.ExcludeHealthMetricsFilter
+
+handlers:
+  default:
+    formatter: default
+    class: logging.StreamHandler
+    stream: ext://sys.stderr
+
+  access:
+    formatter: access
+    class: logging.StreamHandler
+    stream: ext://sys.stdout
+    filters:
+      - exclude_health_metrics
+
+loggers:
+  uvicorn:
+    level: INFO
+    handlers:
+      - default
+    propagate: no
+
+  uvicorn.error:
+    level: INFO
+    handlers:
+      - default
+    propagate: no
+
+  uvicorn.access:
+    level: INFO
+    handlers:
+      - access
+    propagate: no
+
+root:
+  level: INFO
+  handlers:
+    - default
