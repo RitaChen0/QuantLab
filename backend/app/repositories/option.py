@@ -695,3 +695,115 @@ class OptionGreeksRepository:
 
         db.commit()
         return deleted
+
+
+class OptionMinutePriceRepository:
+    """Repository for option minute price database operations"""
+
+    @staticmethod
+    def get_latest_by_contract(
+        db: Session,
+        contract_id: str
+    ) -> Optional[OptionMinutePrice]:
+        """
+        Get latest minute price for a contract
+
+        Args:
+            db: Database session
+            contract_id: Contract ID
+
+        Returns:
+            Latest OptionMinutePrice record or None
+        """
+        return (
+            db.query(OptionMinutePrice)
+            .filter(OptionMinutePrice.contract_id == contract_id)
+            .order_by(OptionMinutePrice.datetime.desc())
+            .first()
+        )
+
+    @staticmethod
+    def get_latest_prices_for_contracts(
+        db: Session,
+        contract_ids: List[str]
+    ) -> Dict[str, Optional[OptionMinutePrice]]:
+        """
+        Get latest minute prices for multiple contracts (optimized)
+
+        Args:
+            db: Database session
+            contract_ids: List of contract IDs
+
+        Returns:
+            Dictionary mapping contract_id to latest OptionMinutePrice (or None)
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import aliased
+
+        # 使用字典推導式初始化所有合約為 None
+        result = {contract_id: None for contract_id in contract_ids}
+
+        # 查詢所有合約的最新價格（一次性查詢，避免 N+1 問題）
+        # 使用 subquery 找到每個合約的最新時間，然後 join 獲取完整記錄
+        subquery = (
+            db.query(
+                OptionMinutePrice.contract_id,
+                func.max(OptionMinutePrice.datetime).label('max_datetime')
+            )
+            .filter(OptionMinutePrice.contract_id.in_(contract_ids))
+            .group_by(OptionMinutePrice.contract_id)
+            .subquery()
+        )
+
+        prices = (
+            db.query(OptionMinutePrice)
+            .join(
+                subquery,
+                and_(
+                    OptionMinutePrice.contract_id == subquery.c.contract_id,
+                    OptionMinutePrice.datetime == subquery.c.max_datetime
+                )
+            )
+            .all()
+        )
+
+        # 更新結果字典
+        for price in prices:
+            result[price.contract_id] = price
+
+        return result
+
+    @staticmethod
+    def get_by_contract_and_date_range(
+        db: Session,
+        contract_id: str,
+        start_datetime: datetime,
+        end_datetime: Optional[datetime] = None,
+        limit: int = 1000
+    ) -> List[OptionMinutePrice]:
+        """
+        Get minute prices for a contract in date range
+
+        Args:
+            db: Database session
+            contract_id: Contract ID
+            start_datetime: Start datetime
+            end_datetime: End datetime (optional, defaults to now)
+            limit: Maximum number of records to return
+
+        Returns:
+            List of OptionMinutePrice records
+        """
+        query = db.query(OptionMinutePrice).filter(
+            and_(
+                OptionMinutePrice.contract_id == contract_id,
+                OptionMinutePrice.datetime >= start_datetime
+            )
+        )
+
+        if end_datetime:
+            query = query.filter(OptionMinutePrice.datetime <= end_datetime)
+
+        return query.order_by(
+            OptionMinutePrice.datetime.asc()
+        ).limit(limit).all()

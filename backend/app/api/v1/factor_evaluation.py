@@ -104,28 +104,27 @@ async def evaluate_factor(
     - 勝率
     """
     try:
-        # 檢查因子是否存在且屬於當前用戶
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == eval_request.factor_id,
-            GeneratedFactor.user_id == current_user.id
-        ).first()
+        # 初始化 Service
+        service = FactorEvaluationService(db)
 
-        if not factor:
+        # 檢查因子是否存在且屬於當前用戶（使用 Service 層權限檢查）
+        try:
+            service.check_factor_access(eval_request.factor_id, current_user.id)
+        except ValueError as e:
             api_log.log_operation(
                 "evaluate_factor",
                 "factor_evaluation",
                 eval_request.factor_id,
                 current_user.id,
                 success=False,
-                error="Factor not found or access denied"
+                error=str(e)
             )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="因子不存在或無權訪問"
+                detail=str(e)
             )
 
         # 執行評估
-        service = FactorEvaluationService(db)
         results = service.evaluate_factor(
             factor_id=eval_request.factor_id,
             stock_pool=eval_request.stock_pool,
@@ -175,20 +174,19 @@ async def get_factor_evaluations(
     獲取因子的評估歷史
     """
     try:
-        # 檢查因子是否存在且屬於當前用戶
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == factor_id,
-            GeneratedFactor.user_id == current_user.id
-        ).first()
+        # 初始化 Service
+        service = FactorEvaluationService(db)
 
-        if not factor:
+        # 檢查因子是否存在且屬於當前用戶（使用 Service 層權限檢查）
+        try:
+            service.check_factor_access(factor_id, current_user.id)
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="因子不存在或無權訪問"
+                detail=str(e)
             )
 
         # 獲取評估歷史
-        service = FactorEvaluationService(db)
         evaluations = service.get_factor_evaluations(factor_id)
 
         return [
@@ -230,27 +228,19 @@ async def get_evaluation_detail(
     獲取單個評估的詳細資訊
     """
     try:
-        evaluation = db.query(FactorEvaluation).filter(
-            FactorEvaluation.id == evaluation_id
-        ).first()
+        # 初始化 Service
+        service = FactorEvaluationService(db)
 
-        if not evaluation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="評估記錄不存在"
-            )
-
-        # 檢查權限
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == evaluation.factor_id,
-            GeneratedFactor.user_id == current_user.id
-        ).first()
-
-        if not factor:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="無權訪問此評估記錄"
-            )
+        # 檢查評估記錄權限（使用 Service 層權限檢查）
+        try:
+            evaluation = service.check_evaluation_access(evaluation_id, current_user.id)
+        except ValueError as e:
+            # 根據錯誤訊息決定狀態碼
+            if "不存在" in str(e):
+                status_code = status.HTTP_404_NOT_FOUND
+            else:
+                status_code = status.HTTP_403_FORBIDDEN
+            raise HTTPException(status_code=status_code, detail=str(e))
 
         return FactorEvaluationHistoryResponse(
             id=evaluation.id,
@@ -288,30 +278,22 @@ async def delete_evaluation(
     刪除評估記錄
     """
     try:
-        evaluation = db.query(FactorEvaluation).filter(
-            FactorEvaluation.id == evaluation_id
-        ).first()
+        # 初始化 Service
+        service = FactorEvaluationService(db)
 
-        if not evaluation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="評估記錄不存在"
-            )
+        # 檢查評估記錄權限（使用 Service 層權限檢查）
+        try:
+            evaluation = service.check_evaluation_access(evaluation_id, current_user.id)
+        except ValueError as e:
+            # 根據錯誤訊息決定狀態碼
+            if "不存在" in str(e):
+                status_code = status.HTTP_404_NOT_FOUND
+            else:
+                status_code = status.HTTP_403_FORBIDDEN
+            raise HTTPException(status_code=status_code, detail=str(e))
 
-        # 檢查權限
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == evaluation.factor_id,
-            GeneratedFactor.user_id == current_user.id
-        ).first()
-
-        if not factor:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="無權刪除此評估記錄"
-            )
-
-        db.delete(evaluation)
-        db.commit()
+        # 刪除評估記錄（使用 Service 層）
+        service.delete_evaluation(evaluation)
 
         api_log.log_operation(
             "delete",
@@ -387,20 +369,19 @@ async def analyze_ic_decay(
     - IC 值穩定：因子預測能力持久
     """
     try:
-        # 檢查因子是否存在且屬於當前用戶
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == decay_request.factor_id,
-            GeneratedFactor.user_id == current_user.id
-        ).first()
+        # 初始化 Service
+        service = FactorEvaluationService(db)
 
-        if not factor:
+        # 檢查因子是否存在且屬於當前用戶（使用 Service 層權限檢查）
+        try:
+            service.check_factor_access(decay_request.factor_id, current_user.id)
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="因子不存在或無權訪問"
+                detail=str(e)
             )
 
         # 執行 IC 衰減分析
-        service = FactorEvaluationService(db)
         result = service.analyze_ic_decay(
             factor_id=decay_request.factor_id,
             stock_pool=decay_request.stock_pool,

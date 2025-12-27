@@ -21,7 +21,10 @@ from app.models.strategy import Strategy, StrategyStatus
 from app.models.stock_price import StockPrice
 from app.models.stock_minute_price import StockMinutePrice
 from app.models.strategy_signal import StrategySignal
+from app.repositories.strategy import StrategyRepository
+from app.repositories.stock_price import StockPriceRepository
 from app.repositories.stock_minute_price import StockMinutePriceRepository
+from app.repositories.strategy_signal import StrategySignalRepository
 
 
 class SignalDetectionStrategy(bt.Strategy):
@@ -74,11 +77,7 @@ class StrategySignalDetector:
             檢測到的信號列表
         """
         # 查詢所有 ACTIVE 策略
-        active_strategies = (
-            self.db.query(Strategy)
-            .filter(Strategy.status == StrategyStatus.ACTIVE)
-            .all()
-        )
+        active_strategies = StrategyRepository.get_all_active_strategies(self.db)
 
         if not active_strategies:
             logger.info("📊 沒有 ACTIVE 狀態的策略")
@@ -272,17 +271,15 @@ class StrategySignalDetector:
         start_date = end_date - timedelta(days=lookback_days)
 
         # 優先使用日線數據（更穩定）
-        query = (
-            self.db.query(StockPrice)
-            .filter(
-                StockPrice.stock_id == stock_id,
-                StockPrice.date >= start_date,
-                StockPrice.date <= end_date
-            )
-            .order_by(StockPrice.date)
+        rows = StockPriceRepository.get_by_stock(
+            self.db,
+            stock_id,
+            start_date=start_date,
+            end_date=end_date,
+            skip=0,
+            limit=999999,  # 需要所有數據
+            ascending=True  # 按時間順序
         )
-
-        rows = query.all()
 
         if not rows:
             logger.warning(f"股票 {stock_id} 沒有日線數據")
@@ -410,15 +407,10 @@ class StrategySignalDetector:
         """
         time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
 
-        duplicate = (
-            self.db.query(StrategySignal)
-            .filter(
-                StrategySignal.strategy_id == strategy_id,
-                StrategySignal.stock_id == stock_id,
-                StrategySignal.signal_type == signal_type,
-                StrategySignal.detected_at >= time_threshold
-            )
-            .first()
+        return StrategySignalRepository.check_duplicate(
+            self.db,
+            strategy_id=strategy_id,
+            stock_id=stock_id,
+            signal_type=signal_type,
+            time_threshold=time_threshold
         )
-
-        return duplicate is not None

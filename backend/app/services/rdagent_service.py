@@ -12,6 +12,9 @@ from pathlib import Path
 from app.models.rdagent import RDAgentTask, GeneratedFactor, GeneratedModel, FactorEvaluation, TaskStatus, TaskType
 from app.schemas.rdagent import FactorMiningRequest, ModelGenerationRequest, StrategyOptimizationRequest
 from app.utils.model_code_generator import ModelCodeGenerator
+from app.repositories.rdagent_task import RDAgentTaskRepository
+from app.repositories.generated_factor import GeneratedFactorRepository
+from app.repositories.generated_model import GeneratedModelRepository
 
 
 class RDAgentService:
@@ -67,21 +70,19 @@ class RDAgentService:
 
     def get_task(self, task_id: int, user_id: int) -> Optional[RDAgentTask]:
         """獲取任務"""
-        return self.db.query(RDAgentTask).filter(
-            RDAgentTask.id == task_id,
-            RDAgentTask.user_id == user_id
-        ).first()
+        return RDAgentTaskRepository.get_by_id_and_user(self.db, task_id, user_id)
 
     def get_user_tasks(
         self, user_id: int, task_type: Optional[TaskType] = None, limit: int = 50
     ) -> List[RDAgentTask]:
         """獲取使用者任務列表"""
-        query = self.db.query(RDAgentTask).filter(RDAgentTask.user_id == user_id)
-
-        if task_type:
-            query = query.filter(RDAgentTask.task_type == task_type)
-
-        return query.order_by(RDAgentTask.created_at.desc()).limit(limit).all()
+        return RDAgentTaskRepository.get_by_user(
+            self.db,
+            user_id,
+            task_type=task_type,
+            skip=0,
+            limit=limit
+        )
 
     def delete_task(self, task_id: int, user_id: int) -> bool:
         """刪除任務
@@ -96,22 +97,16 @@ class RDAgentService:
         Raises:
             ValueError: 任務不存在或無權限刪除
         """
-        task = self.db.query(RDAgentTask).filter(
-            RDAgentTask.id == task_id,
-            RDAgentTask.user_id == user_id
-        ).first()
+        task = RDAgentTaskRepository.get_by_id_and_user(self.db, task_id, user_id)
 
         if not task:
             raise ValueError(f"Task {task_id} not found or access denied")
 
         # 刪除相關的生成因子
-        self.db.query(GeneratedFactor).filter(
-            GeneratedFactor.task_id == task_id
-        ).delete()
+        GeneratedFactorRepository.delete_by_task(self.db, task_id)
 
         # 刪除任務
-        self.db.delete(task)
-        self.db.commit()
+        RDAgentTaskRepository.delete(self.db, task)
 
         logger.info(f"Deleted task {task_id} for user {user_id}")
         return True
@@ -120,11 +115,12 @@ class RDAgentService:
         self, user_id: int, limit: int = 100
     ) -> List[GeneratedFactor]:
         """獲取生成的因子列表"""
-        return self.db.query(GeneratedFactor).filter(
-            GeneratedFactor.user_id == user_id
-        ).order_by(
-            GeneratedFactor.created_at.desc()
-        ).limit(limit).all()
+        return GeneratedFactorRepository.get_by_user(
+            self.db,
+            user_id,
+            skip=0,
+            limit=limit
+        )
 
     def update_factor(
         self, factor_id: int, user_id: int, name: Optional[str] = None, description: Optional[str] = None
@@ -140,10 +136,7 @@ class RDAgentService:
         Returns:
             GeneratedFactor: 更新後的因子，如果不存在或無權限則返回 None
         """
-        factor = self.db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == factor_id,
-            GeneratedFactor.user_id == user_id
-        ).first()
+        factor = GeneratedFactorRepository.get_by_id_and_user(self.db, factor_id, user_id)
 
         if not factor:
             return None
@@ -154,9 +147,7 @@ class RDAgentService:
         if description is not None:
             factor.description = description
 
-        self.db.commit()
-        self.db.refresh(factor)
-
+        factor = GeneratedFactorRepository.update(self.db, factor)
         logger.info(f"Updated factor {factor_id}: name={name}, description={description}")
         return factor
 
@@ -197,7 +188,7 @@ class RDAgentService:
         llm_cost: Optional[float] = None
     ):
         """更新任務狀態"""
-        task = self.db.query(RDAgentTask).filter(RDAgentTask.id == task_id).first()
+        task = RDAgentTaskRepository.get_by_id(self.db, task_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
@@ -221,7 +212,7 @@ class RDAgentService:
         if llm_cost is not None:
             task.llm_cost = llm_cost
 
-        self.db.commit()
+        RDAgentTaskRepository.update(self.db, task)
         logger.info(f"Updated task {task_id} status to {status}")
 
     def execute_factor_mining(
@@ -849,8 +840,9 @@ class RDAgentService:
         self, user_id: int, limit: int = 100
     ) -> List[GeneratedModel]:
         """獲取生成的模型列表"""
-        return self.db.query(GeneratedModel).filter(
-            GeneratedModel.user_id == user_id
-        ).order_by(
-            GeneratedModel.created_at.desc()
-        ).limit(limit).all()
+        return GeneratedModelRepository.get_by_user(
+            self.db,
+            user_id,
+            skip=0,
+            limit=limit
+        )

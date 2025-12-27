@@ -758,7 +758,7 @@ class IndustryService:
         total = sum(level_counts.values())
 
         # Total stock-industry mappings
-        total_mappings = self.db.query(StockIndustry).count()
+        total_mappings = self.repo.count_stock_industry_mappings(self.db)
 
         return {
             "total_industries": total,

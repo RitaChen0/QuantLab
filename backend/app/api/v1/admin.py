@@ -34,8 +34,14 @@ from app.schemas.admin import (
 )
 from app.core.celery_app import celery_app
 from app.utils.logging import logger
+from app.services.admin_service import AdminService
 
 router = APIRouter()
+
+
+def get_admin_service(db: Session = Depends(get_db)) -> AdminService:
+    """Dependency to get AdminService instance"""
+    return AdminService(db)
 
 
 def format_crontab_schedule(schedule) -> str:
@@ -143,10 +149,10 @@ async def list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Get all users (admin only)"""
-    users = db.query(User).offset(skip).limit(limit).all()
+    users = admin_service.list_users(skip=skip, limit=limit)
     return users
 
 
@@ -154,10 +160,10 @@ async def list_users(
 async def get_user_detail(
     user_id: int,
     current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Get user detail (admin only)"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = admin_service.get_user(user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -171,23 +177,15 @@ async def update_user(
     user_id: int,
     user_update: UserUpdateAdmin,
     current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Update user (admin only)"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = admin_service.update_user(user_id, user_update)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-
-    # Update fields
-    update_data = user_update.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(user, field, value)
-
-    db.commit()
-    db.refresh(user)
 
     logger.info(f"Admin {current_user.username} updated user {user.username}")
     return user
@@ -197,26 +195,24 @@ async def update_user(
 async def delete_user(
     user_id: int,
     current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Delete user (admin only)"""
-    if user_id == current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete yourself"
-        )
+    success = admin_service.delete_user(user_id, current_user.id)
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+    if not success:
+        if user_id == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete yourself"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
 
-    db.delete(user)
-    db.commit()
-
-    logger.info(f"Admin {current_user.username} deleted user {user.username}")
+    logger.info(f"Admin {current_user.username} deleted user ID {user_id}")
     return {"message": "User deleted successfully"}
 
 
@@ -225,45 +221,11 @@ async def delete_user(
 @router.get("/stats", response_model=SystemStats)
 async def get_system_stats(
     current_user: User = Depends(get_current_superuser),
-    db: Session = Depends(get_db),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Get system statistics (admin only)"""
-    from sqlalchemy import text
-
-    # Count users
-    total_users = db.query(User).count()
-    active_users = db.query(User).filter(User.is_active == True).count()
-
-    # Count strategies and backtests
-    total_strategies = db.query(Strategy).count()
-    total_backtests = db.query(Backtest).count()
-
-    # Get database size
-    db_size_result = db.execute(
-        text("SELECT pg_size_pretty(pg_database_size('quantlab'))")
-    ).fetchone()
-    database_size = db_size_result[0] if db_size_result else "Unknown"
-
-    # Get cache info (Redis)
-    from app.utils.cache import cache
-    try:
-        if cache.is_available():
-            cache_info = cache.redis_client.info("memory")
-            cache_size = f"{cache_info.get('used_memory_human', 'Unknown')}"
-        else:
-            cache_size = "Unavailable"
-    except Exception as e:
-        logger.error(f"Failed to get cache size: {str(e)}")
-        cache_size = "Unknown"
-
-    return SystemStats(
-        total_users=total_users,
-        active_users=active_users,
-        total_strategies=total_strategies,
-        total_backtests=total_backtests,
-        database_size=database_size,
-        cache_size=cache_size,
-    )
+    stats = admin_service.get_system_stats()
+    return SystemStats(**stats)
 
 
 @router.get("/health", response_model=List[ServiceHealth])
@@ -611,94 +573,10 @@ async def list_monitoring_tasks(
 @router.get("/monitoring/stats")
 async def get_monitoring_stats(
     current_user: User = Depends(get_current_superuser),
+    admin_service: AdminService = Depends(get_admin_service),
 ):
     """Get strategy monitoring statistics (admin only)"""
-    from app.models.strategy_signal import StrategySignal
-    from app.models.strategy import Strategy
-    from sqlalchemy import func, and_
-    from datetime import timedelta
-
-    db = SessionLocal()
-
-    try:
-        now = datetime.now(timezone.utc)
-        today = now.date()
-        yesterday = today - timedelta(days=1)
-        week_ago = today - timedelta(days=7)
-
-        # Count active strategies
-        active_strategies = db.query(Strategy).filter(
-            Strategy.status == "ACTIVE"
-        ).count()
-
-        # Count signals today
-        signals_today = db.query(StrategySignal).filter(
-            func.date(StrategySignal.detected_at) == today
-        ).count()
-
-        # Count signals yesterday
-        signals_yesterday = db.query(StrategySignal).filter(
-            func.date(StrategySignal.detected_at) == yesterday
-        ).count()
-
-        # Count signals this week
-        signals_week = db.query(StrategySignal).filter(
-            StrategySignal.detected_at >= week_ago
-        ).count()
-
-        # Count by signal type today
-        buy_signals_today = db.query(StrategySignal).filter(
-            and_(
-                func.date(StrategySignal.detected_at) == today,
-                StrategySignal.signal_type == "BUY"
-            )
-        ).count()
-
-        sell_signals_today = db.query(StrategySignal).filter(
-            and_(
-                func.date(StrategySignal.detected_at) == today,
-                StrategySignal.signal_type == "SELL"
-            )
-        ).count()
-
-        # Get latest signals
-        latest_signals = db.query(StrategySignal).order_by(
-            StrategySignal.detected_at.desc()
-        ).limit(5).all()
-
-        # Get monitored stocks from ACTIVE strategies
-        monitored_stocks = set()
-        active_strategy_list = db.query(Strategy).filter(
-            Strategy.status == "ACTIVE",
-            Strategy.engine_type == "backtrader"  # Only Backtrader supports monitoring
-        ).all()
-
-        for strategy in active_strategy_list:
-            if strategy.parameters and isinstance(strategy.parameters, dict):
-                stocks = strategy.parameters.get("stocks")
-                if stocks and isinstance(stocks, list):
-                    monitored_stocks.update(stocks)
-
-        return {
-            "active_strategies": active_strategies,
-            "signals_today": signals_today,
-            "signals_yesterday": signals_yesterday,
-            "signals_week": signals_week,
-            "buy_signals_today": buy_signals_today,
-            "sell_signals_today": sell_signals_today,
-            "monitored_stocks": sorted(list(monitored_stocks)),  # Sorted unique list
-            "latest_signals": [
-                {
-                    "stock_id": sig.stock_id,
-                    "signal_type": sig.signal_type,
-                    "price": float(sig.price) if sig.price else None,
-                    "detected_at": sig.detected_at.isoformat(),
-                }
-                for sig in latest_signals
-            ]
-        }
-    finally:
-        db.close()
+    return admin_service.get_monitoring_stats()
 
 
 @router.post("/sync/trigger")

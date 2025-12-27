@@ -236,7 +236,7 @@ class UserService:
             HTTPException: If token invalid or expired
         """
         # Find user by verification token
-        user = self.db.query(User).filter(User.verification_token == token).first()
+        user = self.repo.get_by_verification_token(self.db, token)
 
         if not user:
             raise HTTPException(

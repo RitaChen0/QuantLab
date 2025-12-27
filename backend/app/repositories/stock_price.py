@@ -2,10 +2,10 @@
 StockPrice repository for database operations
 """
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import date as DateType
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc
+from sqlalchemy import and_, desc, func
 from app.models.stock_price import StockPrice
 from app.schemas.stock_price import StockPriceCreate, StockPriceUpdate
 from app.utils.price_validator import PriceValidator, PriceValidationError
@@ -34,13 +34,42 @@ class StockPriceRepository:
         )
 
     @staticmethod
+    def get_date_range_for_stock(
+        db: Session,
+        stock_id: str
+    ) -> Optional[Tuple[DateType, DateType]]:
+        """
+        Get date range (min, max) for a specific stock
+
+        Args:
+            db: Database session
+            stock_id: Stock ID
+
+        Returns:
+            Tuple of (min_date, max_date) or None if no data
+        """
+        result = (
+            db.query(
+                func.min(StockPrice.date).label('min_date'),
+                func.max(StockPrice.date).label('max_date')
+            )
+            .filter(StockPrice.stock_id == stock_id)
+            .first()
+        )
+
+        if result and result.min_date:
+            return (result.min_date, result.max_date)
+        return None
+
+    @staticmethod
     def get_by_stock(
         db: Session,
         stock_id: str,
         start_date: Optional[DateType] = None,
         end_date: Optional[DateType] = None,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        ascending: bool = False
     ) -> List[StockPrice]:
         """
         Get stock prices for a specific stock
@@ -52,6 +81,7 @@ class StockPriceRepository:
             end_date: End date (optional)
             skip: Number of records to skip
             limit: Maximum number of records to return
+            ascending: Sort order (True=oldest first, False=newest first)
 
         Returns:
             List of stock prices
@@ -64,7 +94,13 @@ class StockPriceRepository:
         if end_date:
             query = query.filter(StockPrice.date <= end_date)
 
-        return query.order_by(desc(StockPrice.date)).offset(skip).limit(limit).all()
+        # Apply ordering
+        if ascending:
+            query = query.order_by(StockPrice.date)
+        else:
+            query = query.order_by(desc(StockPrice.date))
+
+        return query.offset(skip).limit(limit).all()
 
     @staticmethod
     def get_latest(db: Session, stock_id: str) -> Optional[StockPrice]:

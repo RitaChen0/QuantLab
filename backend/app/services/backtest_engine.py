@@ -24,7 +24,9 @@ from app.models.backtest import Backtest
 from app.models.backtest_result import BacktestResult
 from app.models.trade import Trade, TradeAction
 from app.models.stock_price import StockPrice
+from app.repositories.stock_price import StockPriceRepository
 from app.repositories.stock_minute_price import StockMinutePriceRepository
+from app.repositories.backtest import BacktestRepository
 from app.utils.error_handler import get_safe_error_message
 from app.utils.timezone_helpers import parse_datetime_safe
 
@@ -412,19 +414,13 @@ class BacktestEngine:
                     raise ValueError(get_safe_error_message(error, "日期參數驗證"))
 
             # 先查詢該股票在資料庫中的實際日期範圍
-            date_range = self.db.query(
-                func.min(StockPrice.date).label('min_date'),
-                func.max(StockPrice.date).label('max_date')
-            ).filter(
-                StockPrice.stock_id == stock_id
-            ).first()
+            date_range = StockPriceRepository.get_date_range_for_stock(self.db, stock_id)
 
-            if not date_range or not date_range.min_date:
+            if not date_range:
                 logger.error(f"No data available in database for stock {stock_id}")
                 return None
 
-            db_start_date = date_range.min_date
-            db_end_date = date_range.max_date
+            db_start_date, db_end_date = date_range
 
             # 自動調整日期範圍到資料庫實際範圍
             original_start = start_date
@@ -452,11 +448,15 @@ class BacktestEngine:
                 return None
 
             # 查詢調整後的日期範圍內的數據
-            prices = self.db.query(StockPrice).filter(
-                StockPrice.stock_id == stock_id,
-                StockPrice.date >= start_date,
-                StockPrice.date <= end_date
-            ).order_by(StockPrice.date).all()
+            prices = StockPriceRepository.get_by_stock(
+                self.db,
+                stock_id,
+                start_date=start_date,
+                end_date=end_date,
+                skip=0,
+                limit=999999,  # 回測需要所有數據
+                ascending=True  # 回測需要按時間順序
+            )
 
             if not prices:
                 logger.warning(f"No data found for {stock_id} in adjusted range {start_date} to {end_date}")
@@ -1305,7 +1305,7 @@ class BacktestEngine:
             self.db.flush()  # 獲取 result.id
 
             # 2. 獲取 Backtest 記錄以取得 stock_id
-            backtest = self.db.query(Backtest).filter(Backtest.id == backtest_id).first()
+            backtest = BacktestRepository.get_by_id(self.db, backtest_id)
             if not backtest:
                 error = ValueError(f"Backtest {backtest_id} not found")
                 raise ValueError(get_safe_error_message(error, "回測資料查詢"))

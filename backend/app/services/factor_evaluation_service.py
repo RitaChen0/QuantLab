@@ -30,6 +30,8 @@ except ImportError:
 
 from app.models.rdagent import GeneratedFactor, FactorEvaluation
 from app.services.qlib_data_adapter import QlibDataAdapter
+from app.repositories.generated_factor import GeneratedFactorRepository
+from app.repositories.factor_evaluation import FactorEvaluationRepository
 
 
 class FactorEvaluationService:
@@ -38,6 +40,62 @@ class FactorEvaluationService:
     def __init__(self, db: Session):
         self.db = db
         self.qlib_adapter = QlibDataAdapter()
+
+    # ============ Permission Checks ============
+
+    def check_factor_access(self, factor_id: int, user_id: int) -> GeneratedFactor:
+        """
+        Check if user has access to the factor
+
+        Args:
+            factor_id: Factor ID
+            user_id: User ID
+
+        Returns:
+            GeneratedFactor object
+
+        Raises:
+            ValueError: If factor not found or user doesn't own it
+        """
+        factor = GeneratedFactorRepository.get_by_id_and_user(
+            self.db, factor_id, user_id
+        )
+
+        if not factor:
+            raise ValueError("因子不存在或無權訪問")
+
+        return factor
+
+    def check_evaluation_access(self, evaluation_id: int, user_id: int) -> FactorEvaluation:
+        """
+        Check if user has access to the evaluation
+
+        Args:
+            evaluation_id: Evaluation ID
+            user_id: User ID
+
+        Returns:
+            FactorEvaluation object
+
+        Raises:
+            ValueError: If evaluation not found or user doesn't own the factor
+        """
+        evaluation = FactorEvaluationRepository.get_by_id(self.db, evaluation_id)
+
+        if not evaluation:
+            raise ValueError("評估記錄不存在")
+
+        # Check if user owns the factor
+        factor = GeneratedFactorRepository.get_by_id_and_user(
+            self.db, evaluation.factor_id, user_id
+        )
+
+        if not factor:
+            raise ValueError("無權訪問此評估記錄")
+
+        return evaluation
+
+    # ============ Evaluation Methods ============
 
     def evaluate_factor(
         self,
@@ -63,9 +121,7 @@ class FactorEvaluationService:
         logger.info(f"Starting factor evaluation for factor_id={factor_id}")
 
         # 1. 獲取因子資訊
-        factor = self.db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == factor_id
-        ).first()
+        factor = GeneratedFactorRepository.get_by_id(self.db, factor_id)
 
         if not factor:
             raise ValueError(f"Factor {factor_id} not found")
@@ -494,9 +550,16 @@ class FactorEvaluationService:
 
     def get_factor_evaluations(self, factor_id: int) -> List[FactorEvaluation]:
         """獲取因子的所有評估記錄"""
-        return self.db.query(FactorEvaluation).filter(
-            FactorEvaluation.factor_id == factor_id
-        ).order_by(FactorEvaluation.created_at.desc()).all()
+        return FactorEvaluationRepository.get_by_factor(self.db, factor_id)
+
+    def delete_evaluation(self, evaluation: FactorEvaluation) -> None:
+        """
+        Delete factor evaluation
+
+        Args:
+            evaluation: FactorEvaluation object to delete
+        """
+        FactorEvaluationRepository.delete(self.db, evaluation)
 
     def analyze_ic_decay(
         self,
@@ -532,9 +595,7 @@ class FactorEvaluationService:
         logger.info(f"Starting IC decay analysis for factor_id={factor_id}, max_lag={max_lag}")
 
         # 1. 獲取因子資訊
-        factor = self.db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == factor_id
-        ).first()
+        factor = GeneratedFactorRepository.get_by_id(self.db, factor_id)
 
         if not factor:
             raise ValueError(f"Factor {factor_id} not found")

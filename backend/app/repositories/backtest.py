@@ -299,3 +299,47 @@ class BacktestRepository:
             .limit(limit)
             .all()
         )
+
+    @staticmethod
+    def get_latest_completed_by_strategy(
+        db: Session,
+        strategy_id: int
+    ) -> Optional[Backtest]:
+        """
+        Get the latest completed backtest for a strategy
+
+        Args:
+            db: Database session
+            strategy_id: Strategy ID
+
+        Returns:
+            Latest completed Backtest or None if not found
+        """
+        return (
+            db.query(Backtest)
+            .filter(
+                Backtest.strategy_id == strategy_id,
+                Backtest.status == BacktestStatus.COMPLETED
+            )
+            .order_by(desc(Backtest.completed_at))
+            .first()
+        )
+
+    @staticmethod
+    def count(db: Session, status: Optional[BacktestStatus] = None) -> int:
+        """
+        Count total number of backtests
+
+        Args:
+            db: Database session
+            status: Filter by status (optional)
+
+        Returns:
+            Total backtest count
+        """
+        query = db.query(Backtest)
+
+        if status:
+            query = query.filter(Backtest.status == status)
+
+        return query.count()

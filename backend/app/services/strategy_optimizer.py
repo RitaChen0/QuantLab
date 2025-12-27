@@ -21,6 +21,10 @@ from app.models.telegram_notification import TelegramNotification  # noqa
 from app.models.stock import Stock  # noqa
 from app.models.stock_industry import StockIndustry  # noqa
 
+# 導入 Repositories
+from app.repositories.strategy import StrategyRepository
+from app.repositories.backtest import BacktestRepository
+
 
 class StrategyOptimizer:
     """策略優化器 - 基於 LLM 的策略分析和優化建議"""
@@ -48,7 +52,7 @@ class StrategyOptimizer:
         logger.info(f"Analyzing strategy {strategy_id} with goal: {optimization_goal}")
 
         # 步驟 1: 讀取策略
-        strategy = self.db.query(Strategy).filter(Strategy.id == strategy_id).first()
+        strategy = StrategyRepository.get_by_id(self.db, strategy_id)
         if not strategy:
             raise ValueError(f"Strategy {strategy_id} not found")
 
@@ -119,12 +123,9 @@ class StrategyOptimizer:
         Returns:
             最新的已完成回測，如果沒有則返回 None
         """
-        return self.db.query(Backtest).filter(
-            Backtest.strategy_id == strategy_id,
-            Backtest.status == BacktestStatus.COMPLETED
-        ).order_by(
-            Backtest.completed_at.desc()
-        ).first()
+        return BacktestRepository.get_latest_completed_by_strategy(
+            self.db, strategy_id
+        )
 
     def _diagnose_issues(self, result: BacktestResult) -> List[Dict[str, Any]]:
         """診斷回測結果的問題

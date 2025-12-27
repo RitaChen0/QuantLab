@@ -5,6 +5,7 @@ Stock-related Pydantic schemas for request/response validation
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
+from app.utils.timezone_helpers import now_utc
 
 
 # ============ Stock Schemas ============
@@ -83,11 +84,11 @@ class StockDataResponse(BaseModel):
     stock_id: Optional[str] = None
     data: Dict[str, Any]
     cached: bool = False
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=now_utc)
 
 
 class LatestPriceResponse(BaseModel):
     """Latest price response"""
     stock_id: str
     price: Optional[float]
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=now_utc)

@@ -136,7 +136,7 @@ class TelegramBotHandler:
 
             # 檢查是否已被其他用戶綁定
             user_repo = UserRepository()
-            existing_user = db.query(User).filter(User.telegram_id == chat_id).first()
+            existing_user = user_repo.get_by_telegram_id(db, chat_id)
 
             if existing_user and existing_user.id != user_id:
                 await update.message.reply_text(
@@ -220,8 +220,8 @@ class TelegramBotHandler:
             # 查找綁定的用戶
             user_repo = UserRepository()
 
-            # 使用原生 SQLAlchemy 查詢
-            quantlab_user = db.query(User).filter(User.telegram_id == chat_id).first()
+            # 使用 Repository 查詢
+            quantlab_user = user_repo.get_by_telegram_id(db, chat_id)
 
             if not quantlab_user:
                 await update.message.reply_text(

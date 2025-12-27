@@ -38,6 +38,34 @@ class UserRepository:
         )
 
     @staticmethod
+    def get_by_verification_token(db: Session, token: str) -> Optional[User]:
+        """
+        Get user by verification token
+
+        Args:
+            db: Database session
+            token: Verification token
+
+        Returns:
+            User object or None if not found
+        """
+        return db.query(User).filter(User.verification_token == token).first()
+
+    @staticmethod
+    def get_by_telegram_id(db: Session, telegram_id: int) -> Optional[User]:
+        """
+        Get user by Telegram ID
+
+        Args:
+            db: Database session
+            telegram_id: Telegram chat ID
+
+        Returns:
+            User object or None if not found
+        """
+        return db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    @staticmethod
     def create(db: Session, user_create: UserCreate) -> User:
         """
         Create new user
@@ -132,3 +160,44 @@ class UserRepository:
         db.refresh(user)
 
         return user
+
+    @staticmethod
+    def get_all(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
+        """
+        Get all users with pagination
+
+        Args:
+            db: Database session
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            List of users
+        """
+        return db.query(User).offset(skip).limit(limit).all()
+
+    @staticmethod
+    def count(db: Session) -> int:
+        """
+        Count total number of users
+
+        Args:
+            db: Database session
+
+        Returns:
+            Total user count
+        """
+        return db.query(User).count()
+
+    @staticmethod
+    def count_active(db: Session) -> int:
+        """
+        Count active users
+
+        Args:
+            db: Database session
+
+        Returns:
+            Active user count
+        """
+        return db.query(User).filter(User.is_active == True).count()

@@ -22,7 +22,6 @@ from app.repositories.option import (
     OptionDailyFactorRepository,
     OptionSyncConfigRepository
 )
-from app.repositories.stock_minute_price import StockMinutePriceRepository
 from app.schemas.option import (
     OptionContract,
     OptionDailyFactor,
@@ -35,9 +34,15 @@ from app.schemas.option import (
 from app.core.rate_limit import limiter, RateLimits
 from app.utils.logging import api_log
 from app.services.shioaji_client import ShioajiClient
+from app.services.option_service import OptionService
 from loguru import logger
 
 router = APIRouter(prefix="/options", tags=["Options"])
+
+
+def get_option_service(db: Session = Depends(get_db)) -> OptionService:
+    """Dependency to get OptionService instance"""
+    return OptionService(db)
 
 
 @router.get("/stage", response_model=OptionStageInfo)
@@ -45,7 +50,7 @@ router = APIRouter(prefix="/options", tags=["Options"])
 async def get_stage_info(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    option_service: OptionService = Depends(get_option_service)
 ):
     """
     獲取當前階段資訊
@@ -57,21 +62,7 @@ async def get_stage_info(
     - 可用因子列表
     """
     try:
-        from app.services.option_calculator import get_available_factors
-
-        stage = OptionSyncConfigRepository.get_current_stage(db)
-        enabled_underlyings = OptionSyncConfigRepository.get_enabled_underlyings(db)
-        sync_minute_data = OptionSyncConfigRepository.is_minute_sync_enabled(db)
-        calculate_greeks = OptionSyncConfigRepository.is_greeks_calculation_enabled(db)
-        available_factors = get_available_factors(stage)
-
-        return OptionStageInfo(
-            stage=stage,
-            enabled_underlyings=enabled_underlyings,
-            sync_minute_data=sync_minute_data,
-            calculate_greeks=calculate_greeks,
-            available_factors=list(available_factors.values())
-        )
+        return option_service.get_stage_info()
 
     except Exception as e:
         raise HTTPException(
@@ -165,7 +156,7 @@ async def get_option_chain(
     underlying_id: str,
     expiry_date: date = Query(..., description="到期日"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    option_service: OptionService = Depends(get_option_service)
 ):
     """
     獲取 Option Chain
@@ -178,135 +169,24 @@ async def get_option_chain(
     - spot_price: 標的現價（如有）
     """
     try:
-        # 獲取該到期日的所有合約
-        contracts = OptionContractRepository.get_by_underlying_and_expiry(
-            db=db,
+        # 使用 Service 層構建 Option Chain
+        result = option_service.get_option_chain(
             underlying_id=underlying_id,
-            expiry_date=expiry_date,
-            is_active='active'
+            expiry_date=expiry_date
         )
-
-        if not contracts:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No option contracts found for {underlying_id} expiring on {expiry_date}"
-            )
-
-        # 獲取標的現價（從期貨分鐘線數據）
-        spot_price = None
-        try:
-            # TX/MTX 是期貨，從 stock_minute_prices 獲取最新價格
-            latest_price = StockMinutePriceRepository.get_latest(db=db, stock_id=underlying_id)
-            if latest_price:
-                spot_price = float(latest_price.close)
-                logger.info(f"[OPTION] Got spot price for {underlying_id}: {spot_price}")
-            else:
-                logger.warning(f"[OPTION] No spot price found for {underlying_id}")
-        except Exception as e:
-            logger.error(f"[OPTION] Error getting spot price for {underlying_id}: {str(e)}")
-
-        # 獲取選擇權合約的價格數據
-        # 優先順序：1) option_minute_prices (最新數據) 2) 回退為 None
-        snapshot_data = {}
-
-        try:
-            # 嘗試從 option_minute_prices 獲取最新價格（階段二數據）
-            from app.models.option import OptionMinutePrice
-
-            for contract in contracts:
-                try:
-                    # 查詢該合約的最新分鐘線數據
-                    latest_price = db.query(OptionMinutePrice).filter(
-                        OptionMinutePrice.contract_id == contract.contract_id
-                    ).order_by(
-                        OptionMinutePrice.datetime.desc()
-                    ).first()
-
-                    if latest_price:
-                        snapshot_data[contract.contract_id] = {
-                            'last_price': float(latest_price.close) if latest_price.close else None,
-                            'bid_price': float(latest_price.bid_price) if latest_price.bid_price else None,
-                            'ask_price': float(latest_price.ask_price) if latest_price.ask_price else None,
-                            'volume': int(latest_price.volume) if latest_price.volume else None,
-                            'open_interest': int(latest_price.open_interest) if latest_price.open_interest else None
-                        }
-                        logger.debug(f"[OPTION] Got price data for {contract.contract_id} from minute_prices")
-                    else:
-                        # 沒有分鐘線數據，使用 None（前端會顯示 "-"）
-                        snapshot_data[contract.contract_id] = {
-                            'last_price': None,
-                            'bid_price': None,
-                            'ask_price': None,
-                            'volume': None,
-                            'open_interest': None
-                        }
-                except Exception as e:
-                    logger.debug(f"[OPTION] Error getting price for {contract.contract_id}: {str(e)}")
-                    snapshot_data[contract.contract_id] = {
-                        'last_price': None,
-                        'bid_price': None,
-                        'ask_price': None,
-                        'volume': None,
-                        'open_interest': None
-                    }
-
-            logger.info(f"[OPTION] Loaded price data for {len(snapshot_data)} contracts")
-
-        except Exception as e:
-            logger.error(f"[OPTION] Error getting option prices: {str(e)}")
-            # 發生錯誤時，所有合約都使用 None
-            for contract in contracts:
-                snapshot_data[contract.contract_id] = {
-                    'last_price': None,
-                    'bid_price': None,
-                    'ask_price': None,
-                    'volume': None,
-                    'open_interest': None
-                }
-
-        # 分離 CALL 和 PUT
-        calls = []
-        puts = []
-
-        for contract in contracts:
-            # 從快照數據獲取實時價格（如果有）
-            snapshot = snapshot_data.get(contract.contract_id, {})
-
-            chain_item = OptionChainItem(
-                contract_id=contract.contract_id,
-                option_type=contract.option_type,
-                strike_price=contract.strike_price,
-                # 從快照獲取實時數據，如果沒有則為 None
-                last_price=snapshot.get('last_price'),
-                bid_price=snapshot.get('bid_price'),
-                ask_price=snapshot.get('ask_price'),
-                volume=snapshot.get('volume'),
-                open_interest=snapshot.get('open_interest'),
-                # Greeks 欄位階段三才實作
-                implied_volatility=None,
-                delta=None,
-                gamma=None,
-                theta=None,
-                vega=None
-            )
-
-            if contract.option_type == 'CALL':
-                calls.append(chain_item)
-            else:
-                puts.append(chain_item)
 
         api_log.log_operation(
             "read", "option_chain", f"{underlying_id}_{expiry_date}", current_user.id, success=True
         )
 
-        return OptionChainResponse(
-            underlying_id=underlying_id,
-            expiry_date=expiry_date,
-            spot_price=spot_price,
-            calls=sorted(calls, key=lambda x: x.strike_price),
-            puts=sorted(puts, key=lambda x: x.strike_price)
-        )
+        return result
 
+    except ValueError as e:
+        # Service 層拋出的業務邏輯錯誤
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -406,7 +286,7 @@ async def get_factor_summary(
     underlying_id: str,
     target_date: Optional[date] = Query(None, description="目標日期（預設為最新）"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    option_service: OptionService = Depends(get_option_service)
 ):
     """
     獲取選擇權因子摘要（含市場情緒）
@@ -417,44 +297,18 @@ async def get_factor_summary(
     - 市場情緒指標（基於 PCR 自動判斷）
     """
     try:
-        # 獲取因子數據
-        if target_date:
-            factor = OptionDailyFactorRepository.get_by_key(db, underlying_id, target_date)
-        else:
-            factor = OptionDailyFactorRepository.get_latest(db, underlying_id)
-
-        if not factor:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No factor data found for {underlying_id}"
-            )
-
-        # 計算市場情緒
-        sentiment = "neutral"
-        if factor.pcr_volume:
-            pcr = float(factor.pcr_volume)
-            if pcr > 1.2:
-                sentiment = "bearish"  # 看跌情緒重
-            elif pcr < 0.8:
-                sentiment = "bullish"  # 看漲情緒重
-
-        # 計算總未平倉量
-        total_oi = None
-        if factor.total_call_oi is not None and factor.total_put_oi is not None:
-            total_oi = factor.total_call_oi + factor.total_put_oi
-
-        return OptionFactorSummary(
-            underlying_id=factor.underlying_id,
-            factor_date=factor.date,  # Model 的 date → Schema 的 factor_date
-            pcr_volume=factor.pcr_volume,
-            pcr_open_interest=factor.pcr_open_interest,
-            atm_iv=factor.atm_iv,
-            iv_skew=factor.iv_skew,
-            max_pain_strike=factor.max_pain_strike,
-            total_oi=total_oi,
-            sentiment=sentiment
+        result = option_service.get_factor_summary(
+            underlying_id=underlying_id,
+            target_date=target_date
         )
+        return result
 
+    except ValueError as e:
+        # Service 層拋出的業務邏輯錯誤
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -469,7 +323,7 @@ async def get_factor_summary(
 async def get_sync_status(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    option_service: OptionService = Depends(get_option_service)
 ):
     """
     獲取選擇權數據同步狀態
@@ -477,35 +331,7 @@ async def get_sync_status(
     返回所有啟用標的物的同步狀態
     """
     try:
-        enabled_underlyings = OptionSyncConfigRepository.get_enabled_underlyings(db)
-        stage = OptionSyncConfigRepository.get_current_stage(db)
-
-        status_list = []
-
-        for underlying_id in enabled_underlyings:
-            # 獲取最後同步日期
-            last_sync_date = OptionDailyFactorRepository.get_latest_date(db, underlying_id)
-
-            # 獲取合約數量
-            total_contracts = OptionContractRepository.count(db, underlying_id=underlying_id)
-            active_contracts = OptionContractRepository.count(
-                db, underlying_id=underlying_id, is_active='active'
-            )
-
-            # 獲取資料品質
-            latest_factor = OptionDailyFactorRepository.get_latest(db, underlying_id)
-            data_quality_score = latest_factor.data_quality_score if latest_factor else None
-
-            status_list.append(OptionSyncStatus(
-                underlying_id=underlying_id,
-                last_sync_date=last_sync_date,
-                total_contracts=total_contracts,
-                active_contracts=active_contracts,
-                data_quality_score=data_quality_score,
-                stage=stage
-            ))
-
-        return status_list
+        return option_service.get_sync_status()
 
     except Exception as e:
         raise HTTPException(

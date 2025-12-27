@@ -309,3 +309,61 @@ class StrategyRepository:
             )
             .count() > 0
         )
+
+    @staticmethod
+    def count(db: Session, status: Optional[StrategyStatus] = None) -> int:
+        """
+        Count total number of strategies
+
+        Args:
+            db: Database session
+            status: Filter by status (optional)
+
+        Returns:
+            Total strategy count
+        """
+        query = db.query(Strategy)
+
+        if status:
+            query = query.filter(Strategy.status == status)
+
+        return query.count()
+
+    @staticmethod
+    def get_all_active_strategies(db: Session) -> List[Strategy]:
+        """
+        Get all active strategies (all engine types)
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of active strategies
+        """
+        return (
+            db.query(Strategy)
+            .filter(Strategy.status == StrategyStatus.ACTIVE)
+            .all()
+        )
+
+    @staticmethod
+    def get_active_backtrader_strategies(db: Session) -> List[Strategy]:
+        """
+        Get active Backtrader strategies (for monitoring)
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of active Backtrader strategies
+        """
+        return (
+            db.query(Strategy)
+            .filter(
+                and_(
+                    Strategy.status == StrategyStatus.ACTIVE,
+                    Strategy.engine_type == "backtrader"
+                )
+            )
+            .all()
+        )

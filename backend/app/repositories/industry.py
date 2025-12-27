@@ -373,6 +373,18 @@ class IndustryRepository:
 
         return {level: count for level, count in results}
 
+    def count_stock_industry_mappings(self, db: Session) -> int:
+        """
+        Get total count of stock-industry mappings.
+
+        Args:
+            db: Database session
+
+        Returns:
+            Total number of stock-industry mappings
+        """
+        return db.query(StockIndustry).count()
+
     def get_stock_count_by_industry(
         self, db: Session, industry_code: str
     ) -> int:
