@@ -2,6 +2,9 @@
 export default defineNuxtConfig({
   devtools: { enabled: false },
 
+  // 完全禁用 SSR 以避免 hydration 錯誤
+  ssr: false,
+
   modules: [
     '@pinia/nuxt'
   ],
