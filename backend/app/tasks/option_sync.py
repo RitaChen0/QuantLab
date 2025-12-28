@@ -431,8 +431,11 @@ def register_option_contracts(
                         logger.warning(f"[OPTION] No contracts found for {underlying_id}")
                         continue
 
-                    # 註冊每個合約
-                    for _, row in option_chain.iterrows():
+                    # 批次註冊合約（每 50 個合約提交一次）
+                    batch_size = 50
+                    total_contracts = len(option_chain)
+
+                    for idx, (_, row) in enumerate(option_chain.iterrows(), 1):
                         try:
                             from app.schemas.option import OptionContractCreate
 
@@ -460,15 +463,26 @@ def register_option_contracts(
                                 OptionContractRepository.create(db, contract_data)
                                 stats["total_contracts_registered"] += 1
 
+                            # 批次提交（每 batch_size 個合約或最後一個合約）
+                            if idx % batch_size == 0 or idx == total_contracts:
+                                db.commit()
+                                logger.debug(
+                                    f"[OPTION] Progress: {idx}/{total_contracts} contracts processed, "
+                                    f"committed to database"
+                                )
+
                         except Exception as e:
                             logger.warning(
                                 f"[OPTION] Failed to register contract "
                                 f"{row['contract_id']}: {str(e)}"
                             )
+                            # 回滾當前批次中的錯誤
+                            db.rollback()
                             continue
 
                     logger.info(
-                        f"[OPTION] ✅ Registered contracts for {underlying_id}"
+                        f"[OPTION] ✅ Registered {stats['total_contracts_registered']} contracts "
+                        f"for {underlying_id} (updated: {stats['total_contracts_updated']})"
                     )
 
                 except Exception as e:

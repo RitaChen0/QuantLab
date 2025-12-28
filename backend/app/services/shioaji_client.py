@@ -148,6 +148,36 @@ class ShioajiClient:
             logger.error(f"❌ Failed to initialize Shioaji: {str(e)}")
             self._initialized = False
 
+    def refresh_connection(self):
+        """
+        刷新 Shioaji 連接（重新登入）
+
+        當 token 過期時調用此方法重新登入
+        """
+        try:
+            logger.info("[SHIOAJI] Refreshing connection due to token expiration...")
+
+            # 先登出
+            if self._api:
+                try:
+                    self._api.logout()
+                except Exception:
+                    pass
+
+            # 重新初始化
+            self._initialize()
+
+            if self._initialized:
+                logger.info("[SHIOAJI] ✅ Connection refreshed successfully")
+                return True
+            else:
+                logger.error("[SHIOAJI] ❌ Failed to refresh connection")
+                return False
+
+        except Exception as e:
+            logger.error(f"[SHIOAJI] ❌ Error refreshing connection: {str(e)}")
+            return False
+
     def is_available(self) -> bool:
         """
         檢查客戶端是否可用

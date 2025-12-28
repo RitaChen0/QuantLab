@@ -58,6 +58,14 @@ celery_app.conf.update(
         'app.tasks.sync_shioaji_futures': {
             'time_limit': 1800,      # 30 分鐘硬限制（同步期货）
             'soft_time_limit': 1740,  # 29 分鐘軟限制
+        },
+        'app.tasks.register_option_contracts': {
+            'time_limit': 7200,      # 2 小時硬限制（處理 952 個選擇權合約）
+            'soft_time_limit': 6900,  # 1 小時 55 分鐘軟限制
+        },
+        'app.tasks.sync_option_daily_factors': {
+            'time_limit': 3600,      # 1 小時硬限制（計算 Greeks）
+            'soft_time_limit': 3300,  # 55 分鐘軟限制
         }
     },
 

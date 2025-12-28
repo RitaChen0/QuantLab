@@ -303,47 +303,86 @@ class ShioajiOptionDataSource(OptionDataSource):
             logger.error(f"[OPTION] Error getting option contracts: {str(e)}")
             return []
 
-    def _get_contract_snapshot(self, contract, date: date) -> Optional[Dict[str, Any]]:
+    def _get_contract_snapshot(self, contract, date: date, max_retries: int = 2, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
         """
-        獲取單一合約的快照數據
+        獲取單一合約的快照數據（帶重試機制）
 
         Args:
             contract: Shioaji contract object
             date: 資料日期
+            max_retries: 最大重試次數
+            timeout: 單次請求超時時間（秒）
 
         Returns:
             字典包含合約資訊和價格數據，失敗返回 None
         """
-        try:
-            # 解析合約資訊
-            contract_info = self._parse_contract(contract)
+        import time
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
-            if not contract_info:
-                return None
-
-            # 階段一：使用 snapshots API 獲取收盤數據
-            # 注意：Shioaji API 可能需要調整，這裡提供參考實作
-            snapshot = self._api.snapshots([contract])
-
-            if not snapshot or len(snapshot) == 0:
-                logger.debug(f"[OPTION] No snapshot data for {contract.code}")
-                return None
-
-            snap_data = snapshot[0]
-
-            # 提取價格和成交量數據
-            data = {
-                **contract_info,
-                'close': float(snap_data.close) if hasattr(snap_data, 'close') else None,
-                'volume': int(snap_data.volume) if hasattr(snap_data, 'volume') else 0,
-                'open_interest': int(snap_data.open_interest) if hasattr(snap_data, 'open_interest') else None,
-            }
-
-            return data
-
-        except Exception as e:
-            logger.debug(f"[OPTION] Error getting snapshot for {contract.code}: {str(e)}")
+        # 解析合約資訊（放在重試循環外）
+        contract_info = self._parse_contract(contract)
+        if not contract_info:
             return None
+
+        # 重試邏輯
+        for attempt in range(max_retries + 1):
+            try:
+                # 使用 ThreadPoolExecutor 實現超時控制
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(self._api.snapshots, [contract])
+                    try:
+                        snapshot = future.result(timeout=timeout)
+                    except FuturesTimeoutError:
+                        if attempt < max_retries:
+                            logger.debug(f"[OPTION] Timeout getting snapshot for {contract.code}, retrying ({attempt+1}/{max_retries})...")
+                            time.sleep(0.5)  # 短暫延遲後重試
+                            continue
+                        else:
+                            logger.debug(f"[OPTION] Timeout getting snapshot for {contract.code} after {max_retries} retries")
+                            return None
+
+                if not snapshot or len(snapshot) == 0:
+                    logger.debug(f"[OPTION] No snapshot data for {contract.code}")
+                    return None
+
+                snap_data = snapshot[0]
+
+                # 提取價格和成交量數據
+                data = {
+                    **contract_info,
+                    'close': float(snap_data.close) if hasattr(snap_data, 'close') else None,
+                    'volume': int(snap_data.volume) if hasattr(snap_data, 'volume') else 0,
+                    'open_interest': int(snap_data.open_interest) if hasattr(snap_data, 'open_interest') else None,
+                }
+
+                return data
+
+            except Exception as e:
+                error_msg = str(e)
+
+                # 檢查是否為 token 過期錯誤
+                if "401" in error_msg or "Token is expired" in error_msg or "expired" in error_msg.lower():
+                    logger.warning(f"[OPTION] Token expired, refreshing connection...")
+
+                    # 刷新 Shioaji 連接
+                    if hasattr(self._shioaji_client, 'refresh_connection'):
+                        if self._shioaji_client.refresh_connection():
+                            logger.info(f"[OPTION] Connection refreshed, retrying {contract.code}...")
+                            time.sleep(1)
+                            continue
+                        else:
+                            logger.error(f"[OPTION] Failed to refresh connection")
+                            return None
+
+                if attempt < max_retries:
+                    logger.debug(f"[OPTION] Error getting snapshot for {contract.code} (attempt {attempt+1}/{max_retries+1}): {error_msg}")
+                    time.sleep(0.5)
+                    continue
+                else:
+                    logger.debug(f"[OPTION] Error getting snapshot for {contract.code} after {max_retries+1} attempts: {error_msg}")
+                    return None
+
+        return None
 
     def _parse_contract(self, contract) -> Optional[Dict[str, Any]]:
         """
@@ -384,13 +423,20 @@ class ShioajiOptionDataSource(OptionDataSource):
                 logger.debug(f"[OPTION] Unsupported option type: {contract_id}")
                 return None
 
+            # 解析到期日（轉換 Shioaji 格式 YYYY/MM/DD 為 ISO 8601 YYYY-MM-DD）
+            expiry_date = None
+            if hasattr(contract, 'delivery_date') and contract.delivery_date:
+                delivery_date_str = str(contract.delivery_date)
+                # 轉換 2026/02/23 -> 2026-02-23
+                expiry_date = delivery_date_str.replace('/', '-')
+
             return {
                 'contract_id': contract_id,
                 'underlying_id': underlying_id,
                 'underlying_type': underlying_type,
                 'option_type': option_type,
                 'strike_price': float(contract.strike_price),
-                'expiry_date': contract.delivery_date if hasattr(contract, 'delivery_date') else None,
+                'expiry_date': expiry_date,
             }
 
         except Exception as e:
