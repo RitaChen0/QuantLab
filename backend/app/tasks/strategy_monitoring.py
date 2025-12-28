@@ -229,11 +229,12 @@ def cleanup_old_signals(
     """
     from datetime import timedelta
     from app.models.strategy_signal import StrategySignal
+    from app.utils.timezone_helpers import now_utc
 
     db = SessionLocal()
 
     try:
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+        cutoff_date = now_utc() - timedelta(days=days_to_keep)
 
         # 刪除舊記錄
         deleted = (
