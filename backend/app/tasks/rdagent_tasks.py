@@ -174,13 +174,46 @@ def run_factor_mining_task(self: Task, task_id: int):
         logger.info(f"Parsed: {len(factors)}, Saved: {len(saved_factors)}, Failed: {len(failed_factors)}")
         logger.info(f"LLM calls: {llm_calls}, Cost: ${llm_cost}")
 
+        # ========== 步驟 6: 觸發自動評估 ==========
+        logger.info("Step 6: Triggering automatic factor evaluation...")
+
+        evaluation_tasks = []
+        for factor_info in saved_factors:
+            factor_id = factor_info["id"]
+            factor_name = factor_info["name"]
+
+            try:
+                # 異步觸發評估任務
+                from app.tasks.factor_evaluation_tasks import evaluate_factor_async
+
+                task_result = evaluate_factor_async.delay(
+                    factor_id=factor_id,
+                    stock_pool="all",
+                    start_date=None,  # 使用預設 2 年
+                    end_date=None
+                )
+
+                evaluation_tasks.append({
+                    "factor_id": factor_id,
+                    "factor_name": factor_name,
+                    "task_id": task_result.id
+                })
+
+                logger.info(f"✅ Triggered evaluation for factor {factor_id} ({factor_name}), task_id: {task_result.id}")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to trigger evaluation for factor {factor_id} ({factor_name}): {str(e)}")
+
+        logger.info(f"Triggered {len(evaluation_tasks)} evaluation tasks for {len(saved_factors)} factors")
+
         return {
             "status": "success",
             "task_id": task_id,
             "factors_generated": len(factors),
             "llm_calls": llm_calls,
             "llm_cost": llm_cost,
-            "log_directory": log_dir
+            "log_directory": log_dir,
+            "evaluation_tasks": evaluation_tasks  # 新增：返回觸發的評估任務資訊
         }
 
     except Exception as e:
@@ -509,6 +542,329 @@ def run_model_generation_task(self: Task, task_id: int):
         )
 
         return {"status": "error", "message": str(e)}
+
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, name="app.tasks.cleanup_stuck_rdagent_tasks")
+def cleanup_stuck_rdagent_tasks(self: Task, timeout_hours: int = 24) -> dict:
+    """清理執行超時的 RD-Agent 任務
+
+    定期檢查並清理處於 RUNNING 狀態超過指定時間的任務，
+    防止任務永久卡住佔用資源。
+
+    Args:
+        timeout_hours: 超時時間（小時），預設 24 小時
+
+    Returns:
+        dict: 清理統計資訊
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import and_
+
+    db: Session = SessionLocal()
+
+    try:
+        logger.info(f"🧹 開始清理卡住的 RD-Agent 任務（超時: {timeout_hours} 小時）")
+
+        # 計算超時時間點
+        timeout_threshold = datetime.now(timezone.utc) - timedelta(hours=timeout_hours)
+
+        # 查詢卡住的任務
+        stuck_tasks = db.query(RDAgentTask).filter(
+            and_(
+                RDAgentTask.status == TaskStatus.RUNNING,
+                RDAgentTask.started_at < timeout_threshold
+            )
+        ).all()
+
+        if not stuck_tasks:
+            logger.info("✅ 沒有卡住的任務")
+            return {
+                "status": "success",
+                "cleaned_count": 0,
+                "tasks": []
+            }
+
+        logger.warning(f"⚠️  發現 {len(stuck_tasks)} 個卡住的任務")
+
+        cleaned_tasks = []
+        for task in stuck_tasks:
+            running_hours = (datetime.now(timezone.utc) - task.started_at).total_seconds() / 3600
+
+            logger.info(f"📋 清理任務 {task.id}:")
+            logger.info(f"   - 類型: {task.task_type}")
+            logger.info(f"   - 用戶: {task.user_id}")
+            logger.info(f"   - 運行時間: {running_hours:.1f} 小時")
+
+            # 更新任務狀態
+            task.status = TaskStatus.FAILED
+            task.error_message = f"Task timeout after {running_hours:.1f} hours (auto-cleanup on {datetime.now(timezone.utc).date()})"
+            task.completed_at = datetime.now(timezone.utc)
+
+            cleaned_tasks.append({
+                "id": task.id,
+                "task_type": task.task_type.value,
+                "user_id": task.user_id,
+                "running_hours": round(running_hours, 1)
+            })
+
+        db.commit()
+
+        logger.info(f"✅ 成功清理 {len(cleaned_tasks)} 個卡住的任務")
+
+        return {
+            "status": "success",
+            "cleaned_count": len(cleaned_tasks),
+            "tasks": cleaned_tasks
+        }
+
+    except Exception as e:
+        logger.error(f"❌ 清理卡住任務時發生錯誤: {str(e)}")
+        db.rollback()
+
+        return {
+            "status": "error",
+            "message": str(e),
+            "cleaned_count": 0
+        }
+
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, name="app.tasks.monitor_rdagent_tasks")
+def monitor_rdagent_tasks(self: Task) -> dict:
+    """監控 RD-Agent 任務狀態並發送告警
+
+    檢查項目：
+    1. 長時間運行的任務（超過軟超時 80%）
+    2. 最近失敗的任務
+    3. 異常高頻率失敗
+    4. 任務執行時間異常
+
+    Returns:
+        dict: 監控統計資訊
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import and_, func
+    from app.models.rdagent import TaskType  # 添加導入
+
+    db: Session = SessionLocal()
+
+    try:
+        logger.info("🔍 開始監控 RD-Agent 任務狀態...")
+
+        alerts = []
+        stats = {
+            "running_tasks": 0,
+            "long_running_tasks": 0,
+            "recent_failures": 0,
+            "high_failure_rate": False,
+            "alerts_sent": 0,
+            "errors": []
+        }
+
+        # ==================== 檢查 1: 長時間運行的任務 ====================
+        # 定義告警閾值（達到軟超時的 80%）
+        thresholds = {
+            TaskType.FACTOR_MINING: timedelta(minutes=44),  # 55 分鐘 * 80% = 44 分鐘
+            TaskType.MODEL_GENERATION: timedelta(minutes=22),  # 28 分鐘 * 80% = 22 分鐘
+            TaskType.STRATEGY_OPTIMIZATION: timedelta(minutes=22)
+        }
+
+        running_tasks = db.query(RDAgentTask).filter(
+            RDAgentTask.status == TaskStatus.RUNNING
+        ).all()
+
+        stats["running_tasks"] = len(running_tasks)
+
+        for task in running_tasks:
+            if task.started_at:
+                running_time = datetime.now(timezone.utc) - task.started_at
+                threshold = thresholds.get(task.task_type, timedelta(minutes=30))
+
+                if running_time > threshold:
+                    stats["long_running_tasks"] += 1
+                    running_minutes = running_time.total_seconds() / 60
+
+                    alerts.append({
+                        "severity": "WARNING",
+                        "type": "LONG_RUNNING_TASK",
+                        "task_id": task.id,
+                        "task_type": task.task_type.value,
+                        "user_id": task.user_id,
+                        "running_minutes": round(running_minutes, 1),
+                        "threshold_minutes": threshold.total_seconds() / 60,
+                        "message": (
+                            f"⚠️ RD-Agent 任務 #{task.id} ({task.task_type.value}) "
+                            f"已運行 {running_minutes:.1f} 分鐘，超過告警閾值"
+                        )
+                    })
+
+                    logger.warning(
+                        f"⚠️ Task {task.id} ({task.task_type.value}) "
+                        f"running for {running_minutes:.1f} minutes"
+                    )
+
+        # ==================== 檢查 2: 最近失敗的任務 ====================
+        recent_failures = db.query(RDAgentTask).filter(
+            and_(
+                RDAgentTask.status == TaskStatus.FAILED,
+                RDAgentTask.completed_at >= datetime.now(timezone.utc) - timedelta(hours=1)
+            )
+        ).all()
+
+        stats["recent_failures"] = len(recent_failures)
+
+        for task in recent_failures:
+            alerts.append({
+                "severity": "ERROR",
+                "type": "TASK_FAILED",
+                "task_id": task.id,
+                "task_type": task.task_type.value,
+                "user_id": task.user_id,
+                "error_message": task.error_message or "Unknown error",
+                "message": (
+                    f"❌ RD-Agent 任務 #{task.id} ({task.task_type.value}) 失敗\n"
+                    f"錯誤: {task.error_message or 'Unknown error'}"
+                )
+            })
+
+            logger.error(
+                f"❌ Task {task.id} ({task.task_type.value}) failed: "
+                f"{task.error_message}"
+            )
+
+        # ==================== 檢查 3: 失敗率過高 ====================
+        # 檢查最近 24 小時的任務失敗率
+        one_day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+
+        total_tasks_24h = db.query(func.count(RDAgentTask.id)).filter(
+            RDAgentTask.created_at >= one_day_ago
+        ).scalar()
+
+        failed_tasks_24h = db.query(func.count(RDAgentTask.id)).filter(
+            and_(
+                RDAgentTask.status == TaskStatus.FAILED,
+                RDAgentTask.created_at >= one_day_ago
+            )
+        ).scalar()
+
+        if total_tasks_24h and total_tasks_24h > 0:
+            failure_rate = (failed_tasks_24h / total_tasks_24h) * 100
+
+            # 失敗率超過 30% 視為異常
+            if failure_rate > 30:
+                stats["high_failure_rate"] = True
+
+                alerts.append({
+                    "severity": "CRITICAL",
+                    "type": "HIGH_FAILURE_RATE",
+                    "failure_rate": round(failure_rate, 1),
+                    "total_tasks": total_tasks_24h,
+                    "failed_tasks": failed_tasks_24h,
+                    "message": (
+                        f"🚨 RD-Agent 任務失敗率過高！\n"
+                        f"最近 24 小時: {failed_tasks_24h}/{total_tasks_24h} 失敗 "
+                        f"({failure_rate:.1f}%)"
+                    )
+                })
+
+                logger.critical(
+                    f"🚨 High failure rate detected: {failure_rate:.1f}% "
+                    f"({failed_tasks_24h}/{total_tasks_24h})"
+                )
+
+        # ==================== 發送告警 ====================
+        if alerts:
+            logger.info(f"📊 檢測到 {len(alerts)} 個告警，準備發送通知...")
+
+            # 按用戶分組告警
+            alerts_by_user = {}
+            for alert in alerts:
+                user_id = alert.get("user_id")
+                if user_id:
+                    if user_id not in alerts_by_user:
+                        alerts_by_user[user_id] = []
+                    alerts_by_user[user_id].append(alert)
+
+            # 發送告警通知
+            for user_id, user_alerts in alerts_by_user.items():
+                try:
+                    # 構建告警消息
+                    severity_emoji = {
+                        "WARNING": "⚠️",
+                        "ERROR": "❌",
+                        "CRITICAL": "🚨"
+                    }
+
+                    message_lines = ["<b>🤖 RD-Agent 任務告警</b>\n"]
+
+                    for alert in user_alerts:
+                        emoji = severity_emoji.get(alert["severity"], "ℹ️")
+                        message_lines.append(
+                            f"{emoji} <b>{alert['type']}</b>\n"
+                            f"{alert['message']}\n"
+                        )
+
+                    message = "\n".join(message_lines)
+
+                    # 調用 Telegram 通知任務
+                    from app.tasks.telegram_notifications import send_telegram_notification
+
+                    send_telegram_notification.delay(
+                        user_id=user_id,
+                        notification_type="system_alert",
+                        title="🤖 RD-Agent 任務告警",
+                        message=message,
+                        related_object_type="rdagent_monitoring",
+                        related_object_id=None
+                    )
+
+                    stats["alerts_sent"] += 1
+
+                except Exception as e:
+                    error_msg = f"Failed to send alert to user {user_id}: {str(e)}"
+                    logger.error(error_msg)
+                    stats["errors"].append(error_msg)
+
+            # 系統級告警（高失敗率）發送給管理員
+            critical_alerts = [a for a in alerts if a["severity"] == "CRITICAL"]
+            if critical_alerts:
+                # TODO: 添加管理員通知邏輯
+                logger.critical(
+                    f"🚨 {len(critical_alerts)} critical alerts detected, "
+                    f"admin notification required"
+                )
+
+        else:
+            logger.info("✅ 所有 RD-Agent 任務狀態正常，無告警")
+
+        # 記錄監控統計
+        logger.info(f"📊 監控統計:")
+        logger.info(f"   - 運行中任務: {stats['running_tasks']}")
+        logger.info(f"   - 長時間運行: {stats['long_running_tasks']}")
+        logger.info(f"   - 最近失敗: {stats['recent_failures']}")
+        logger.info(f"   - 高失敗率: {stats['high_failure_rate']}")
+        logger.info(f"   - 告警已發送: {stats['alerts_sent']}")
+
+        return {
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stats": stats,
+            "alerts": alerts
+        }
+
+    except Exception as e:
+        logger.error(f"❌ RD-Agent 監控任務失敗: {str(e)}")
+
+        return {
+            "status": "error",
+            "message": str(e),
+            "stats": stats
+        }
 
     finally:
         db.close()

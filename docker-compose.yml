@@ -108,7 +108,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # Celery Worker
+  # Celery Worker (General tasks)
   celery-worker:
     build:
       context: ./backend
@@ -144,6 +144,43 @@ services:
       SHIOAJI_ENABLE_ORDER: ${SHIOAJI_ENABLE_ORDER:-False}
       SHIOAJI_CA_PATH: ${SHIOAJI_CA_PATH}
       SHIOAJI_CA_PASSWORD: ${SHIOAJI_CA_PASSWORD}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-True}
+      QLIB_DATA_PATH: ${QLIB_DATA_PATH}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - quantlab-network
+
+  # Celery Evaluation Worker (Dedicated for factor evaluation with concurrency limit)
+  celery-evaluation-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quantlab-celery-evaluation-worker
+    restart: unless-stopped
+    # 專門處理評估任務，並發限制為 3
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=3 --queues=evaluation
+    group_add:
+      - "999"  # Docker group GID for socket access
+    volumes:
+      - ./backend:/app
+      - backend_cache:/root/.cache
+      - /data/qlib:/data/qlib  # Qlib 數據持久化
+      - ./ShioajiData:/data/shioaji  # Shioaji 分鐘級資料
+    environment:
+      TZ: UTC  # 統一使用 UTC 時區
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FINLAB_API_TOKEN: ${FINLAB_API_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-True}
       QLIB_DATA_PATH: ${QLIB_DATA_PATH}

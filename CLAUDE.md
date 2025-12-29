@@ -257,6 +257,97 @@ ORDER BY created_at DESC LIMIT 5;"
   ALTER TABLE generated_factors ALTER COLUMN created_at SET DEFAULT NOW();"
   ```
 
+### RD-Agent 任務清理
+
+```bash
+# 🧹 清理卡住的 RD-Agent 任務（手動執行）
+bash scripts/cleanup-stuck-rdagent-tasks.sh
+
+# 自訂超時時間（預設 24 小時）
+bash scripts/cleanup-stuck-rdagent-tasks.sh 43200  # 12 小時 (單位：秒)
+
+# 🔍 檢查卡住的任務（僅查詢，不清理）
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT id, task_type, status,
+       ROUND(EXTRACT(EPOCH FROM (NOW() - started_at))/3600, 1) as running_hours
+FROM rdagent_tasks
+WHERE status = 'RUNNING'
+  AND started_at < NOW() - INTERVAL '24 hours';"
+
+# 手動觸發清理任務
+docker compose exec backend celery -A app.core.celery_app call app.tasks.cleanup_stuck_rdagent_tasks
+```
+
+**自動清理機制**：
+- ⏰ **執行時間**：每天台北時間 05:30 (UTC 21:30)
+- 🔧 **清理條件**：RUNNING 狀態超過 24 小時的任務
+- 🎯 **處理方式**：標記為 FAILED 並記錄錯誤訊息
+- 📊 **日誌位置**：`docker compose logs celery-worker | grep cleanup_stuck`
+
+**任務超時配置**（三層防護）：
+```python
+# 第 1 層：Celery 軟超時 (優雅退出)
+# 第 2 層：Celery 硬超時 (強制終止)
+# 第 3 層：每日自動清理 (最終兜底)
+
+任務類型                    軟限制    硬限制    歷史 P95
+─────────────────────────────────────────────────
+因子挖掘 (FACTOR_MINING)      55 分     60 分     33 分
+模型生成 (MODEL_GENERATION)   28 分     30 分     0.5 分
+策略優化 (OPTIMIZATION)       28 分     30 分     (預估)
+```
+
+**超時策略說明**：
+- 📊 基於歷史數據分析設定（P95 + 足夠緩衝）
+- 🛡️ 防止任務永久卡住（如 Task 13 卡住 4 天的情況）
+- ✅ 寬鬆設定，避免誤殺正常執行的任務
+
+### RD-Agent 任務監控告警
+
+**實時監控**（每 30 分鐘自動執行）：
+
+```bash
+# 手動觸發監控檢查
+docker compose exec backend celery -A app.core.celery_app call app.tasks.monitor_rdagent_tasks
+
+# 查看監控日誌
+docker compose logs celery-worker | grep monitor_rdagent
+```
+
+**監控檢查項目**：
+
+| 檢查項目 | 告警等級 | 閾值 | 通知對象 |
+|---------|---------|------|---------|
+| 長時間運行任務 | ⚠️ WARNING | 軟超時的 80% | 任務創建者 |
+| 任務失敗 | ❌ ERROR | 最近 1 小時內 | 任務創建者 |
+| 高失敗率 | 🚨 CRITICAL | >30% (24h) | 創建者 + 管理員 |
+
+**告警閾值**：
+```
+FACTOR_MINING:      44 分鐘（55 min * 80%）
+MODEL_GENERATION:   22 分鐘（28 min * 80%）
+STRATEGY_OPTIMIZATION: 22 分鐘（28 min * 80%）
+```
+
+**Telegram 通知範例**：
+```
+🤖 RD-Agent 任務告警
+
+⚠️ LONG_RUNNING_TASK
+⚠️ RD-Agent 任務 #123 (FACTOR_MINING) 已運行 46.5 分鐘，超過告警閾值
+
+❌ TASK_FAILED
+❌ RD-Agent 任務 #124 (MODEL_GENERATION) 失敗
+錯誤: OpenAI API key invalid
+```
+
+**監控頻率**：每 30 分鐘自動檢查（全天候 24/7）
+
+**參考文檔**：
+- [Document/RDAGENT_MONITORING_ALERT_REPORT.md](Document/RDAGENT_MONITORING_ALERT_REPORT.md) - 監控告警完整指南
+- [Document/RDAGENT_TIMEOUT_CONFIG_REPORT.md](Document/RDAGENT_TIMEOUT_CONFIG_REPORT.md) - 超時配置詳解
+- [Document/RDAGENT_TASK13_CLEANUP_REPORT.md](Document/RDAGENT_TASK13_CLEANUP_REPORT.md) - Task 13 清理報告
+
 ---
 
 ## 🏗️ 高層架構

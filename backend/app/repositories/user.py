@@ -52,6 +52,20 @@ class UserRepository:
         return db.query(User).filter(User.verification_token == token).first()
 
     @staticmethod
+    def get_by_last_verification_token(db: Session, token: str) -> Optional[User]:
+        """
+        Get user by last verification token (used for friendly error handling)
+
+        Args:
+            db: Database session
+            token: Last verification token
+
+        Returns:
+            User object or None if not found
+        """
+        return db.query(User).filter(User.last_verification_token == token).first()
+
+    @staticmethod
     def get_by_telegram_id(db: Session, telegram_id: int) -> Optional[User]:
         """
         Get user by Telegram ID

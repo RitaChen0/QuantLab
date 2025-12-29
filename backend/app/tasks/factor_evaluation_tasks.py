@@ -13,6 +13,7 @@ from app.core.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.services.factor_evaluation_service import FactorEvaluationService
 from app.models.rdagent import GeneratedFactor
+from app.utils.concurrent_limit import evaluation_limiter
 
 
 @celery_app.task(bind=True, name="app.tasks.evaluate_factor_async")
@@ -24,7 +25,11 @@ def evaluate_factor_async(
     end_date: str = None
 ) -> dict:
     """
-    異步評估因子績效
+    異步評估因子績效（帶並發限制）
+
+    並發控制：
+    - 最多同時執行 3 個評估任務
+    - 超過限制時會自動重試（最多 10 次，每次等待 30 秒）
 
     Args:
         factor_id: 因子 ID
@@ -35,46 +40,76 @@ def evaluate_factor_async(
     Returns:
         評估結果字典
     """
-    logger.info(f"[Task {self.request.id}] Starting async factor evaluation for factor_id={factor_id}")
+    task_id = f"eval_{factor_id}_{self.request.id}"
+
+    # 檢查並發限制
+    if not evaluation_limiter.can_execute():
+        current_count = evaluation_limiter.get_current_count()
+        logger.warning(
+            f"[Task {self.request.id}] Evaluation concurrent limit reached "
+            f"({current_count}/{evaluation_limiter.max_concurrent}), "
+            f"retrying in 30 seconds..."
+        )
+        # 延遲重試
+        raise self.retry(countdown=30, max_retries=10)
+
+    logger.info(
+        f"[Task {self.request.id}] Starting async factor evaluation for factor_id={factor_id}, "
+        f"concurrent: {evaluation_limiter.get_current_count() + 1}/{evaluation_limiter.max_concurrent}"
+    )
 
     db: Session = SessionLocal()
 
     try:
-        # 檢查因子是否存在
-        factor = db.query(GeneratedFactor).filter(
-            GeneratedFactor.id == factor_id
-        ).first()
+        # 使用並發限制器獲取執行槽位
+        with evaluation_limiter.acquire(task_id=task_id):
+            # 檢查因子是否存在
+            factor = db.query(GeneratedFactor).filter(
+                GeneratedFactor.id == factor_id
+            ).first()
 
-        if not factor:
-            logger.error(f"[Task {self.request.id}] Factor {factor_id} not found")
+            if not factor:
+                logger.error(f"[Task {self.request.id}] Factor {factor_id} not found")
+                return {
+                    "status": "error",
+                    "error": f"Factor {factor_id} not found",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+
+            # 執行評估
+            service = FactorEvaluationService(db)
+            results = service.evaluate_factor(
+                factor_id=factor_id,
+                stock_pool=stock_pool,
+                start_date=start_date,
+                end_date=end_date,
+                save_to_db=True
+            )
+
+            logger.info(
+                f"[Task {self.request.id}] Factor evaluation completed - "
+                f"IC: {results.get('ic', 'N/A'):.4f}, "
+                f"Sharpe: {results.get('sharpe_ratio', 'N/A'):.4f}"
+            )
+
+            # 自動更新因子指標到主表
+            logger.info(f"[Task {self.request.id}] Triggering automatic metrics sync for factor {factor_id}...")
+
+            try:
+                # 觸發指標同步任務
+                update_task = update_factor_metrics.delay(factor_id=factor_id)
+                logger.info(f"[Task {self.request.id}] Metrics sync triggered, task_id: {update_task.id}")
+
+            except Exception as sync_error:
+                logger.error(f"[Task {self.request.id}] Failed to trigger metrics sync: {str(sync_error)}")
+                # 不影響評估任務本身的成功狀態
+
             return {
-                "status": "error",
-                "error": f"Factor {factor_id} not found",
+                "status": "success",
+                "factor_id": factor_id,
+                "results": results,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-
-        # 執行評估
-        service = FactorEvaluationService(db)
-        results = service.evaluate_factor(
-            factor_id=factor_id,
-            stock_pool=stock_pool,
-            start_date=start_date,
-            end_date=end_date,
-            save_to_db=True
-        )
-
-        logger.info(
-            f"[Task {self.request.id}] Factor evaluation completed - "
-            f"IC: {results.get('ic', 'N/A'):.4f}, "
-            f"Sharpe: {results.get('sharpe_ratio', 'N/A'):.4f}"
-        )
-
-        return {
-            "status": "success",
-            "factor_id": factor_id,
-            "results": results,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
 
     except Exception as e:
         logger.error(f"[Task {self.request.id}] Factor evaluation failed: {str(e)}")

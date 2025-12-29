@@ -42,6 +42,10 @@ celery_app.conf.update(
         'app.tasks.run_backtest_async': {'queue': 'backtest'},
         'app.tasks.sync_*': {'queue': 'data_sync'},
         'app.tasks.cleanup_*': {'queue': 'maintenance'},
+        # 因子評估專用隊列（並發控制）
+        'app.tasks.evaluate_factor_async': {'queue': 'evaluation'},
+        'app.tasks.batch_evaluate_factors': {'queue': 'evaluation'},
+        'app.tasks.update_factor_metrics': {'queue': 'evaluation'},
     },
 
     # 並發控制 - 限制同時執行的回測任務數量
@@ -66,6 +70,35 @@ celery_app.conf.update(
         'app.tasks.sync_option_daily_factors': {
             'time_limit': 3600,      # 1 小時硬限制（計算 Greeks）
             'soft_time_limit': 3300,  # 55 分鐘軟限制
+        },
+        # RD-Agent 任務超時配置（基於歷史數據分析）
+        # FACTOR_MINING: 平均 12 分鐘，P95 33 分鐘，最大 39 分鐘
+        'app.tasks.run_factor_mining_task': {
+            'time_limit': 3600,      # 1 小時硬限制
+            'soft_time_limit': 3300,  # 55 分鐘軟限制
+        },
+        # MODEL_GENERATION: 平均 0.4 分鐘，P95 0.5 分鐘，最大 0.6 分鐘
+        'app.tasks.run_model_generation_task': {
+            'time_limit': 1800,      # 30 分鐘硬限制
+            'soft_time_limit': 1680,  # 28 分鐘軟限制
+        },
+        # STRATEGY_OPTIMIZATION: 預估與 MODEL_GENERATION 類似
+        'app.tasks.run_strategy_optimization_task': {
+            'time_limit': 1800,      # 30 分鐘硬限制
+            'soft_time_limit': 1680,  # 28 分鐘軟限制
+        },
+        # 因子評估任務：計算密集，需要較長時間
+        'app.tasks.evaluate_factor_async': {
+            'time_limit': 3600,      # 1 小時硬限制
+            'soft_time_limit': 3300,  # 55 分鐘軟限制
+        },
+        'app.tasks.batch_evaluate_factors': {
+            'time_limit': 7200,      # 2 小時硬限制（批次評估）
+            'soft_time_limit': 6900,  # 1 小時 55 分鐘軟限制
+        },
+        'app.tasks.update_factor_metrics': {
+            'time_limit': 60,        # 1 分鐘硬限制（簡單更新）
+            'soft_time_limit': 50,   # 50 秒軟限制
         }
     },
 
@@ -159,6 +192,27 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.cleanup_celery_metadata",
         "schedule": crontab(hour=21, minute=0),  # UTC 21:00 = Taiwan 05:00 next day
         "options": {"expires": 82800},  # 23 hours
+    },
+
+    # Cleanup stuck RD-Agent tasks once per day
+    # Runs at: Taiwan 05:30 (UTC 21:30 previous day)
+    # Duration: ~1-2 seconds
+    # Purpose: Clear RUNNING tasks that exceed 24 hours timeout
+    "cleanup-stuck-rdagent-tasks-daily": {
+        "task": "app.tasks.cleanup_stuck_rdagent_tasks",
+        "schedule": crontab(hour=21, minute=30),  # UTC 21:30 = Taiwan 05:30 next day
+        "kwargs": {"timeout_hours": 24},
+        "options": {"expires": 82800},  # 23 hours
+    },
+
+    # Monitor RD-Agent tasks and send alerts
+    # Runs at: Every 30 minutes
+    # Duration: ~2-5 seconds
+    # Purpose: Detect long-running tasks, failures, and high failure rates
+    "monitor-rdagent-tasks": {
+        "task": "app.tasks.monitor_rdagent_tasks",
+        "schedule": crontab(minute="*/30"),  # Every 30 minutes
+        # 無 expires - 高頻監控任務不應過期
     },
 
     # Check database integrity once per day

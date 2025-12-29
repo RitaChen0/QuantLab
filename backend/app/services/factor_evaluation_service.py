@@ -15,9 +15,11 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, Optional, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from loguru import logger
+
+from app.utils.cache import cached_method, cache
 
 try:
     from qlib.data import D
@@ -34,12 +36,69 @@ from app.repositories.generated_factor import GeneratedFactorRepository
 from app.repositories.factor_evaluation import FactorEvaluationRepository
 
 
+def _evaluation_cache_key(
+    factor_id: int,
+    stock_pool: str = "all",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    save_to_db: bool = True
+) -> str:
+    """
+    生成評估快取鍵
+
+    Args:
+        factor_id: 因子 ID
+        stock_pool: 股票池
+        start_date: 開始日期
+        end_date: 結束日期
+        save_to_db: 是否保存到資料庫（不影響快取鍵）
+
+    Returns:
+        快取鍵字串
+    """
+    # 標準化日期格式
+    start = start_date or "default"
+    end = end_date or "default"
+    return f"{factor_id}:{stock_pool}:{start}:{end}"
+
+
 class FactorEvaluationService:
     """因子評估服務"""
 
     def __init__(self, db: Session):
         self.db = db
         self.qlib_adapter = QlibDataAdapter()
+
+    # ============ Cache Management ============
+
+    def clear_evaluation_cache(self, factor_id: int) -> int:
+        """
+        清除特定因子的所有評估快取
+
+        當因子公式更新時應該調用此方法
+
+        Args:
+            factor_id: 因子 ID
+
+        Returns:
+            刪除的快取數量
+        """
+        pattern = f"factor_evaluation:{factor_id}:*"
+        count = cache.clear_pattern(pattern)
+        logger.info(f"Cleared {count} cache entries for factor {factor_id}")
+        return count
+
+    def clear_all_evaluation_cache(self) -> int:
+        """
+        清除所有評估快取
+
+        Returns:
+            刪除的快取數量
+        """
+        pattern = "factor_evaluation:*"
+        count = cache.clear_pattern(pattern)
+        logger.info(f"Cleared {count} evaluation cache entries")
+        return count
 
     # ============ Permission Checks ============
 
@@ -97,6 +156,11 @@ class FactorEvaluationService:
 
     # ============ Evaluation Methods ============
 
+    @cached_method(
+        key_prefix="factor_evaluation",
+        expiry=3600,  # 1 小時快取
+        key_func=_evaluation_cache_key
+    )
     def evaluate_factor(
         self,
         factor_id: int,
@@ -106,7 +170,12 @@ class FactorEvaluationService:
         save_to_db: bool = True
     ) -> Dict:
         """
-        評估單個因子的績效
+        評估單個因子的績效（帶 Redis 快取）
+
+        快取策略：
+        - 相同參數的評估結果會快取 1 小時
+        - 快取鍵格式：factor_evaluation:{factor_id}:{stock_pool}:{start_date}:{end_date}
+        - 當因子公式更新時，應調用 clear_evaluation_cache() 清除快取
 
         Args:
             factor_id: 因子 ID
@@ -118,7 +187,7 @@ class FactorEvaluationService:
         Returns:
             評估結果字典
         """
-        logger.info(f"Starting factor evaluation for factor_id={factor_id}")
+        logger.info(f"Starting factor evaluation for factor_id={factor_id} (cache miss or expired)")
 
         # 1. 獲取因子資訊
         factor = GeneratedFactorRepository.get_by_id(self.db, factor_id)

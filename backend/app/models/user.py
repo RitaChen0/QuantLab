@@ -29,6 +29,7 @@ class User(Base):
     email_verified = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(255), nullable=True, unique=True)
     verification_token_expires = Column(DateTime(timezone=True), nullable=True)
+    last_verification_token = Column(String(255), nullable=True)  # 記錄最後一次驗證的 token（用於友善錯誤處理）
 
     # FinLab API Token (optional, encrypted with Fernet)
     finlab_api_token = Column(EncryptedText(), nullable=True)

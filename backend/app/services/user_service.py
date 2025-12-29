@@ -239,6 +239,16 @@ class UserService:
         user = self.repo.get_by_verification_token(self.db, token)
 
         if not user:
+            # Token not found in active verification_token field
+            # Check if this token was already used (in last_verification_token)
+            user = self.repo.get_by_last_verification_token(self.db, token)
+
+            if user and user.email_verified:
+                # Email already verified with this token - return success
+                logger.info(f"Email already verified for user {user.email} (duplicate verification attempt)")
+                return user
+
+            # Token not found anywhere or email not verified
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid verification token",
@@ -251,8 +261,9 @@ class UserService:
                 detail="Verification token expired. Please request a new verification email.",
             )
 
-        # Mark email as verified
+        # Mark email as verified and move token to last_verification_token
         user.email_verified = True
+        user.last_verification_token = user.verification_token  # Save for future reference
         user.verification_token = None
         user.verification_token_expires = None
         self.db.commit()

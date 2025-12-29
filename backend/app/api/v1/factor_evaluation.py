@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel, Field
+from loguru import logger
 
 from app.db.session import get_db
 from app.api.dependencies import get_current_user
@@ -428,4 +429,138 @@ async def analyze_ic_decay(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"IC 衰減分析失敗: {str(e)}"
+        )
+
+
+# 快取管理端點
+class CacheClearResponse(BaseModel):
+    """快取清除響應"""
+    success: bool
+    message: str
+    cleared_count: int
+
+
+@router.delete("/cache/factor/{factor_id}", response_model=CacheClearResponse)
+async def clear_factor_evaluation_cache(
+    factor_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    清除特定因子的所有評估快取
+
+    使用場景：
+    - 因子公式更新後，需要清除舊的評估結果
+    - 手動觸發重新評估前，清除快取確保獲得最新結果
+
+    權限：
+    - 只能清除自己擁有的因子的快取
+    """
+    try:
+        # 初始化 Service
+        service = FactorEvaluationService(db)
+
+        # 檢查因子是否存在且屬於當前用戶
+        try:
+            service.check_factor_access(factor_id, current_user.id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+
+        # 清除快取
+        cleared_count = service.clear_evaluation_cache(factor_id)
+
+        api_log.log_operation(
+            "clear_cache",
+            "factor_evaluation",
+            factor_id,
+            current_user.id,
+            success=True,
+            metadata={"cleared_count": cleared_count}
+        )
+
+        return CacheClearResponse(
+            success=True,
+            message=f"成功清除因子 {factor_id} 的 {cleared_count} 個快取項目",
+            cleared_count=cleared_count
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_log.log_operation(
+            "clear_cache",
+            "factor_evaluation",
+            factor_id,
+            current_user.id,
+            success=False,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"清除快取失敗: {str(e)}"
+        )
+
+
+@router.delete("/cache/all", response_model=CacheClearResponse)
+async def clear_all_evaluation_cache(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    清除所有評估快取（僅管理員）
+
+    使用場景：
+    - 系統維護
+    - 數據更新後需要重新評估所有因子
+    - 清理舊快取釋放 Redis 記憶體
+
+    權限：
+    - 僅系統管理員可以執行此操作
+    """
+    try:
+        # 檢查管理員權限
+        if not current_user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="僅管理員可以清除所有快取"
+            )
+
+        # 初始化 Service
+        service = FactorEvaluationService(db)
+
+        # 清除所有快取
+        cleared_count = service.clear_all_evaluation_cache()
+
+        api_log.log_operation(
+            "clear_all_cache",
+            "factor_evaluation",
+            None,
+            current_user.id,
+            success=True,
+            metadata={"cleared_count": cleared_count}
+        )
+
+        return CacheClearResponse(
+            success=True,
+            message=f"成功清除所有評估快取，共 {cleared_count} 個項目",
+            cleared_count=cleared_count
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        api_log.log_operation(
+            "clear_all_cache",
+            "factor_evaluation",
+            None,
+            current_user.id,
+            success=False,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"清除快取失敗: {str(e)}"
         )

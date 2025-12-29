@@ -221,9 +221,20 @@
             <strong>公式：</strong>
             <code>{{ factor.formula }}</code>
           </div>
-          <div v-if="factor.ic" class="factor-metrics">
+          <div v-if="factor.ic !== null && factor.ic !== undefined" class="factor-metrics">
             <span>IC: {{ factor.ic.toFixed(3) }}</span>
+            <span v-if="factor.icir">ICIR: {{ factor.icir.toFixed(2) }}</span>
             <span v-if="factor.sharpe_ratio">Sharpe: {{ factor.sharpe_ratio.toFixed(2) }}</span>
+            <span v-if="factor.annual_return">年化: {{ (factor.annual_return * 100).toFixed(2) }}%</span>
+          </div>
+          <div class="factor-actions">
+            <button @click="evaluateFactor(factor.id)" class="btn-evaluate" :disabled="evaluatingFactors.has(factor.id)">
+              <span v-if="evaluatingFactors.has(factor.id)">⏳ 評估中...</span>
+              <span v-else>📊 評估因子</span>
+            </button>
+            <button @click="viewEvaluationHistory(factor.id)" class="btn-history">
+              📈 評估歷史
+            </button>
           </div>
           <div v-if="factor.code" class="factor-code-section">
             <button
@@ -368,6 +379,7 @@ const expandedFactors = ref(new Set())
 const expandedSections = ref(new Set())
 const editingFactorId = ref(null)
 const editingFactorName = ref('')
+const evaluatingFactors = ref(new Set())
 
 // 選中策略的當前績效
 const selectedStrategyPerformance = computed(() => {
@@ -570,6 +582,47 @@ const loadFactors = async () => {
   } catch (error) {
     console.error('Failed to load factors:', error)
   }
+}
+
+// 評估因子
+const evaluateFactor = async (factorId: number) => {
+  if (evaluatingFactors.value.has(factorId)) {
+    return // 避免重複評估
+  }
+
+  evaluatingFactors.value.add(factorId)
+
+  try {
+    const token = localStorage.getItem('access_token')
+    const response = await $fetch(`${config.public.apiBase}/api/factor-evaluation/evaluate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: {
+        factor_id: factorId,
+        stock_pool: 'all'
+      }
+    })
+
+    alert(`評估完成！\n\nIC: ${response.ic.toFixed(4)}\nICIR: ${response.icir.toFixed(4)}\nSharpe Ratio: ${response.sharpe_ratio.toFixed(2)}\n年化報酬: ${(response.annual_return * 100).toFixed(2)}%`)
+
+    // 刷新因子列表以顯示更新後的指標
+    await loadFactors()
+  } catch (error: any) {
+    console.error('Factor evaluation failed:', error)
+    alert('評估失敗：' + (error.data?.detail || error.message || '未知錯誤'))
+  } finally {
+    evaluatingFactors.value.delete(factorId)
+    // 強制更新視圖
+    evaluatingFactors.value = new Set(evaluatingFactors.value)
+  }
+}
+
+// 查看評估歷史
+const viewEvaluationHistory = (factorId: number) => {
+  router.push(`/rdagent/factors/${factorId}/evaluations`)
 }
 
 // 載入模型列表
@@ -1002,6 +1055,55 @@ watch(activeTab, (newTab) => {
   font-size: 0.875rem;
   color: #6b7280;
   margin-bottom: 0.75rem;
+
+  span {
+    padding: 0.25rem 0.5rem;
+    background: #f3f4f6;
+    border-radius: 0.375rem;
+    font-weight: 500;
+  }
+}
+
+.factor-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+
+  button {
+    flex: 1;
+    padding: 0.625rem 1rem;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .btn-evaluate {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+  }
+
+  .btn-history {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+    }
+  }
 }
 
 .factor-code-section {
