@@ -114,8 +114,8 @@ class RDAgentService:
     def get_generated_factors(
         self, user_id: int, limit: int = 100
     ) -> List[GeneratedFactor]:
-        """獲取生成的因子列表"""
-        return GeneratedFactorRepository.get_by_user(
+        """獲取生成的因子列表（包含用戶自己的因子 + 公共因子）"""
+        return GeneratedFactorRepository.get_by_user_including_public(
             self.db,
             user_id,
             skip=0,

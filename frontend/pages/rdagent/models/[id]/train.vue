@@ -31,42 +31,75 @@
         <!-- 因子選擇 -->
         <div class="section">
           <h2>📊 選擇訓練因子</h2>
-          <p class="section-description">選擇 1-50 個因子作為模型的輸入特徵</p>
+          <p class="section-description">選擇因子作為模型的輸入特徵</p>
 
-          <div v-if="loadingFactors" class="loading-small">載入因子列表...</div>
-
-          <div v-else-if="availableFactors.length === 0" class="empty-message">
-            沒有可用的因子。請先執行<NuxtLink to="/rdagent">因子挖掘</NuxtLink>。
+          <!-- Alpha158 選項 -->
+          <div class="alpha158-option">
+            <label class="alpha158-checkbox">
+              <input
+                type="checkbox"
+                v-model="useAlpha158"
+                @change="onAlpha158Change"
+              />
+              <span class="checkbox-label">
+                <strong>使用 Alpha158+ 增強因子集</strong>
+                <span class="alpha158-desc">（179個量化因子，含增強版 Rolling 指標）</span>
+              </span>
+            </label>
           </div>
 
-          <div v-else class="factors-list">
-            <div
-              v-for="factor in availableFactors"
-              :key="factor.id"
-              class="factor-item"
-              :class="{ selected: selectedFactorIds.includes(factor.id) }"
-              @click="toggleFactor(factor.id)"
-            >
-              <div class="factor-checkbox">
-                <input
-                  type="checkbox"
-                  :checked="selectedFactorIds.includes(factor.id)"
-                  @click.stop="toggleFactor(factor.id)"
-                />
-              </div>
-              <div class="factor-info">
-                <div class="factor-name">{{ factor.name }}</div>
-                <div class="factor-formula">{{ factor.formula }}</div>
-                <div class="factor-metrics" v-if="factor.ic">
-                  <span class="metric">IC: {{ factor.ic.toFixed(4) }}</span>
-                  <span class="metric" v-if="factor.icir">ICIR: {{ factor.icir.toFixed(2) }}</span>
+          <!-- 手動選因子（Alpha158 未啟用時顯示） -->
+          <div v-if="!useAlpha158">
+            <div v-if="loadingFactors" class="loading-small">載入因子列表...</div>
+
+            <div v-else-if="availableFactors.length === 0" class="empty-message">
+              沒有可用的因子。請先執行<NuxtLink to="/rdagent">因子挖掘</NuxtLink>。
+            </div>
+
+            <div v-else class="factors-list">
+              <div
+                v-for="factor in availableFactors"
+                :key="factor.id"
+                class="factor-item"
+                :class="{ selected: selectedFactorIds.includes(factor.id) }"
+                @click="toggleFactor(factor.id)"
+              >
+                <div class="factor-checkbox">
+                  <input
+                    type="checkbox"
+                    :checked="selectedFactorIds.includes(factor.id)"
+                    @click.stop="toggleFactor(factor.id)"
+                  />
+                </div>
+                <div class="factor-info">
+                  <div class="factor-name">{{ factor.name }}</div>
+                  <div class="factor-formula">{{ factor.formula }}</div>
+                  <div class="factor-metrics" v-if="factor.ic">
+                    <span class="metric">IC: {{ factor.ic.toFixed(4) }}</span>
+                    <span class="metric" v-if="factor.icir">ICIR: {{ factor.icir.toFixed(2) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <div class="selection-summary">
+              已選擇 {{ selectedFactorIds.length }} / 50 個因子
+            </div>
           </div>
 
-          <div class="selection-summary">
-            已選擇 {{ selectedFactorIds.length }} / 50 個因子
+          <!-- Alpha158 啟用提示 -->
+          <div v-else class="alpha158-active">
+            <div class="info-box">
+              <h3>🎯 Alpha158+ 增強因子集</h3>
+              <p>將使用 179 個量化因子進行訓練：</p>
+              <ul>
+                <li><strong>9 個 KBar 因子</strong>：K線形態特徵（實體、影線等）</li>
+                <li><strong>20 個 Price 因子</strong>：歷史價格序列</li>
+                <li><strong>5 個 Volume 因子</strong>：成交量序列</li>
+                <li><strong>145 個 Rolling 因子</strong>：增強版滾動技術指標（動量、波動率、相關性、成交量分析等）</li>
+              </ul>
+              <p class="warning">⚠️ 注意：Alpha158+ 訓練時間較長，建議使用台股50以上的股票池。</p>
+            </div>
           </div>
         </div>
 
@@ -94,9 +127,11 @@
             <div class="form-group">
               <label>股票池</label>
               <select v-model="datasetConfig.instruments">
-                <option value="台股50">台股50</option>
-                <option value="台股100">台股100</option>
-                <option value="全市場">全市場</option>
+                <option value="台股30">台股30（成交量前30支，訓練快）</option>
+                <option value="台股50">台股50（成交量前50支，推薦）</option>
+                <option value="台股100">台股100（成交量前100支）</option>
+                <option value="台股150">台股150（成交量前150支）</option>
+                <option value="台股200">台股200（成交量前200支）</option>
               </select>
             </div>
 
@@ -347,9 +382,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
+const config = useRuntimeConfig()
+const { getToken } = useAuth()
 const modelId = parseInt(route.params.id as string)
 
 // 狀態
@@ -365,6 +403,7 @@ const model = ref<any>(null)
 // 因子相關
 const availableFactors = ref<any[]>([])
 const selectedFactorIds = ref<number[]>([])
+const useAlpha158 = ref(false)
 
 // 配置 tabs
 const configTab = ref('dataset')
@@ -404,12 +443,19 @@ const ratioSum = computed(() => {
 })
 
 const canStartTraining = computed(() => {
-  return selectedFactorIds.value.length > 0 &&
-         selectedFactorIds.value.length <= 50 &&
-         Math.abs(ratioSum.value - 1.0) < 0.01
+  // 如果使用 Alpha158，不需要選擇因子
+  const hasFactors = useAlpha158.value || (selectedFactorIds.value.length > 0 && selectedFactorIds.value.length <= 50)
+  return hasFactors && Math.abs(ratioSum.value - 1.0) < 0.01
 })
 
 // 方法
+const onAlpha158Change = () => {
+  // 切換到 Alpha158 時，清空手動選擇的因子
+  if (useAlpha158.value) {
+    selectedFactorIds.value = []
+  }
+}
+
 const toggleFactor = (factorId: number) => {
   const index = selectedFactorIds.value.indexOf(factorId)
   if (index > -1) {
@@ -423,9 +469,20 @@ const toggleFactor = (factorId: number) => {
 
 const loadModel = async () => {
   try {
-    const { data } = await useFetch(`/api/v1/rdagent/models`)
-    if (data.value) {
-      const models = data.value as any[]
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    const data = await $fetch(`${config.public.apiBase}/api/v1/rdagent/models`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (data) {
+      const models = data as any[]
       model.value = models.find(m => m.id === modelId)
       if (!model.value) {
         error.value = '模型不存在'
@@ -439,9 +496,20 @@ const loadModel = async () => {
 const loadFactors = async () => {
   loadingFactors.value = true
   try {
-    const { data } = await useFetch(`/api/v1/rdagent/factors?limit=100`)
-    if (data.value) {
-      availableFactors.value = data.value as any[]
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    const data = await $fetch(`${config.public.apiBase}/api/v1/rdagent/factors?limit=100`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (data) {
+      availableFactors.value = data as any[]
     }
   } catch (err: any) {
     console.error('載入因子失敗:', err)
@@ -453,9 +521,20 @@ const loadFactors = async () => {
 const loadTrainingHistory = async () => {
   loadingHistory.value = true
   try {
-    const { data } = await useFetch(`/api/v1/rdagent/models/${modelId}/training-jobs?limit=10`)
-    if (data.value) {
-      const response = data.value as any
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    const data = await $fetch(`${config.public.apiBase}/api/v1/rdagent/models/${modelId}/training-jobs?limit=10`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (data) {
+      const response = data as any
       trainingHistory.value = response.jobs || []
     }
   } catch (err: any) {
@@ -470,28 +549,35 @@ const startTraining = async () => {
 
   isTraining.value = true
   try {
-    const { data, error: fetchError } = await useFetch(
-      `/api/v1/rdagent/models/${modelId}/train`,
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    const data = await $fetch(
+      `${config.public.apiBase}/api/v1/rdagent/models/${modelId}/train`,
       {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
         body: {
           factor_ids: selectedFactorIds.value,
           dataset_config: datasetConfig.value,
-          training_params: trainingParams.value
+          training_params: trainingParams.value,
+          use_alpha158: useAlpha158.value
         }
       }
     )
 
-    if (fetchError.value) {
-      throw new Error(fetchError.value.message)
-    }
-
-    if (data.value) {
-      currentJob.value = data.value
+    if (data) {
+      currentJob.value = data
       startPolling()
     }
   } catch (err: any) {
-    alert('訓練啟動失敗：' + (err.message || '未知錯誤'))
+    alert('訓練啟動失敗：' + (err.message || err.data?.detail || '未知錯誤'))
   } finally {
     isTraining.value = false
   }
@@ -499,9 +585,20 @@ const startTraining = async () => {
 
 const loadTrainingJob = async (jobId: number) => {
   try {
-    const { data } = await useFetch(`/api/v1/rdagent/training-jobs/${jobId}`)
-    if (data.value) {
-      currentJob.value = data.value
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    const data = await $fetch(`${config.public.apiBase}/api/v1/rdagent/training-jobs/${jobId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (data) {
+      currentJob.value = data
 
       // 如果任務正在運行，開始輪詢
       if (currentJob.value.status === 'RUNNING' || currentJob.value.status === 'PENDING') {
@@ -522,9 +619,21 @@ const startPolling = () => {
     if (!currentJob.value) return
 
     try {
-      const { data } = await useFetch(`/api/v1/rdagent/training-jobs/${currentJob.value.id}`)
-      if (data.value) {
-        currentJob.value = data.value
+      const token = getToken()
+      if (!token) {
+        stopPolling()
+        router.push('/login')
+        return
+      }
+
+      const data = await $fetch(`${config.public.apiBase}/api/v1/rdagent/training-jobs/${currentJob.value.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (data) {
+        currentJob.value = data
 
         // 自動滾動日誌到底部
         nextTick(() => {
@@ -561,8 +670,17 @@ const cancelTraining = async () => {
   if (!confirm('確定要取消訓練嗎？')) return
 
   try {
-    await useFetch(`/api/v1/rdagent/training-jobs/${currentJob.value.id}/cancel`, {
-      method: 'POST'
+    const token = getToken()
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    await $fetch(`${config.public.apiBase}/api/v1/rdagent/training-jobs/${currentJob.value.id}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
     })
     alert('取消訓練指令已發送')
   } catch (err: any) {
@@ -1133,5 +1251,85 @@ onUnmounted(() => {
   .training-container {
     grid-template-columns: 1fr;
   }
+}
+
+/* Alpha158 樣式 */
+.alpha158-option {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f7fafc;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+}
+
+.alpha158-checkbox {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+  user-select: none;
+}
+
+.alpha158-checkbox input[type="checkbox"] {
+  margin-right: 12px;
+  margin-top: 3px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.checkbox-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.alpha158-desc {
+  font-size: 13px;
+  color: #718096;
+  font-weight: normal;
+}
+
+.alpha158-active {
+  margin-top: 15px;
+}
+
+.info-box {
+  background: #ebf8ff;
+  border: 1px solid #90cdf4;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.info-box h3 {
+  margin: 0 0 15px 0;
+  color: #2c5282;
+  font-size: 18px;
+}
+
+.info-box p {
+  margin: 10px 0;
+  color: #2d3748;
+  line-height: 1.6;
+}
+
+.info-box ul {
+  margin: 15px 0;
+  padding-left: 25px;
+  color: #2d3748;
+}
+
+.info-box li {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.info-box .warning {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fef5e7;
+  border-left: 4px solid #f59e0b;
+  border-radius: 4px;
+  color: #92400e;
+  font-weight: 500;
 }
 </style>

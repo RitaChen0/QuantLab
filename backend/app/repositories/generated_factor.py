@@ -5,9 +5,12 @@ Generated Factor Repository for database operations
 
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc
+from sqlalchemy import and_, desc, or_
 
 from app.models.rdagent import GeneratedFactor
+
+# 系統公共因子用戶 ID（admin）
+SYSTEM_USER_ID = 18
 
 
 class GeneratedFactorRepository:
@@ -98,6 +101,41 @@ class GeneratedFactorRepository:
         return (
             db.query(GeneratedFactor)
             .filter(GeneratedFactor.user_id == user_id)
+            .order_by(desc(GeneratedFactor.created_at))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def get_by_user_including_public(
+        db: Session,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[GeneratedFactor]:
+        """
+        Get factors by user, including public factors (from system user)
+
+        Returns user's own factors + public factors (user_id = SYSTEM_USER_ID)
+
+        Args:
+            db: Database session
+            user_id: User ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            List of GeneratedFactor objects (user's factors + public factors)
+        """
+        return (
+            db.query(GeneratedFactor)
+            .filter(
+                or_(
+                    GeneratedFactor.user_id == user_id,
+                    GeneratedFactor.user_id == SYSTEM_USER_ID
+                )
+            )
             .order_by(desc(GeneratedFactor.created_at))
             .offset(skip)
             .limit(limit)

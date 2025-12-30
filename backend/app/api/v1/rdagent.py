@@ -595,11 +595,18 @@ async def train_model(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="模型訓練功能僅限 Level 3 以上會員使用。請升級會員等級以使用此功能。"
         )
-    
+
+    # 驗證因子或 Alpha158 必須選擇其一
+    if not req.use_alpha158 and not req.factor_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="請選擇訓練因子或啟用 Alpha158"
+        )
+
     # 先綁定因子到模型（如果提供了 factor_ids）
     if req.factor_ids:
         ModelFactorRepository.batch_create(db, model_id, req.factor_ids)
-    
+
     # 創建訓練任務
     training_job = ModelTrainingJobRepository.create(
         db=db,
@@ -608,7 +615,7 @@ async def train_model(
         dataset_config=req.dataset_config.model_dump(),
         training_params=req.training_params.model_dump()
     )
-    
+
     # 觸發 Celery 異步訓練任務
     celery_task = train_model_async.apply_async(
         args=[
@@ -617,7 +624,8 @@ async def train_model(
             current_user.id,
             req.factor_ids,
             req.dataset_config.model_dump(),
-            req.training_params.model_dump()
+            req.training_params.model_dump(),
+            req.use_alpha158  # 傳遞 Alpha158 參數
         ]
     )
     

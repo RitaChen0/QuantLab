@@ -1,7 +1,8 @@
 """
-Alpha158 因子計算引擎
+Alpha158+ 因子計算引擎
 
-完整實現 Microsoft Qlib 的 Alpha158 因子庫（158 個預定義因子）
+完整實現 Microsoft Qlib 的 Alpha158 因子庫並增強為 179 個因子
+增強版包含額外的成交量分析因子（VSTD, WVMA, VSUMP, VSUMN, VSUMD）
 使用 Pandas/NumPy 計算，無需依賴 Qlib 的數據格式
 """
 
@@ -13,13 +14,13 @@ from loguru import logger
 
 class Alpha158Calculator:
     """
-    Alpha158 因子計算器
+    Alpha158+ 因子計算器
 
-    實現 158 個標準量化因子：
+    實現 179 個量化因子（基於 Qlib Alpha158 並增強）：
     - 9 個 KBar 因子
     - 20 個 Price 因子
     - 5 個 Volume 因子
-    - 124 個 Rolling 因子
+    - 145 個 Rolling 因子（含增強版成交量分析）
     """
 
     def __init__(self):
@@ -238,7 +239,7 @@ class Alpha158Calculator:
 
         return result
 
-    # ==================== Rolling 因子 (124個) ====================
+    # ==================== Rolling 因子 (145個，含增強版成交量分析) ====================
 
     def compute_rolling_factors(
         self,
@@ -251,7 +252,7 @@ class Alpha158Calculator:
         計算 Rolling 因子（滾動窗口技術指標）
 
         輸入需要：$close, $high, $low, $volume
-        輸出：最多 124 個 rolling 因子
+        輸出：最多 145 個 rolling 因子（含增強版成交量分析）
         """
         if windows is None:
             windows = self.default_windows
@@ -431,7 +432,7 @@ class Alpha158Calculator:
 
         return result
 
-    # ==================== 完整 Alpha158 計算 ====================
+    # ==================== 完整 Alpha158+ 計算（179 個因子） ====================
 
     def compute_all_factors(
         self,
@@ -439,15 +440,15 @@ class Alpha158Calculator:
         config: Dict = None
     ) -> Tuple[pd.DataFrame, List[str]]:
         """
-        計算完整的 Alpha158 因子集
+        計算完整的 Alpha158+ 因子集（179 個因子）
 
         Args:
             df: 原始 OHLCV DataFrame（需包含 $open, $high, $low, $close, $volume）
             config: 配置字典，可選參數：
-                - kbar: {} - 是否計算 KBar 因子
-                - price: {windows: [...], feature: [...]} - Price 因子配置
-                - volume: {windows: [...]} - Volume 因子配置
-                - rolling: {windows: [...], include: [...], exclude: [...]} - Rolling 因子配置
+                - kbar: {} - 是否計算 KBar 因子（9個）
+                - price: {windows: [...], feature: [...]} - Price 因子配置（20個）
+                - volume: {windows: [...]} - Volume 因子配置（5個）
+                - rolling: {windows: [...], include: [...], exclude: [...]} - Rolling 因子配置（145個）
 
         Returns:
             (result_df, factor_names): 包含所有因子的 DataFrame 和因子名稱列表
@@ -504,7 +505,7 @@ class Alpha158Calculator:
             # Rolling 因子名稱會根據配置動態生成
             # 這裡簡化處理，實際使用時可以從 result.columns 提取
 
-        logger.info(f"Computed {len([col for col in result.columns if col not in df.columns])} Alpha158 factors")
+        logger.info(f"Computed {len([col for col in result.columns if col not in df.columns])} Alpha158+ factors")
 
         return result, factor_names
 

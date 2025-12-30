@@ -163,9 +163,10 @@ class SelectFactorsRequest(BaseModel):
 
 class ModelTrainingRequest(BaseModel):
     """模型訓練請求"""
-    factor_ids: List[int] = Field(..., min_length=1, max_length=50, description="用於訓練的因子 ID 列表（1-50 個）")
+    factor_ids: List[int] = Field(default=[], description="用於訓練的因子 ID 列表（1-50 個），使用 Alpha158 時可為空")
     dataset_config: DatasetConfig = Field(..., description="數據集配置")
     training_params: TrainingParams = Field(..., description="訓練參數")
+    use_alpha158: bool = Field(default=False, description="是否使用 Alpha158+ 增強因子集（179個因子）")
 
 
 class ModelFactorResponse(BaseModel):

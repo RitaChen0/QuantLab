@@ -39,7 +39,8 @@ def train_model_async(
     user_id: int,
     factor_ids: List[int],
     dataset_config: Dict[str, Any],
-    training_params: Dict[str, Any]
+    training_params: Dict[str, Any],
+    use_alpha158: bool = False
 ) -> Dict[str, Any]:
     """
     異步訓練模型任務
@@ -82,16 +83,26 @@ def train_model_async(
             current_step="正在載入因子資訊..."
         )
 
-        factors = GeneratedFactorRepository.get_by_ids(db, factor_ids)
-        if len(factors) != len(factor_ids):
-            raise ValueError(f"部分因子不存在。請求 {len(factor_ids)} 個，找到 {len(factors)} 個")
+        if use_alpha158:
+            # 使用 Alpha158 完整因子集
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                "使用 Alpha158+ 增強因子集（179 個量化因子）"
+            )
+            # Alpha158 因子將在數據準備階段計算
+            factor_formulas = None  # 標記使用 Alpha158
+        else:
+            # 使用手動選擇的因子
+            factors = GeneratedFactorRepository.get_by_ids(db, factor_ids)
+            if len(factors) != len(factor_ids):
+                raise ValueError(f"部分因子不存在。請求 {len(factor_ids)} 個，找到 {len(factors)} 個")
 
-        # 提取 Qlib 表達式
-        factor_formulas = [f.formula for f in factors]
-        ModelTrainingJobRepository.append_log(
-            db, job_id,
-            f"載入 {len(factor_formulas)} 個因子：{', '.join([f.name for f in factors])}"
-        )
+            # 提取 Qlib 表達式
+            factor_formulas = [f.formula for f in factors]
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                f"載入 {len(factor_formulas)} 個因子：{', '.join([f.name for f in factors])}"
+            )
 
         # ========== 步驟 3：準備數據集 ==========
         ModelTrainingJobRepository.update_progress(
@@ -113,19 +124,56 @@ def train_model_async(
         # Convert instruments string to list of stock IDs
         if isinstance(instruments_config, str):
             from app.models.stock import Stock
+            from app.models.stock_price import StockPrice
+            from sqlalchemy import func, desc
+            from datetime import datetime, timedelta
 
-            if instruments_config.lower() in ['all', '全部', '所有']:
-                # Get all active stocks
-                stocks = db.query(Stock).filter(Stock.is_active == 'active').all()
+            # Parse stock pool configuration
+            config_lower = instruments_config.lower().replace('（', '(').replace('）', ')')
+
+            # Determine the number of stocks needed
+            if '全市場' in instruments_config or 'all' in config_lower:
+                stock_limit = None  # No limit for all market
+            elif '台股30' in instruments_config:
+                stock_limit = 30
+            elif '台股50' in instruments_config:
+                stock_limit = 50
+            elif '台股100' in instruments_config:
+                stock_limit = 100
+            elif '台股150' in instruments_config:
+                stock_limit = 150
+            elif '台股200' in instruments_config:
+                stock_limit = 200
             else:
-                # For specific pools like "台股50", we'll use first 50 active stocks
-                # TODO: Implement proper stock pool mapping (e.g., Taiwan 50 index)
-                stocks = db.query(Stock).filter(Stock.is_active == 'active').limit(50).all()
+                stock_limit = 50  # Default to 50 stocks
 
-            instruments = [stock.stock_id for stock in stocks]
+            # Get stocks sorted by average trading volume (last 30 days)
+            # Only include individual stocks (4-digit codes starting with 1-9)
+            cutoff_date = datetime.now().date() - timedelta(days=30)
+
+            query = (
+                db.query(
+                    Stock.stock_id,
+                    func.avg(StockPrice.volume).label('avg_volume')
+                )
+                .join(StockPrice, Stock.stock_id == StockPrice.stock_id)
+                .filter(
+                    Stock.is_active == 'active',
+                    Stock.stock_id.op('~')('^[1-9][0-9]{3}$'),  # Only 4-digit stock codes
+                    StockPrice.date >= cutoff_date
+                )
+                .group_by(Stock.stock_id)
+                .order_by(desc('avg_volume'))
+            )
+
+            if stock_limit is not None:
+                query = query.limit(stock_limit)
+
+            stock_results = query.all()
+            instruments = [row.stock_id for row in stock_results]
             ModelTrainingJobRepository.append_log(
                 db, job_id,
-                f"已選擇 {len(instruments)} 支股票進行訓練"
+                f"已選擇 {len(instruments)} 支股票進行訓練（股票池：{instruments_config}）"
             )
         elif isinstance(instruments_config, list):
             instruments = instruments_config
@@ -134,18 +182,86 @@ def train_model_async(
 
         # 載入數據
         label_formula = "Ref($close, -1) / $close - 1"  # 下一天收益率
-        all_fields = factor_formulas + [label_formula]
 
-        df = D.features(
-            instruments=instruments,
-            fields=all_fields,
-            start_time=start_time,
-            end_time=end_time,
-            freq='day'
-        )
+        if use_alpha158:
+            # 使用 Alpha158：先載入原始 OHLCV 數據，再計算因子
+            from app.services.alpha158_factors import alpha158_calculator
 
-        if df is None or df.empty:
-            raise ValueError(f"無法載入數據。請檢查 Qlib 數據是否存在於 {start_time} ~ {end_time}")
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                "正在載入原始 OHLCV 數據以計算 Alpha158+ 因子..."
+            )
+
+            # 載入原始 OHLCV 數據
+            raw_fields = ['$open', '$high', '$low', '$close', '$volume', label_formula]
+            df_raw = D.features(
+                instruments=instruments,
+                fields=raw_fields,
+                start_time=start_time,
+                end_time=end_time,
+                freq='day'
+            )
+
+            if df_raw is None or df_raw.empty:
+                raise ValueError(f"無法載入原始數據。請檢查 Qlib 數據是否存在於 {start_time} ~ {end_time}")
+
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                f"正在計算 Alpha158+ 因子（這可能需要幾分鐘）..."
+            )
+
+            # 為每支股票分別計算 Alpha158 因子
+            all_stock_dfs = []
+            stock_symbols = df_raw.index.get_level_values(0).unique()
+
+            for i, symbol in enumerate(stock_symbols):
+                if (i + 1) % 10 == 0:  # 每10支股票更新一次進度
+                    ModelTrainingJobRepository.append_log(
+                        db, job_id,
+                        f"計算進度: {i+1}/{len(stock_symbols)} 支股票"
+                    )
+
+                # 獲取單支股票數據
+                stock_data = df_raw.xs(symbol, level=0)
+
+                # 計算 Alpha158 因子
+                alpha158_df, _ = alpha158_calculator.compute_all_factors(stock_data)
+
+                # 添加標籤列
+                alpha158_df['label'] = stock_data[label_formula]
+
+                # 添加股票代碼作為 index
+                alpha158_df['instrument'] = symbol
+                alpha158_df.set_index('instrument', append=True, inplace=True)
+                alpha158_df = alpha158_df.swaplevel()
+
+                all_stock_dfs.append(alpha158_df)
+
+            # 合併所有股票的數據
+            df = pd.concat(all_stock_dfs)
+
+            # 只保留因子列和標籤列（排除原始 OHLCV）
+            factor_columns = [col for col in df.columns if col not in raw_fields]
+            df = df[factor_columns]
+
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                f"✅ 成功計算 Alpha158+ 因子：{len(factor_columns) - 1} 個特徵"
+            )
+        else:
+            # 使用手動選擇的因子
+            all_fields = factor_formulas + [label_formula]
+
+            df = D.features(
+                instruments=instruments,
+                fields=all_fields,
+                start_time=start_time,
+                end_time=end_time,
+                freq='day'
+            )
+
+            if df is None or df.empty:
+                raise ValueError(f"無法載入數據。請檢查 Qlib 數據是否存在於 {start_time} ~ {end_time}")
 
         ModelTrainingJobRepository.append_log(
             db, job_id,
@@ -217,26 +333,26 @@ def train_model_async(
         X_valid, y_valid = X[train_end:valid_end], y[train_end:valid_end]
         X_test, y_test = X[valid_end:], y[valid_end:]
 
-        # Standardize features (fit on training set only)
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
+        # Standardize features using RobustScaler (more robust to outliers)
+        # RobustScaler uses median and IQR, better for financial data with extreme values
+        from sklearn.preprocessing import RobustScaler
+
+        ModelTrainingJobRepository.append_log(
+            db, job_id,
+            "使用 RobustScaler 標準化（基於中位數和 IQR，對異常值穩健）"
+        )
+
+        scaler = RobustScaler()
         X_train = scaler.fit_transform(X_train)
         X_valid = scaler.transform(X_valid)
         X_test = scaler.transform(X_test)
 
-        # Check for NaN or Inf after scaling
+        # Safety check: replace any remaining NaN/Inf (rare with RobustScaler)
         if np.any(np.isnan(X_train)) or np.any(np.isinf(X_train)):
             ModelTrainingJobRepository.append_log(
                 db, job_id,
-                "⚠️ 標準化後發現 NaN/Inf，使用穩健標準化"
+                "⚠️ 發現極少數 NaN/Inf，已替換為 0"
             )
-            # Use robust scaling if standard scaling fails
-            from sklearn.preprocessing import RobustScaler
-            scaler = RobustScaler()
-            X_train = scaler.fit_transform(X[:train_end])
-            X_valid = scaler.transform(X[train_end:valid_end])
-            X_test = scaler.transform(X[valid_end:])
-            # Replace any remaining NaN with 0
             X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
             X_valid = np.nan_to_num(X_valid, nan=0.0, posinf=0.0, neginf=0.0)
             X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
@@ -271,7 +387,15 @@ def train_model_async(
             raise ValueError(f"模型 ID {model_id} 不存在")
 
         # 根據模型類型建立模型（簡化版本，使用 PyTorch MLP）
-        d_feat = len(factor_formulas)
+        if use_alpha158:
+            # Alpha158 的特徵數量 = df 的列數 - 1（標籤列）
+            d_feat = len(df.columns) - 1
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                f"Alpha158+ 特徵數量: {d_feat}"
+            )
+        else:
+            d_feat = len(factor_formulas)
 
         # Create simple PyTorch MLP model
         class SimpleMLP(torch.nn.Module):
@@ -512,7 +636,67 @@ def train_model_async(
             f"MSE={test_metrics['mse'] if test_metrics['mse'] is not None else 'N/A'}"
         )
 
-        # ========== 步驟 8：完成訓練 ==========
+        # ========== 步驟 8：更新模型配置 ==========
+        # 生成正確的 Qlib 配置（根據實際使用的因子）
+        import json
+
+        if use_alpha158:
+            # 使用 Alpha158 Handler
+            data_config = {
+                "handler": {
+                    "class": "Alpha158",
+                    "module_path": "qlib.contrib.data.handler",
+                    "kwargs": {
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "instruments": instruments_config,
+                        "label": ["Ref($close, -1) / $close - 1"]
+                    }
+                }
+            }
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                "更新模型配置：使用 Alpha158+ Handler"
+            )
+        else:
+            # 使用自定義因子
+            data_config = {
+                "handler": {
+                    "class": "CustomFactorHandler",
+                    "factors": factor_formulas,
+                    "kwargs": {
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "instruments": instruments_config,
+                        "label": ["Ref($close, -1) / $close - 1"]
+                    }
+                }
+            }
+            ModelTrainingJobRepository.append_log(
+                db, job_id,
+                f"更新模型配置：使用 {len(factor_formulas)} 個自定義因子"
+            )
+
+        # 更新模型的 qlib_config
+        current_config = model_info.qlib_config or {}
+        if isinstance(current_config, str):
+            current_config = json.loads(current_config)
+
+        current_config['data'] = data_config
+        current_config['model']['kwargs']['d_feat'] = d_feat
+        current_config['training'] = {
+            'num_epochs': training_params['num_epochs'],
+            'batch_size': training_params['batch_size'],
+            'learning_rate': training_params['learning_rate'],
+            'optimizer': training_params['optimizer'],
+            'loss_function': training_params['loss_function']
+        }
+
+        # 保存配置
+        model_info.qlib_config = current_config
+        db.commit()
+
+        # ========== 步驟 9：完成訓練 ==========
         ModelTrainingJobRepository.update_completed(
             db, job_id,
             model_weight_path=model_weight_path,
