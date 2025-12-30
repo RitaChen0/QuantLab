@@ -176,3 +176,69 @@ class GeneratedModel(Base):
     # 關聯
     task = relationship("RDAgentTask", back_populates="generated_models")
     user = relationship("User")
+    model_factors = relationship("ModelFactor", back_populates="model", cascade="all, delete-orphan")
+    training_jobs = relationship("ModelTrainingJob", back_populates="model", cascade="all, delete-orphan")
+
+
+class ModelFactor(Base):
+    """模型和因子的關聯表"""
+    __tablename__ = "model_factors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("generated_models.id", ondelete="CASCADE"), nullable=False, index=True)
+    factor_id = Column(Integer, ForeignKey("generated_factors.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 因子配置
+    feature_index = Column(Integer, nullable=True, comment="因子在特徵向量中的索引位置")
+
+    # 時間戳
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # 關聯
+    model = relationship("GeneratedModel", back_populates="model_factors")
+    factor = relationship("GeneratedFactor")
+
+
+class ModelTrainingJob(Base):
+    """模型訓練任務記錄"""
+    __tablename__ = "model_training_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("generated_models.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 訓練配置
+    dataset_config = Column(JSON, nullable=True, comment="數據集配置（JSON）")
+    training_params = Column(JSON, nullable=True, comment="訓練參數（JSON）")
+
+    # 訓練狀態
+    status = Column(String(20), server_default="PENDING", nullable=False, comment="訓練狀態")
+    progress = Column(Float, server_default="0.0", comment="訓練進度 0.0-1.0")
+    current_epoch = Column(Integer, server_default="0", comment="當前訓練輪數")
+    total_epochs = Column(Integer, nullable=True, comment="總訓練輪數")
+    current_step = Column(String(100), nullable=True, comment="當前步驟描述")
+
+    # 訓練指標
+    train_loss = Column(Float, nullable=True, comment="訓練損失")
+    valid_loss = Column(Float, nullable=True, comment="驗證損失")
+    test_ic = Column(Float, nullable=True, comment="測試集 IC")
+    test_metrics = Column(JSON, nullable=True, comment="詳細測試指標（JSON）")
+
+    # 模型權重
+    model_weight_path = Column(String(500), nullable=True, comment="訓練好的權重文件路徑")
+
+    # 訓練日誌
+    training_log = Column(Text, nullable=True, comment="訓練日誌（多行文本）")
+    error_message = Column(Text, nullable=True, comment="錯誤訊息")
+
+    # Celery 任務 ID
+    celery_task_id = Column(String(255), nullable=True, comment="Celery 任務 ID")
+
+    # 時間戳
+    started_at = Column(DateTime(timezone=True), nullable=True, comment="開始時間")
+    completed_at = Column(DateTime(timezone=True), nullable=True, comment="完成時間")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # 關聯
+    model = relationship("GeneratedModel", back_populates="training_jobs")
+    user = relationship("User")

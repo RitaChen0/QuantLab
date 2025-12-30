@@ -412,6 +412,19 @@ celery_app.conf.beat_schedule = {
         "kwargs": {"days_to_keep": 30},
         "options": {"expires": 604800},  # 7 days (weekly task)
     },
+
+    # ==================== 舊任務清理（數據庫維護） ====================
+
+    # Cleanup all old task records once per week
+    # Runs at: Taiwan Sunday 03:00 (UTC Saturday 19:00)
+    # Duration: ~30-60 seconds
+    # Purpose: Clean up old backtests, RD-Agent tasks, and training jobs (keep 90 days)
+    "cleanup-all-old-tasks-weekly": {
+        "task": "app.tasks.cleanup_all_old_tasks",
+        "schedule": crontab(hour=19, minute=0, day_of_week='saturday'),  # UTC Saturday 19:00 = Taiwan Sunday 03:00
+        "kwargs": {"days_to_keep": 90},
+        "options": {"expires": 604800},  # 7 days (weekly task)
+    },
 }
 
 if __name__ == "__main__":

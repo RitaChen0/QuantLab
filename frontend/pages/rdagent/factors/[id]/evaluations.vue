@@ -176,7 +176,7 @@ const loadEvaluations = async () => {
   try {
     const token = localStorage.getItem('access_token')
     evaluations.value = await $fetch(
-      `${config.public.apiBase}/api/factor-evaluation/factor/${factorId.value}/evaluations`,
+      `${config.public.apiBase}/api/v1/factor-evaluation/factor/${factorId.value}/evaluations`,
       {
         headers: { 'Authorization': `Bearer ${token}` }
       }
@@ -250,7 +250,7 @@ const deleteEvaluation = async (evaluationId: number) => {
   try {
     const token = localStorage.getItem('access_token')
     await $fetch(
-      `${config.public.apiBase}/api/factor-evaluation/evaluation/${evaluationId}`,
+      `${config.public.apiBase}/api/v1/factor-evaluation/evaluation/${evaluationId}`,
       {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -270,7 +270,7 @@ const analyzeICDecay = async () => {
 
   try {
     const token = localStorage.getItem('access_token')
-    const response = await $fetch(`${config.public.apiBase}/api/factor-evaluation/ic-decay`, {
+    const response = await $fetch(`${config.public.apiBase}/api/v1/factor-evaluation/ic-decay`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

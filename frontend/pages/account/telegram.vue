@@ -803,4 +803,105 @@ onUnmounted(() => {
   font-size: 0.875rem;
   color: #718096;
 }
+
+// 響應式設計
+@media (max-width: 768px) {
+  .telegram-page {
+    padding: 1rem;
+  }
+
+  .page-header {
+    .page-title {
+      font-size: 1.75rem;
+    }
+
+    .page-subtitle {
+      font-size: 0.9rem;
+    }
+  }
+
+  .binding-status-card {
+    flex-direction: column;
+    text-align: center;
+
+    .status-icon {
+      font-size: 3rem;
+    }
+  }
+
+  .step-card {
+    flex-direction: column;
+    align-items: flex-start;
+
+    .step-number {
+      margin-bottom: 1rem;
+    }
+  }
+
+  .verification-code-display {
+    flex-direction: column;
+    align-items: stretch;
+
+    .verification-code {
+      font-size: 1.25rem;
+      padding: 0.75rem;
+    }
+
+    .btn-sm {
+      width: 100%;
+    }
+  }
+
+  .binding-instructions {
+    font-size: 0.9rem;
+
+    code {
+      font-size: 0.85rem;
+      padding: 0.25rem 0.5rem;
+    }
+  }
+
+  .action-buttons {
+    flex-direction: column;
+
+    .btn {
+      width: 100%;
+    }
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .info-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .telegram-page {
+    padding: 0.75rem;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+
+  .binding-status-card,
+  .binding-process-card,
+  .features-card {
+    padding: 1.25rem;
+  }
+
+  .card-title {
+    font-size: 1.125rem;
+  }
+
+  .btn {
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+  }
+}
 </style>

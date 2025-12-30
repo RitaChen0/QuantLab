@@ -53,6 +53,16 @@ from app.tasks.futures_continuous import (
 from app.tasks.futures_daily_aggregation import (
     generate_tx_daily_from_minute,
 )
+from app.tasks.model_training_tasks import (
+    train_model_async,
+    cancel_training_job,
+)
+from app.tasks.data_cleanup import (
+    cleanup_old_backtests,
+    cleanup_old_rdagent_tasks,
+    cleanup_old_training_jobs,
+    cleanup_all_old_tasks,
+)
 
 __all__ = [
     "sync_stock_list",
@@ -86,4 +96,10 @@ __all__ = [
     "generate_continuous_contracts",
     "register_new_futures_contracts",
     "generate_tx_daily_from_minute",
+    "train_model_async",
+    "cancel_training_job",
+    "cleanup_old_backtests",
+    "cleanup_old_rdagent_tasks",
+    "cleanup_old_training_jobs",
+    "cleanup_all_old_tasks",
 ]

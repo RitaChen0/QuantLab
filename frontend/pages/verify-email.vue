@@ -242,4 +242,40 @@ const resendEmail = async () => {
     text-decoration: underline;
   }
 }
+
+// 響應式設計
+@media (max-width: 480px) {
+  .verify-container {
+    padding: 0.5rem;
+  }
+
+  .verify-card {
+    padding: 2rem 1.5rem;
+  }
+
+  .spinner {
+    width: 50px;
+    height: 50px;
+  }
+
+  .icon {
+    width: 70px;
+    height: 70px;
+    font-size: 2.5rem;
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+
+  .message {
+    font-size: 0.95rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.65rem;
+    font-size: 0.95rem;
+  }
+}
 </style>

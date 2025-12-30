@@ -192,4 +192,43 @@ const handleLogin = async () => {
   color: #991b1b;
   font-size: 0.875rem;
 }
+
+// 響應式設計
+@media (max-width: 480px) {
+  .login-container {
+    padding: 0.5rem;
+  }
+
+  .login-card {
+    padding: 1.5rem;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+
+    label {
+      font-size: 0.9rem;
+    }
+
+    input {
+      padding: 0.65rem;
+      font-size: 0.95rem;
+    }
+  }
+
+  .btn-submit {
+    padding: 0.65rem;
+    font-size: 0.95rem;
+  }
+
+  .error-message {
+    padding: 0.75rem;
+    font-size: 0.8rem;
+  }
+}
 </style>

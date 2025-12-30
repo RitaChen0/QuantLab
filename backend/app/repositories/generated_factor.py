@@ -56,6 +56,27 @@ class GeneratedFactorRepository:
         )
 
     @staticmethod
+    def get_by_ids(
+        db: Session,
+        factor_ids: List[int]
+    ) -> List[GeneratedFactor]:
+        """
+        Get factors by IDs
+
+        Args:
+            db: Database session
+            factor_ids: List of factor IDs
+
+        Returns:
+            List of GeneratedFactor objects
+        """
+        return (
+            db.query(GeneratedFactor)
+            .filter(GeneratedFactor.id.in_(factor_ids))
+            .all()
+        )
+
+    @staticmethod
     def get_by_user(
         db: Session,
         user_id: int,

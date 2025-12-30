@@ -1,9 +1,18 @@
+# 通用日誌配置（YAML anchor）
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"    # 每個日誌文件最大 10MB
+    max-file: "3"      # 保留 3 個輪轉文件（總計 30MB）
+    compress: "true"   # 壓縮輪轉的日誌文件
+
 services:
   # PostgreSQL with TimescaleDB
   postgres:
     image: timescale/timescaledb:latest-pg15
     container_name: quantlab-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${DB_NAME:-quantlab}
       POSTGRES_USER: ${DB_USER:-quantlab}
@@ -28,6 +37,7 @@ services:
     image: redis:7-alpine
     container_name: quantlab-redis
     restart: unless-stopped
+    logging: *default-logging
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -48,6 +58,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-backend
     restart: unless-stopped
+    logging: *default-logging
     command: /app/start.sh
     group_add:
       - "999"  # Docker group GID for socket access
@@ -115,6 +126,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-celery-worker
     restart: unless-stopped
+    logging: *default-logging
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4} --queues=backtest,data_sync,maintenance,celery
     group_add:
       - "999"  # Docker group GID for socket access
@@ -162,6 +174,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-celery-evaluation-worker
     restart: unless-stopped
+    logging: *default-logging
     # 專門處理評估任務，並發限制為 3
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=3 --queues=evaluation
     group_add:
@@ -199,6 +212,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-celery-beat
     restart: unless-stopped
+    logging: *default-logging
     command: celery -A app.core.celery_app beat --loglevel=debug --schedule=/app/celerybeat-schedule.db
     volumes:
       - ./backend:/app
@@ -239,6 +253,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-telegram-bot
     restart: unless-stopped
+    logging: *default-logging
     command: python /app/scripts/run_telegram_bot.py
     volumes:
       - ./backend:/app
@@ -269,6 +284,7 @@ services:
       dockerfile: Dockerfile
     container_name: quantlab-frontend
     restart: unless-stopped
+    logging: *default-logging
     command: npx nuxt dev --host 0.0.0.0
     volumes:
       - ./frontend:/app
@@ -290,6 +306,7 @@ services:
     image: prom/prometheus:latest
     container_name: quantlab-prometheus
     restart: unless-stopped
+    logging: *default-logging
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -312,6 +329,7 @@ services:
     image: grafana/grafana:latest
     container_name: quantlab-grafana
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
@@ -333,6 +351,7 @@ services:
     image: danihodovic/celery-exporter:latest
     container_name: quantlab-celery-exporter
     restart: unless-stopped
+    logging: *default-logging
     command:
       - '--broker-url=redis://redis:6379/0'
       - '--host=0.0.0.0'
@@ -350,6 +369,7 @@ services:
     image: nginx:alpine
     container_name: quantlab-nginx
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"

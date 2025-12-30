@@ -1,9 +1,10 @@
 """RD-Agent Pydantic Schemas"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
+import math
 
 
 class TaskType(str, Enum):
@@ -122,3 +123,116 @@ class RDAgentTaskResponse(BaseModel):
         from_attributes = True
         # Pydantic v2 自動正確序列化 timezone-aware datetime
         # datetime 會序列化為 ISO 8601 格式（如 2025-12-20T00:18:21+00:00）
+
+
+# ========== 模型訓練相關 Schemas ==========
+
+class TrainingStatus(str, Enum):
+    """訓練狀態"""
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class DatasetConfig(BaseModel):
+    """數據集配置"""
+    instruments: str = Field(..., description="股票池（如：台股50、全市場）")
+    start_time: str = Field(..., description="訓練開始日期（YYYY-MM-DD）")
+    end_time: str = Field(..., description="訓練結束日期（YYYY-MM-DD）")
+    train_ratio: float = Field(0.7, ge=0.1, le=0.9, description="訓練集比例（0.1-0.9）")
+    valid_ratio: float = Field(0.15, ge=0.05, le=0.4, description="驗證集比例（0.05-0.4）")
+    test_ratio: float = Field(0.15, ge=0.05, le=0.4, description="測試集比例（0.05-0.4）")
+
+
+class TrainingParams(BaseModel):
+    """訓練參數"""
+    num_epochs: int = Field(100, ge=1, le=1000, description="訓練輪數（1-1000）")
+    batch_size: int = Field(800, ge=32, le=2048, description="批次大小（32-2048）")
+    learning_rate: float = Field(0.001, gt=0, le=0.1, description="學習率（0-0.1）")
+    early_stop_rounds: int = Field(20, ge=5, le=100, description="早停輪數（5-100）")
+    optimizer: str = Field("adam", description="優化器（adam/sgd/rmsprop）")
+    loss_function: str = Field("mse", description="損失函數（mse/mae/huber）")
+
+
+class SelectFactorsRequest(BaseModel):
+    """選擇因子請求（用於綁定模型與因子）"""
+    factor_ids: List[int] = Field(..., min_length=1, max_length=50, description="選擇的因子 ID 列表（1-50 個）")
+
+
+class ModelTrainingRequest(BaseModel):
+    """模型訓練請求"""
+    factor_ids: List[int] = Field(..., min_length=1, max_length=50, description="用於訓練的因子 ID 列表（1-50 個）")
+    dataset_config: DatasetConfig = Field(..., description="數據集配置")
+    training_params: TrainingParams = Field(..., description="訓練參數")
+
+
+class ModelFactorResponse(BaseModel):
+    """模型因子關聯響應"""
+    id: int
+    model_id: int
+    factor_id: int
+    feature_index: Optional[int]
+    factor: Optional[GeneratedFactorResponse] = None  # 關聯的因子對象
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ModelTrainingJobResponse(BaseModel):
+    """模型訓練任務響應"""
+    id: int
+    model_id: int
+    user_id: int
+
+    # 訓練配置
+    dataset_config: Optional[Dict[str, Any]]
+    training_params: Optional[Dict[str, Any]]
+
+    # 訓練狀態（用於前端輪詢）
+    status: str  # PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+    progress: float = Field(0.0, ge=0.0, le=1.0, description="訓練進度（0.0-1.0）")
+    current_epoch: int = Field(0, ge=0, description="當前訓練輪數")
+    total_epochs: Optional[int] = Field(None, description="總訓練輪數")
+    current_step: Optional[str] = Field(None, description="當前步驟描述（用於訊息欄顯示）")
+
+    # 訓練指標（即時更新）
+    train_loss: Optional[float] = None
+    valid_loss: Optional[float] = None
+    test_ic: Optional[float] = None
+    test_metrics: Optional[Dict[str, Any]] = None
+
+    # 模型權重
+    model_weight_path: Optional[str] = None
+
+    # 訓練日誌（多行文本，用於訊息欄詳細顯示）
+    training_log: Optional[str] = None
+    error_message: Optional[str] = None
+
+    # Celery 任務 ID
+    celery_task_id: Optional[str] = None
+
+    # 時間戳
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+
+    @field_serializer('train_loss', 'valid_loss', 'test_ic', when_used='always')
+    def serialize_float(self, value: Optional[float]) -> Optional[float]:
+        """Convert NaN/Inf to None for JSON serialization"""
+        if value is None:
+            return None
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+
+    class Config:
+        from_attributes = True
+
+
+class ModelTrainingJobListResponse(BaseModel):
+    """訓練任務列表響應"""
+    jobs: List[ModelTrainingJobResponse]
+    total: int

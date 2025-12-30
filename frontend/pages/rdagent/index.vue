@@ -254,6 +254,52 @@
 
     <!-- 生成的模型 -->
     <div v-if="activeTab === 'models'" class="section">
+      <h2>🤖 AI 模型生成</h2>
+      <form @submit.prevent="submitModelGeneration" class="model-generation-form">
+        <div class="form-group">
+          <label>研究目標</label>
+          <textarea
+            v-model="modelGenerationForm.research_goal"
+            placeholder="例如：為台指期貨創建 Transformer 時間序列預測模型，預測未來 1 日的漲跌..."
+            rows="4"
+            required
+          ></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>模型類型偏好</label>
+            <select v-model="modelGenerationForm.model_type">
+              <option value="">自動選擇</option>
+              <option value="TimeSeries">時間序列模型 (GRU/LSTM/Transformer)</option>
+              <option value="Tabular">表格數據模型 (MLP)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>LLM 模型</label>
+            <select v-model="modelGenerationForm.llm_model">
+              <option value="gpt-4">GPT-4</option>
+              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              <option value="claude-3-opus">Claude 3 Opus</option>
+              <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>最大迭代次數</label>
+            <input type="number" v-model.number="modelGenerationForm.max_iterations" min="1" max="20" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary" :disabled="isSubmitting">
+          {{ isSubmitting ? '提交中...' : '🚀 開始生成模型' }}
+        </button>
+      </form>
+
+      <hr style="margin: 40px 0; border: none; border-top: 1px solid #eee;" />
+
       <h2>🧠 生成的模型</h2>
       <div v-if="models.length === 0" class="empty-state">
         尚無生成的模型
@@ -341,6 +387,16 @@
               <pre><code>{{ JSON.stringify(model.qlib_config, null, 2) }}</code></pre>
             </div>
           </div>
+
+          <!-- 訓練按鈕 -->
+          <div class="model-actions">
+            <NuxtLink
+              :to="`/rdagent/models/${model.id}/train`"
+              class="btn-train"
+            >
+              🎯 訓練模型
+            </NuxtLink>
+          </div>
         </div>
       </div>
     </div>
@@ -369,6 +425,13 @@ const optimizationForm = ref({
   optimization_goal: '提升 Sharpe Ratio 至 2.0 以上，同時降低最大回撤至 15% 以內',
   llm_model: 'gpt-4-turbo',
   max_iterations: 1
+})
+
+const modelGenerationForm = ref({
+  research_goal: '',
+  model_type: '',
+  llm_model: 'gpt-4-turbo',
+  max_iterations: 5
 })
 
 const tasks = ref([])
@@ -498,6 +561,44 @@ const submitStrategyOptimization = async () => {
   }
 }
 
+// 提交模型生成
+const submitModelGeneration = async () => {
+  isSubmitting.value = true
+  try {
+    const token = localStorage.getItem('access_token')
+
+    // 準備請求數據（空字串轉為 null）
+    const requestBody = {
+      research_goal: modelGenerationForm.value.research_goal,
+      model_type: modelGenerationForm.value.model_type || null,
+      llm_model: modelGenerationForm.value.llm_model,
+      max_iterations: modelGenerationForm.value.max_iterations
+    }
+
+    const response = await $fetch(`${config.public.apiBase}/api/v1/rdagent/model-generation`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: requestBody
+    })
+
+    alert('模型生成任務已提交！任務 ID: ' + response.id + '\n\n生成過程通常需要 15-30 分鐘，請稍後在「任務列表」查看結果。')
+
+    // 清空表單
+    modelGenerationForm.value.research_goal = ''
+    modelGenerationForm.value.model_type = ''
+
+    activeTab.value = 'tasks'
+    loadTasks()
+  } catch (error: any) {
+    alert('提交失敗：' + (error.data?.detail || error.message))
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
 // 載入有回測記錄的策略列表
 const loadStrategiesWithBacktests = async () => {
   try {
@@ -594,7 +695,7 @@ const evaluateFactor = async (factorId: number) => {
 
   try {
     const token = localStorage.getItem('access_token')
-    const response = await $fetch(`${config.public.apiBase}/api/factor-evaluation/evaluate`, {
+    const response = await $fetch(`${config.public.apiBase}/api/v1/factor-evaluation/evaluate`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -606,7 +707,23 @@ const evaluateFactor = async (factorId: number) => {
       }
     })
 
-    alert(`評估完成！\n\nIC: ${response.ic.toFixed(4)}\nICIR: ${response.icir.toFixed(4)}\nSharpe Ratio: ${response.sharpe_ratio.toFixed(2)}\n年化報酬: ${(response.annual_return * 100).toFixed(2)}%`)
+    // 格式化數值，處理可能為 null 的情況
+    const formatValue = (value: number | null | undefined, decimals: number = 2, suffix: string = '') => {
+      if (value === null || value === undefined) return 'N/A'
+      return value.toFixed(decimals) + suffix
+    }
+
+    alert(
+      `評估完成！\n\n` +
+      `IC: ${formatValue(response.ic, 4)}\n` +
+      `ICIR: ${formatValue(response.icir, 4)}\n` +
+      `Rank IC: ${formatValue(response.rank_ic, 4)}\n` +
+      `Rank ICIR: ${formatValue(response.rank_icir, 4)}\n\n` +
+      `Sharpe Ratio: ${formatValue(response.sharpe_ratio, 2)}\n` +
+      `年化報酬: ${formatValue(response.annual_return ? response.annual_return * 100 : null, 2, '%')}\n` +
+      `最大回撤: ${formatValue(response.max_drawdown ? response.max_drawdown * 100 : null, 2, '%')}\n` +
+      `勝率: ${formatValue(response.win_rate ? response.win_rate * 100 : null, 2, '%')}`
+    )
 
     // 刷新因子列表以顯示更新後的指標
     await loadFactors()
@@ -830,6 +947,73 @@ watch(activeTab, (newTab) => {
 
   .btn-primary {
     padding: 0.75rem 2rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:hover:not(:disabled) {
+      background: #2563eb;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.model-generation-form {
+  .form-group {
+    margin-bottom: 1.5rem;
+
+    label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      color: #374151;
+    }
+
+    textarea,
+    input,
+    select {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.375rem;
+      font-size: 1rem;
+
+      &:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+    }
+
+    textarea {
+      resize: vertical;
+      font-family: inherit;
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .btn-primary {
+    margin-top: 1rem;
+    width: 100%;
+    padding: 0.875rem;
     background: #3b82f6;
     color: white;
     border: none;
@@ -1322,6 +1506,32 @@ watch(activeTab, (newTab) => {
       line-height: 1.6;
       color: #e5e7eb;
     }
+  }
+}
+
+/* 模型訓練按鈕 */
+.model-actions {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: center;
+}
+
+.btn-train {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  text-decoration: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
   }
 }
 </style>

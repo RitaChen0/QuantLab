@@ -2050,4 +2050,97 @@ watch(activeTab, (newTab) => {
     color: #92400e;
   }
 }
+
+// 響應式設計
+@media (max-width: 768px) {
+  .admin-container {
+    padding: 1rem;
+  }
+
+  .admin-header {
+    h1 {
+      font-size: 1.5rem;
+    }
+
+    p {
+      font-size: 0.85rem;
+    }
+  }
+
+  .admin-tabs {
+    flex-wrap: wrap;
+
+    .tab-button {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+    }
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    th, td {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    // Hide less important columns on mobile
+    th:nth-child(n+6),
+    td:nth-child(n+6) {
+      display: none;
+    }
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+
+    .btn-refresh {
+      width: 100%;
+    }
+  }
+
+  .service-list {
+    .service-item {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+  }
+
+  .json-view {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-tabs {
+    .tab-button {
+      flex: 1 1 calc(50% - 0.25rem);
+      padding: 0.5rem;
+      font-size: 0.8rem;
+    }
+  }
+
+  .data-table {
+    // Show only essential columns on small mobile
+    th:nth-child(n+4),
+    td:nth-child(n+4) {
+      display: none;
+    }
+  }
+}
 </style>

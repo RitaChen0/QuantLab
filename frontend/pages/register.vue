@@ -290,4 +290,48 @@ const handleRegister = async () => {
 .text-gray-500 {
   color: #6b7280;
 }
+
+// 響應式設計
+@media (max-width: 480px) {
+  .register-container {
+    padding: 0.5rem;
+  }
+
+  .register-card {
+    padding: 1.5rem;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.25rem;
+
+    label {
+      font-size: 0.9rem;
+    }
+
+    input {
+      padding: 0.65rem;
+      font-size: 0.95rem;
+    }
+
+    small {
+      font-size: 0.8rem;
+    }
+  }
+
+  .btn-submit {
+    padding: 0.65rem;
+    font-size: 0.95rem;
+  }
+
+  .error-message,
+  .success-message {
+    padding: 0.75rem;
+    font-size: 0.8rem;
+  }
+}
 </style>

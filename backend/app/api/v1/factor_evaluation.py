@@ -41,16 +41,16 @@ class FactorEvaluationResponse(BaseModel):
     end_date: str
 
     # 因子指標
-    ic: float = Field(..., description="Information Coefficient")
-    icir: float = Field(..., description="IC Information Ratio")
-    rank_ic: float = Field(..., description="Rank IC")
-    rank_icir: float = Field(..., description="Rank ICIR")
+    ic: Optional[float] = Field(None, description="Information Coefficient")
+    icir: Optional[float] = Field(None, description="IC Information Ratio")
+    rank_ic: Optional[float] = Field(None, description="Rank IC")
+    rank_icir: Optional[float] = Field(None, description="Rank ICIR")
 
     # 回測指標
-    sharpe_ratio: float = Field(..., description="Sharpe Ratio")
-    annual_return: float = Field(..., description="年化報酬率")
-    max_drawdown: float = Field(..., description="最大回撤")
-    win_rate: float = Field(..., description="勝率")
+    sharpe_ratio: Optional[float] = Field(None, description="Sharpe Ratio")
+    annual_return: Optional[float] = Field(None, description="年化報酬率")
+    max_drawdown: Optional[float] = Field(None, description="最大回撤")
+    win_rate: Optional[float] = Field(None, description="勝率")
 
     # 元數據
     n_stocks: int = Field(..., description="股票數量")
@@ -85,7 +85,7 @@ class FactorEvaluationHistoryResponse(BaseModel):
 
 
 @router.post("/evaluate", response_model=FactorEvaluationResponse, status_code=status.HTTP_200_OK)
-@limiter.limit("5/hour")  # 每小時最多 5 次評估（計算密集）
+@limiter.limit("30/hour")  # 每小時最多 30 次評估（開發環境放寬限制）
 async def evaluate_factor(
     request: Request,
     eval_request: FactorEvaluationRequest,

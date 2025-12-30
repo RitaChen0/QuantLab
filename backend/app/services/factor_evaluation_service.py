@@ -209,15 +209,35 @@ class FactorEvaluationService:
         logger.info(f"Stock pool: {len(stock_list)} stocks")
 
         # 4. 計算因子值和未來收益
-        factor_data, returns_data = self._calculate_factor_and_returns(
-            factor.formula,
-            stock_list,
-            start_date,
-            end_date
-        )
+        try:
+            factor_data, returns_data = self._calculate_factor_and_returns(
+                factor.formula,
+                stock_list,
+                start_date,
+                end_date
+            )
 
-        if factor_data is None or returns_data is None:
-            raise ValueError("Failed to calculate factor data or returns")
+            if factor_data is None or returns_data is None:
+                raise ValueError(
+                    f"無法計算因子數據。可能的原因：\n"
+                    f"1. 因子公式不是有效的 Qlib 表達式（當前公式：{factor.formula}）\n"
+                    f"2. Qlib 本地數據不完整或缺失\n"
+                    f"3. 股票池中的股票數據不足\n\n"
+                    f"有效的 Qlib 表達式示例：\n"
+                    f"  - Mean($close, 20)  # 20日均線\n"
+                    f"  - $close / Ref($close, 5) - 1  # 5日動量\n"
+                    f"  - ($close - Mean($close, 20)) / Std($close, 20)  # 標準化因子\n\n"
+                    f"如果數據不足，請執行數據同步：bash scripts/sync-qlib-smart.sh"
+                )
+        except SyntaxError as e:
+            raise ValueError(
+                f"因子公式語法錯誤：{factor.formula}\n\n"
+                f"錯誤詳情：{str(e)}\n\n"
+                f"提示：請確保使用 Qlib 表達式格式。\n"
+                f"常見錯誤：\n"
+                f"  ❌ 數學公式（如 M_10 = (P_t - P_t-10) / P_t-10）\n"
+                f"  ✅ Qlib 表達式（如 ($close - Ref($close, 10)) / Ref($close, 10)）"
+            )
 
         # 5. 計算評估指標
         evaluation_results = self._calculate_metrics(factor_data, returns_data)
@@ -236,8 +256,11 @@ class FactorEvaluationService:
             "n_periods": len(factor_data),
         }
 
-        logger.info(f"Evaluation complete: IC={final_results.get('ic', 'N/A'):.4f}, "
-                   f"Sharpe={final_results.get('sharpe_ratio', 'N/A'):.4f}")
+        # 清理結果中的 NaN/Infinity 值
+        final_results = self._sanitize_results(final_results)
+
+        logger.info(f"Evaluation complete: IC={final_results.get('ic', 0):.4f}, "
+                   f"Sharpe={final_results.get('sharpe_ratio') or 0:.4f}")
 
         # 8. 保存到資料庫
         if save_to_db:
@@ -305,6 +328,10 @@ class FactorEvaluationService:
                     if df is not None and not df.empty:
                         factor_values_list.append(df.iloc[:, 0].rename(stock_id))
                         close_prices_list.append(df.iloc[:, 1].rename(stock_id))
+                except SyntaxError as e:
+                    # Qlib 表達式語法錯誤，直接拋出
+                    logger.error(f"Invalid Qlib expression: {factor_formula}")
+                    raise
                 except Exception as e:
                     logger.warning(f"Failed to get data for {stock_id}: {e}")
                     continue
@@ -587,23 +614,58 @@ class FactorEvaluationService:
         max_dd = drawdown.min()
         return abs(max_dd)
 
+    def _sanitize_numeric_value(self, value):
+        """
+        清理數值，將 NaN/Infinity 轉換為 None
+
+        PostgreSQL JSON 欄位不接受 NaN 和 Infinity 值
+        """
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            if np.isnan(value) or np.isinf(value):
+                return None
+        return value
+
+    def _sanitize_results(self, results: Dict) -> Dict:
+        """
+        清理結果字典中的所有 NaN/Infinity 值
+
+        遞迴處理所有嵌套的字典和列表
+        """
+        sanitized = {}
+        for key, value in results.items():
+            if isinstance(value, dict):
+                sanitized[key] = self._sanitize_results(value)
+            elif isinstance(value, list):
+                sanitized[key] = [
+                    self._sanitize_numeric_value(v) if isinstance(v, (int, float)) else v
+                    for v in value
+                ]
+            else:
+                sanitized[key] = self._sanitize_numeric_value(value)
+        return sanitized
+
     def _save_evaluation(self, factor_id: int, results: Dict):
         """保存評估結果到資料庫"""
         try:
+            # 清理結果中的 NaN/Infinity 值
+            sanitized_results = self._sanitize_results(results)
+
             evaluation = FactorEvaluation(
                 factor_id=factor_id,
-                stock_pool=results.get("stock_pool"),
-                start_date=results.get("start_date"),
-                end_date=results.get("end_date"),
-                ic=results.get("ic"),
-                icir=results.get("icir"),
-                rank_ic=results.get("rank_ic"),
-                rank_icir=results.get("rank_icir"),
-                sharpe_ratio=results.get("sharpe_ratio"),
-                annual_return=results.get("annual_return"),
-                max_drawdown=results.get("max_drawdown"),
-                win_rate=results.get("win_rate"),
-                detailed_results=results,
+                stock_pool=sanitized_results.get("stock_pool"),
+                start_date=sanitized_results.get("start_date"),
+                end_date=sanitized_results.get("end_date"),
+                ic=sanitized_results.get("ic"),
+                icir=sanitized_results.get("icir"),
+                rank_ic=sanitized_results.get("rank_ic"),
+                rank_icir=sanitized_results.get("rank_icir"),
+                sharpe_ratio=sanitized_results.get("sharpe_ratio"),
+                annual_return=sanitized_results.get("annual_return"),
+                max_drawdown=sanitized_results.get("max_drawdown"),
+                win_rate=sanitized_results.get("win_rate"),
+                detailed_results=sanitized_results,
             )
 
             self.db.add(evaluation)

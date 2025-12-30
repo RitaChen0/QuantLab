@@ -292,3 +292,10 @@ docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubun
   docker compose exec backend python /app/scripts/backfill_daily_from_minute.py
   # 4. 補齊後同步 Qlib
   bash scripts/sync-qlib-smart.sh
+
+
+✅  在 RD-Agent 模型生成時，選擇：
+  - model_type: "Tabular" → 自動使用 MLP
+  - model_type: "TimeSeries" + architecture 包含 "Transformer" → 使用 Transformer
+  - model_type: "TimeSeries" + architecture 包含 "LSTM" → 使用 LSTM
+  - model_type: "TimeSeries" + 其他 → 預設使用 GRU

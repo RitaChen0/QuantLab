@@ -71,14 +71,14 @@ class QlibDataAdapter:
         key_prefix="qlib_ohlcv",
         expiry=3600,
         key_func=lambda symbol, start_date, end_date, fields=None: (
-            f"{symbol}:{start_date.isoformat()}:{end_date.isoformat()}:UTC"
+            f"{symbol}:{start_date if isinstance(start_date, str) else start_date.isoformat()}:{end_date if isinstance(end_date, str) else end_date.isoformat()}:UTC"
         )
     )
     def get_qlib_ohlcv(
         self,
         symbol: str,
-        start_date: date,
-        end_date: date,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
         fields: Optional[List[str]] = None
     ) -> Optional[pd.DataFrame]:
         """
@@ -178,8 +178,8 @@ class QlibDataAdapter:
     def get_qlib_features(
         self,
         symbol: str,
-        start_date: date,
-        end_date: date,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
         fields: Optional[List[str]] = None
     ) -> Optional[pd.DataFrame]:
         """
@@ -189,8 +189,8 @@ class QlibDataAdapter:
 
         Args:
             symbol: 股票代碼
-            start_date: 開始日期
-            end_date: 結束日期
+            start_date: 開始日期 (date 或 str)
+            end_date: 結束日期 (date 或 str)
             fields: Qlib 表達式列表（預設為常用技術指標）
 
         Returns:
@@ -336,8 +336,8 @@ class QlibDataAdapter:
     def prepare_qlib_dataset(
         self,
         symbols: List[str],
-        start_date: date,
-        end_date: date,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
         include_factors: bool = True
     ) -> Dict[str, pd.DataFrame]:
         """
@@ -410,8 +410,8 @@ class QlibDataAdapter:
 
     def get_stock_pool(
         self,
-        start_date: date,
-        end_date: date,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
         filters: Optional[Dict] = None
     ) -> List[str]:
         """
@@ -451,8 +451,8 @@ class QlibDataAdapter:
     def create_qlib_handler_config(
         self,
         symbols: List[str],
-        start_date: date,
-        end_date: date,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
         features: Optional[List[str]] = None
     ) -> Dict:
         """
@@ -484,11 +484,15 @@ class QlibDataAdapter:
                 "$volume / Mean($volume, 20)",
             ]
 
+        # 處理日期參數：支援 str 和 date/datetime 兩種格式
+        start_str = start_date if isinstance(start_date, str) else start_date.isoformat()
+        end_str = end_date if isinstance(end_date, str) else end_date.isoformat()
+
         config = {
-            "start_time": start_date.isoformat(),
-            "end_time": end_date.isoformat(),
-            "fit_start_time": start_date.isoformat(),
-            "fit_end_time": end_date.isoformat(),
+            "start_time": start_str,
+            "end_time": end_str,
+            "fit_start_time": start_str,
+            "fit_end_time": end_str,
             "instruments": symbols,
             "infer_processors": [
                 {

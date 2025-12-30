@@ -1,9 +1,9 @@
 # 資料庫架構報告
 
-**生成時間**: 2025-12-26 14:50
+**生成時間**: 2025-12-30 05:00
 **資料庫**: quantlab
 **PostgreSQL 版本**: 16 + TimescaleDB
-**總表數**: 30 個
+**總表數**: 32 個
 
 ---
 
@@ -13,18 +13,24 @@
 
 | 指標 | 數量/大小 |
 |------|----------|
-| 總表數 | 30 個 |
-| 主要資料表 | 22 個 |
+| 總表數 | 32 個 |
+| 主要資料表 | 24 個 |
 | TimescaleDB Hypertables | 2 個 |
 | 總大小 | ~475 MB |
-| 索引總數 | 154 個 |
-| 外鍵約束 | 28 個 |
+| 索引總數 | 160 個 |
+| 外鍵約束 | 32 個 |
 | CHECK 約束 | 3 個（數據品質保證）|
 | UNIQUE 約束 | 15 個 |
 
-### 最近更新（2025-12-26）
+### 最近更新（2025-12-30）
 
-✅ **資料庫完整性改善**:
+✅ **模型訓練功能新增**:
+- 新增 2 個表（model_factors, model_training_jobs）
+- 新增 6 個索引（model_id, user_id, status 等）
+- 新增 4 個外鍵約束（CASCADE 刪除）
+- 支持完整的模型訓練流程追蹤
+
+✅ **資料庫完整性改善**（2025-12-26）:
 - 新增 3 個 CHECK 約束（stock_prices 表）
 - 新增 9 個複合索引（查詢優化）
 - 修復 CASCADE 外鍵（stock_minute_prices）
@@ -53,38 +59,40 @@
 11. **trades** - 交易記錄
 12. **strategy_signals** - 策略訊號
 
-### AI 因子生成（4 個）
+### AI 因子生成（6 個）
 
 13. **rdagent_tasks** - RD-Agent 任務
 14. **generated_factors** - AI 生成因子
 15. **generated_models** - AI 生成模型
 16. **factor_evaluations** - 因子評估
+17. **model_factors** - 模型因子關聯
+18. **model_training_jobs** - 模型訓練任務
 
 ### 選擇權相關（4 個）
 
-17. **option_contracts** - 選擇權合約
-18. **option_minute_prices** - 選擇權分鐘線
-19. **option_greeks** - 選擇權 Greeks
-20. **option_sync_config** - 選擇權同步配置
+19. **option_contracts** - 選擇權合約
+20. **option_minute_prices** - 選擇權分鐘線
+21. **option_greeks** - 選擇權 Greeks
+22. **option_sync_config** - 選擇權同步配置
 
 ### 產業鏈相關（4 個）
 
-21. **stock_industries** - 股票產業關聯
-22. **industry_chains** - 產業鏈
-23. **stock_industry_chains** - 股票產業鏈關聯
-24. **industry_metrics_cache** - 產業指標快取
+23. **stock_industries** - 股票產業關聯
+24. **industry_chains** - 產業鏈
+25. **stock_industry_chains** - 股票產業鏈關聯
+26. **industry_metrics_cache** - 產業指標快取
 
 ### 自訂分類（2 個）
 
-25. **custom_industry_categories** - 自訂產業類別
-26. **stock_custom_categories** - 股票自訂分類
+27. **custom_industry_categories** - 自訂產業類別
+28. **stock_custom_categories** - 股票自訂分類
 
 ### 系統與用戶（4 個）
 
-27. **users** - 用戶帳號
-28. **telegram_notifications** - Telegram 通知
-29. **telegram_notification_preferences** - 通知偏好
-30. **alembic_version** - 資料庫版本
+29. **users** - 用戶帳號
+30. **telegram_notifications** - Telegram 通知
+31. **telegram_notification_preferences** - 通知偏好
+32. **alembic_version** - 資料庫版本
 
 ---
 
@@ -411,6 +419,113 @@
 
 ---
 
+### 17. model_factors - 模型因子關聯
+
+**用途**: 記錄模型使用的因子列表
+**記錄數**: ~100 筆（預估）
+**大小**: < 10 KB
+
+#### 欄位
+
+| 欄位 | 類型 | 約束 | 說明 |
+|------|------|------|------|
+| id | INTEGER | PK, SERIAL | 主鍵 |
+| model_id | INTEGER | NOT NULL, FK → generated_models | 模型 ID |
+| factor_id | INTEGER | NOT NULL, FK → generated_factors | 因子 ID |
+| feature_index | INTEGER | | 因子在特徵向量中的索引位置 |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | 創建時間 |
+
+#### 索引（3 個）
+
+| 索引名稱 | 類型 | 欄位 | 說明 |
+|---------|------|------|------|
+| model_factors_pkey | PRIMARY KEY | id | 主鍵 |
+| ix_model_factors_model_id | BTREE | model_id | 模型因子查詢 |
+| ix_model_factors_factor_id | BTREE | factor_id | 因子使用查詢 |
+
+#### 外鍵
+
+| 約束名稱 | 參照 | 動作 |
+|---------|------|------|
+| model_factors_model_id_fkey | generated_models(id) | ON DELETE CASCADE |
+| model_factors_factor_id_fkey | generated_factors(id) | ON DELETE CASCADE |
+
+**設計說明**:
+- ✅ CASCADE 刪除：模型或因子刪除時自動清理關聯
+- ✅ feature_index：記錄因子順序，確保訓練時特徵順序一致
+- ✅ 雙向索引：支持「模型用了哪些因子」和「因子被哪些模型使用」查詢
+
+---
+
+### 18. model_training_jobs - 模型訓練任務
+
+**用途**: 記錄模型訓練任務的配置、進度和結果
+**記錄數**: ~500 筆（預估）
+**大小**: ~1 MB（含訓練日誌）
+
+#### 欄位
+
+| 欄位 | 類型 | 約束 | 說明 |
+|------|------|------|------|
+| id | INTEGER | PK, SERIAL | 主鍵 |
+| model_id | INTEGER | NOT NULL, FK → generated_models | 模型 ID |
+| user_id | INTEGER | NOT NULL, FK → users | 用戶 ID |
+| dataset_config | JSON | | 數據集配置（股票池、時間範圍、比例） |
+| training_params | JSON | | 訓練參數（epochs、batch size、學習率等） |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'PENDING' | 訓練狀態（PENDING/RUNNING/COMPLETED/FAILED/CANCELLED） |
+| progress | FLOAT | DEFAULT 0.0 | 訓練進度（0.0-1.0） |
+| current_epoch | INTEGER | DEFAULT 0 | 當前訓練輪數 |
+| total_epochs | INTEGER | | 總訓練輪數 |
+| current_step | VARCHAR(100) | | 當前步驟描述 |
+| train_loss | FLOAT | | 訓練損失 |
+| valid_loss | FLOAT | | 驗證損失 |
+| test_ic | FLOAT | | 測試集 IC（Information Coefficient） |
+| test_metrics | JSON | | 詳細測試指標（MSE、MAE 等） |
+| model_weight_path | VARCHAR(500) | | 訓練好的權重文件路徑 |
+| training_log | TEXT | | 訓練日誌（多行文本） |
+| error_message | TEXT | | 錯誤訊息 |
+| celery_task_id | VARCHAR(255) | | Celery 任務 ID |
+| started_at | TIMESTAMPTZ | | 開始時間 |
+| completed_at | TIMESTAMPTZ | | 完成時間 |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | 創建時間 |
+
+#### 索引（4 個）
+
+| 索引名稱 | 類型 | 欄位 | 說明 |
+|---------|------|------|------|
+| model_training_jobs_pkey | PRIMARY KEY | id | 主鍵 |
+| ix_model_training_jobs_model_id | BTREE | model_id | 模型訓練歷史 |
+| ix_model_training_jobs_user_id | BTREE | user_id | 用戶訓練歷史 |
+| ix_model_training_jobs_status | BTREE | status | 狀態篩選（查詢 RUNNING/FAILED） |
+
+#### 外鍵
+
+| 約束名稱 | 參照 | 動作 |
+|---------|------|------|
+| model_training_jobs_model_id_fkey | generated_models(id) | ON DELETE CASCADE |
+| model_training_jobs_user_id_fkey | users(id) | ON DELETE CASCADE |
+
+**設計說明**:
+- ✅ **實時進度追蹤**：progress、current_epoch、current_step 支持前端輪詢
+- ✅ **完整訓練日誌**：training_log 記錄所有訓練過程（含時間戳）
+- ✅ **訓練指標**：train_loss、valid_loss、test_ic 實時更新
+- ✅ **Celery 整合**：celery_task_id 用於任務追蹤和取消
+- ✅ **時區正確**：所有時間欄位使用 TIMESTAMPTZ（UTC）
+- ✅ **JSON 配置**：dataset_config 和 training_params 使用 JSON 儲存彈性配置
+- ✅ **狀態管理**：status 索引優化執行中任務查詢
+
+**訓練狀態流程**:
+```
+PENDING → RUNNING → COMPLETED/FAILED/CANCELLED
+```
+
+**典型查詢**:
+1. 查詢執行中的訓練：`WHERE status = 'RUNNING'`
+2. 查詢模型訓練歷史：`WHERE model_id = ? ORDER BY created_at DESC`
+3. 查詢用戶最近訓練：`WHERE user_id = ? ORDER BY created_at DESC LIMIT 10`
+
+---
+
 ## 🔐 資料完整性
 
 ### CHECK 約束總覽（3 個）✨ **2025-12-26 新增**
@@ -447,7 +562,7 @@
 
 ---
 
-### 外鍵約束總覽（28 個）
+### 外鍵約束總覽（32 個）
 
 #### CASCADE 外鍵（自動級聯刪除）
 
@@ -462,6 +577,10 @@
 | backtest_results | backtests | backtest_id | ON DELETE CASCADE | |
 | trades | backtests | backtest_id | ON DELETE CASCADE | |
 | trades | stocks | stock_id | ON DELETE CASCADE | |
+| **model_factors** | **generated_models** | **model_id** | **ON DELETE CASCADE** | **✅ 2025-12-30 新增** |
+| **model_factors** | **generated_factors** | **factor_id** | **ON DELETE CASCADE** | **✅ 2025-12-30 新增** |
+| **model_training_jobs** | **generated_models** | **model_id** | **ON DELETE CASCADE** | **✅ 2025-12-30 新增** |
+| **model_training_jobs** | **users** | **user_id** | **ON DELETE CASCADE** | **✅ 2025-12-30 新增** |
 
 **好處**:
 - ✅ 防止孤立記錄（orphan records）
@@ -484,7 +603,7 @@
 | **PARTIAL（部分索引）** | **3 個** | **✨ 條件索引（2025-12-26 新增）** |
 | GIN（全文檢索） | 1 個 | 全文檢索索引 |
 
-**總計**: ~154 個索引
+**總計**: 160 個索引（含 2025-12-30 新增的 6 個模型訓練相關索引）
 
 ---
 
