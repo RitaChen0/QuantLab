@@ -448,6 +448,70 @@ class QlibDataAdapter:
             logger.error(f"Failed to get stock pool: {str(e)}")
             return []
 
+    def get_alpha158_data(
+        self,
+        symbol: str,
+        start_date,  # Union[date, str]
+        end_date,    # Union[date, str]
+    ) -> Optional[pd.DataFrame]:
+        """
+        獲取 Alpha158+ 因子數據（179 個因子）
+
+        使用自定義的 Alpha158Calculator，與訓練時保持一致。
+        包含 158 個標準 Alpha158 因子 + 21 個增強成交量因子。
+
+        Args:
+            symbol: 股票代碼
+            start_date: 開始日期
+            end_date: 結束日期
+
+        Returns:
+            DataFrame: 包含 Alpha158+ 因子的數據（179 個特徵）
+        """
+        try:
+            if not self.qlib_initialized or not self._check_qlib_data_exists(symbol):
+                logger.warning(f"Qlib data not available for {symbol}, cannot compute Alpha158+")
+                return None
+
+            from qlib.data import D
+            from app.services.alpha158_factors import alpha158_calculator
+
+            # 處理日期參數
+            start_str = start_date if isinstance(start_date, str) else start_date.isoformat()
+            end_str = end_date if isinstance(end_date, str) else end_date.isoformat()
+
+            logger.info(f"📊 Computing Alpha158+ features for {symbol}")
+
+            # 先獲取原始 OHLCV 數據
+            raw_fields = ['$open', '$high', '$low', '$close', '$volume']
+            df_raw = D.features(
+                instruments=[symbol],
+                fields=raw_fields,
+                start_time=start_str,
+                end_time=end_str,
+                freq='day'
+            )
+
+            if df_raw is None or df_raw.empty:
+                logger.warning(f"No raw OHLCV data for {symbol}")
+                return None
+
+            # 提取單一股票數據（Qlib 返回的是 MultiIndex）
+            if isinstance(df_raw.index, pd.MultiIndex):
+                df_raw = df_raw.xs(symbol, level=0)
+
+            # 使用 Alpha158Calculator 計算因子
+            df_factors, _ = alpha158_calculator.compute_all_factors(df_raw)
+
+            logger.info(f"✅ Computed Alpha158+: {len(df_factors.columns)} features, {len(df_factors)} rows")
+            return df_factors
+
+        except Exception as e:
+            logger.error(f"Failed to get Alpha158+ data for {symbol}: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return None
+
     def create_qlib_handler_config(
         self,
         symbols: List[str],

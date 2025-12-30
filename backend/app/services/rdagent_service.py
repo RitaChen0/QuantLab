@@ -846,3 +846,402 @@ class RDAgentService:
             skip=0,
             limit=limit
         )
+
+    def get_generated_model(
+        self, model_id: int, user_id: int
+    ) -> Optional[GeneratedModel]:
+        """獲取單一模型詳情
+
+        Args:
+            model_id: 模型 ID
+            user_id: 用戶 ID（用於權限檢查）
+
+        Returns:
+            模型對象，如果不存在或無權限則返回 None
+        """
+        return GeneratedModelRepository.get_by_id_and_user(
+            self.db, model_id, user_id
+        )
+
+    async def export_model_as_qlib_strategy(
+        self,
+        db: Session,
+        user_id: int,
+        model_id: int,
+        model,
+        training_job,
+        strategy_name: str,
+        buy_threshold: float,
+        sell_threshold: float,
+        description: Optional[str] = None
+    ) -> int:
+        """
+        將訓練好的模型導出為 Qlib 策略
+
+        Args:
+            db: 資料庫 session
+            user_id: 用戶 ID
+            model_id: 模型 ID
+            model: GeneratedModel 對象
+            training_job: ModelTrainingJob 對象
+            strategy_name: 策略名稱
+            buy_threshold: 買入閾值
+            sell_threshold: 賣出閾值
+            description: 策略描述
+
+        Returns:
+            創建的策略 ID
+        """
+        from app.repositories.strategy import StrategyRepository
+        from app.schemas.strategy import StrategyCreate
+        from app.models.strategy import StrategyStatus
+
+        # 生成 Qlib 策略代碼
+        strategy_code = self._generate_qlib_strategy_template(
+            model_id=model_id,
+            model_name=model.name,
+            model_weight_path=training_job.model_weight_path,
+            buy_threshold=buy_threshold,
+            sell_threshold=sell_threshold,
+        )
+
+        # 準備策略參數
+        strategy_params = {
+            "model_id": model_id,
+            "model_name": model.name,
+            "model_weight_path": training_job.model_weight_path,
+            "buy_threshold": buy_threshold,
+            "sell_threshold": sell_threshold,
+            "test_ic": training_job.test_ic,
+            "input_dim": 179,  # Alpha158+
+        }
+
+        # 準備策略描述
+        if not description:
+            # 格式化測試 IC（避免 f-string 格式化錯誤）
+            test_ic_str = f"{training_job.test_ic:.4f}" if training_job.test_ic is not None else "N/A"
+
+            description = f"""
+基於 RD-Agent 訓練的 AI 模型策略
+
+**模型資訊**:
+- 模型 ID: {model_id}
+- 模型名稱: {model.name}
+- 測試集 IC: {test_ic_str}
+
+**交易邏輯**:
+- 買入閾值: {buy_threshold} (預測收益率 > {buy_threshold} 時買入)
+- 賣出閾值: {sell_threshold} (預測收益率 < {sell_threshold} 時賣出)
+
+**特徵工程**:
+- 使用 Alpha158+ 因子集（179 個技術因子）
+- 自動處理因子計算和數據對齊
+
+**注意事項**:
+- 此策略使用 Qlib 引擎運行
+- 確保 Qlib 數據已同步
+- 回測時建議使用至少 1 年的歷史數據
+            """.strip()
+
+        # 創建策略
+        strategy_create = StrategyCreate(
+            name=strategy_name,
+            description=description,
+            code=strategy_code,
+            parameters=strategy_params,
+            engine_type="qlib",
+            status=StrategyStatus.ACTIVE
+        )
+
+        strategy = StrategyRepository.create(db, user_id, strategy_create)
+        logger.info(f"Created Qlib strategy {strategy.id} from model {model_id}")
+
+        return strategy.id
+
+    def _generate_qlib_strategy_template(
+        self,
+        model_id: int,
+        model_name: str,
+        model_weight_path: str,
+        buy_threshold: float,
+        sell_threshold: float,
+    ) -> str:
+        """
+        生成 Qlib 策略模板代碼
+
+        Args:
+            model_id: 模型 ID
+            model_name: 模型名稱
+            model_weight_path: 模型權重路徑
+            buy_threshold: 買入閾值
+            sell_threshold: 賣出閾值
+
+        Returns:
+            策略 Python 代碼
+        """
+        template = f'''"""
+AI Model Strategy: {model_name}
+Model ID: {model_id}
+Auto-generated from RD-Agent trained model
+
+此策略直接操作 signals 變量生成交易信號
+
+注意：以下模組已由執行環境提供，無需導入：
+- np, pd, torch: 數據處理和深度學習
+- alpha158_calculator: Alpha158+ 因子計算
+- SimpleMLP: 模型類別
+- logger: 日誌記錄
+- D: Qlib 數據 API
+"""
+
+# ===== 模型配置 =====
+MODEL_WEIGHT_PATH = "{model_weight_path}"
+BUY_THRESHOLD = {buy_threshold}
+SELL_THRESHOLD = {sell_threshold}
+INPUT_DIM = 179
+
+# ===== 加載模型 =====
+try:
+    model = SimpleMLP(input_dim=INPUT_DIM, hidden_dims=[128, 64])
+    model.load_state_dict(torch.load(MODEL_WEIGHT_PATH, map_location='cpu'))
+    model.eval()
+    logger.info(f"✅ Loaded AI model from {{MODEL_WEIGHT_PATH}}")
+except Exception as e:
+    logger.error(f"❌ Failed to load model: {{e}}")
+    raise
+
+# ===== 計算 Alpha158+ 因子 =====
+try:
+    # df 是由系統提供的數據（可能是技術指標，不是原始 OHLCV）
+    # 我們需要從 Qlib 獲取原始 OHLCV 數據來計算 Alpha158+
+    if df is None or df.empty:
+        logger.warning("No data available")
+    else:
+        # D 對象已由執行環境提供，無需導入
+
+        # 獲取股票代碼（從 params 或推斷）
+        symbol = params.get('symbol', '2330')  # 默認台積電
+
+        # 獲取原始 OHLCV 數據（與 df 相同的日期範圍）
+        # 使用 .date().isoformat() 代替 strftime（避免 __import__ 錯誤）
+        start_date = str(df.index[0].date())
+        end_date = str(df.index[-1].date())
+
+        logger.info(f"📊 Fetching OHLCV data for {{symbol}} from {{start_date}} to {{end_date}}")
+
+        # 獲取原始數據
+        raw_fields = ['$open', '$high', '$low', '$close', '$volume']
+        df_raw = D.features(
+            instruments=[symbol],
+            fields=raw_fields,
+            start_time=start_date,
+            end_time=end_date,
+            freq='day'
+        )
+
+        if df_raw is None or df_raw.empty:
+            logger.error("Failed to fetch OHLCV data from Qlib")
+            df_factors = None
+        else:
+            # 提取單一股票數據（Qlib 返回 MultiIndex：datetime, instrument）
+            if isinstance(df_raw.index, pd.MultiIndex):
+                # 使用 droplevel 而不是 xs，避免股票代碼被誤解析為日期
+                df_raw = df_raw.droplevel(level=1)
+
+            # 計算 Alpha158+ 因子（現在輸入是正確的 5 列 OHLCV）
+            df_factors, _ = alpha158_calculator.compute_all_factors(df_raw)
+            # 排除原始 OHLCV 列，只保留計算出的因子（179 個）
+            factor_columns = [col for col in df_factors.columns if not col.startswith('$')]
+            df_factors = df_factors[factor_columns]
+            logger.info(f"✅ Computed Alpha158+ features: {{df_factors.shape}}")
+
+        # ===== 模型預測 =====
+        if df_factors is None or df_factors.empty:
+            logger.error("No Alpha158+ features available, cannot generate predictions")
+            predictions = [0.0] * len(df)
+        else:
+            predictions = []
+            for idx in range(len(df_factors)):
+                try:
+                    features = torch.FloatTensor(df_factors.iloc[idx].values).unsqueeze(0)
+                    with torch.no_grad():
+                        pred = model(features).item()
+                    predictions.append(pred)
+                except Exception as e:
+                    logger.warning(f"Prediction failed at index {{idx}}: {{e}}")
+                    predictions.append(0.0)
+
+        # ===== 生成交易信號 =====
+        # signals 是預先創建的 pd.Series，初始值全為 0（持有）
+        for i, pred in enumerate(predictions):
+            if pred > BUY_THRESHOLD:
+                signals.iloc[i] = 1  # 買入
+            elif pred < SELL_THRESHOLD:
+                signals.iloc[i] = -1  # 賣出
+            # 否則保持 0（持有）
+
+        buy_count = (signals == 1).sum()
+        sell_count = (signals == -1).sum()
+        hold_count = (signals == 0).sum()
+
+        logger.info(f"📊 Generated signals:")
+        logger.info(f"   Buy:  {{buy_count}} ({{buy_count/len(signals)*100:.1f}}%)")
+        logger.info(f"   Sell: {{sell_count}} ({{sell_count/len(signals)*100:.1f}}%)")
+        logger.info(f"   Hold: {{hold_count}} ({{hold_count/len(signals)*100:.1f}}%)")
+
+except Exception as e:
+    logger.error(f"❌ Strategy execution failed: {{e}}")
+    # traceback 已由執行環境提供
+    logger.error(traceback.format_exc())
+    # 保持 signals 全為 0（不交易）
+
+'''
+        return template
+
+    # Legacy BaseStrategy class template (保留注釋供參考)
+    def _generate_qlib_basestrategy_template_OLD(
+        self,
+        model_id: int,
+        model_name: str,
+        model_weight_path: str,
+        buy_threshold: float,
+        sell_threshold: float,
+    ) -> str:
+        """
+        舊版 BaseStrategy 類模板（已廢棄）
+
+        注意：此模板定義了完整的 BaseStrategy 類，但當前 qlib_backtest_engine
+        期望策略代碼直接操作 signals 變量，因此已不再使用。
+        """
+        template = f'''"""
+AI Model Strategy: {model_name}
+Model ID: {model_id}
+Auto-generated from RD-Agent trained model
+"""
+
+import numpy as np
+import pandas as pd
+import torch
+from qlib.data import D
+from qlib.strategy.base import BaseStrategy
+from app.services.alpha158_factors import alpha158_calculator
+from app.services.model_predictor import SimpleMLP
+from loguru import logger
+
+
+class AIModelStrategy(BaseStrategy):
+    """
+    基於訓練好的 PyTorch 模型的交易策略
+
+    模型: {model_name}
+    買入閾值: {buy_threshold}
+    賣出閾值: {sell_threshold}
+    """
+
+    def __init__(
+        self,
+        model_weight_path: str = "{model_weight_path}",
+        buy_threshold: float = {buy_threshold},
+        sell_threshold: float = {sell_threshold},
+        input_dim: int = 179,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.model_weight_path = model_weight_path
+        self.buy_threshold = buy_threshold
+        self.sell_threshold = sell_threshold
+
+        # 加載模型
+        self.model = SimpleMLP(input_dim=input_dim, hidden_dims=[128, 64])
+        self.model.load_state_dict(torch.load(model_weight_path, map_location='cpu'))
+        self.model.eval()
+        logger.info(f"✅ Loaded AI model from {{self.model_weight_path}}")
+
+    def generate_trade_decision(self, execute_result=None):
+        """
+        生成交易決策
+
+        Returns:
+            dict: {{stock_id: weight}} - 股票權重字典
+        """
+        trade_date = self.trade_calendar[self.trade_step]
+
+        # 獲取可交易股票
+        list_kwargs = {{
+            "start_time": trade_date,
+            "end_time": trade_date,
+            "as_list": True,
+        }}
+        if self.level_infra is not None:
+            list_kwargs["inst_list"] = self.level_infra.get(trade_date)
+        inst_list = D.list_instruments(**list_kwargs)
+
+        # 為每支股票計算預測值
+        predictions = {{}}
+        for stock_id in inst_list:
+            try:
+                # 獲取 Alpha158+ 因子
+                df_factors = self._get_alpha158_features(stock_id, trade_date)
+                if df_factors is None or df_factors.empty:
+                    continue
+
+                # 模型預測
+                features = torch.FloatTensor(df_factors.values)
+                with torch.no_grad():
+                    pred = self.model(features).item()
+
+                predictions[stock_id] = pred
+            except Exception as e:
+                logger.warning(f"❌ Failed to predict {{stock_id}}: {{e}}")
+                continue
+
+        # 根據閾值生成交易信號
+        weights = {{}}
+        for stock_id, pred in predictions.items():
+            if pred > self.buy_threshold:
+                weights[stock_id] = 1.0  # 買入
+            elif pred < self.sell_threshold:
+                weights[stock_id] = 0.0  # 賣出（權重為 0）
+
+        # 正規化權重
+        if weights:
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                weights = {{k: v / total_weight for k, v in weights.items()}}
+
+        logger.info(f"📊 Trade date {{trade_date}}: {{len(predictions)}} predictions, {{len(weights)}} positions")
+        return weights
+
+    def _get_alpha158_features(self, stock_id: str, end_date) -> pd.DataFrame:
+        """獲取 Alpha158+ 因子"""
+        try:
+            # 獲取足夠的歷史數據（Alpha158 需要 60 天）
+            start_date = pd.Timestamp(end_date) - pd.Timedelta(days=120)
+
+            raw_fields = ['$open', '$high', '$low', '$close', '$volume']
+            df_raw = D.features(
+                instruments=[stock_id],
+                fields=raw_fields,
+                start_time=start_date.strftime('%Y-%m-%d'),
+                end_time=end_date.strftime('%Y-%m-%d'),
+                freq='day'
+            )
+
+            if df_raw is None or df_raw.empty:
+                return None
+
+            # 提取單一股票數據
+            if isinstance(df_raw.index, pd.MultiIndex):
+                df_raw = df_raw.xs(stock_id, level=1)
+
+            # 計算 Alpha158+ 因子
+            df_factors, _ = alpha158_calculator.compute_all_factors(df_raw)
+
+            # 只返回當天的因子
+            return df_factors.iloc[[-1]]
+
+        except Exception as e:
+            logger.warning(f"❌ Failed to get Alpha158+ for {{stock_id}}: {{e}}")
+            return None
+'''
+        return template

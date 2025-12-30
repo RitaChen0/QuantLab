@@ -21,6 +21,11 @@ from app.schemas.rdagent import (
     ModelTrainingJobResponse,
     ModelTrainingJobListResponse,
     ModelFactorResponse,
+    ModelPredictionRequest,
+    ModelPredictionResponse,
+    PredictionData,
+    ExportStrategyRequest,
+    ExportStrategyResponse,
 )
 from app.tasks.rdagent_tasks import (
     run_factor_mining_task,
@@ -33,6 +38,7 @@ from app.tasks.model_training_tasks import (
 )
 from app.core.rate_limit import limiter, RateLimits
 from app.utils.logging import api_log
+from loguru import logger
 
 router = APIRouter(prefix="/rdagent", tags=["RD-Agent"])
 
@@ -203,6 +209,28 @@ async def get_generated_models(
     service = RDAgentService(db)
     models = service.get_generated_models(current_user.id, limit)
     return models
+
+
+@router.get("/models/{model_id}", response_model=GeneratedModelResponse)
+async def get_generated_model(
+    model_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """獲取單一模型詳情
+
+    查詢指定 ID 的 RD-Agent 生成模型及其詳細資訊。
+    """
+    service = RDAgentService(db)
+    model = service.get_generated_model(model_id, current_user.id)
+
+    if not model:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {model_id} not found or you don't have permission to access it"
+        )
+
+    return model
 
 
 @router.get("/tasks/{task_id}", response_model=RDAgentTaskResponse)
@@ -865,3 +893,240 @@ async def cancel_training(
         completed_at=job.completed_at,
         created_at=job.created_at
     )
+
+# ========== 模型預測端點 ==========
+
+@router.post("/models/{model_id}/predict", response_model=ModelPredictionResponse)
+@limiter.limit(RateLimits.GENERAL_READ)
+async def predict_with_trained_model(
+    request: Request,
+    model_id: int,
+    req: ModelPredictionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """使用訓練好的模型生成預測
+
+    此端點允許你使用已訓練的 PyTorch 模型對指定股票進行預測。
+
+    **流程**：
+    1. 加載訓練好的模型權重
+    2. 獲取指定日期範圍的因子數據
+    3. 生成預測值
+    4. 根據閾值轉換為交易信號
+
+    **使用場景**：
+    - 回測前預覽模型預測
+    - 批量預測多支股票
+    - 實時預測最新數據
+
+    Args:
+        model_id: 模型 ID
+        req: 預測請求（包含股票、日期範圍、信號閾值）
+
+    Returns:
+        各股票的預測結果和交易信號
+    """
+    from datetime import datetime, timezone
+    from app.repositories.generated_model import GeneratedModelRepository
+    from app.repositories.model_training_job import ModelTrainingJobRepository
+    from app.services.model_predictor import ModelPredictor
+    from app.services.qlib_data_adapter import QlibDataAdapter
+
+    # 1. 驗證模型權限
+    model = GeneratedModelRepository.get_by_id(db, model_id)
+    if not model:
+        raise HTTPException(status_code=404, detail="模型不存在")
+    if model.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="無權訪問此模型")
+
+    # 2. 檢查訓練狀態
+    jobs = ModelTrainingJobRepository.get_by_model(db, model_id, limit=1)
+    if not jobs or jobs[0].status != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail=f"模型尚未訓練完成。當前狀態: {jobs[0].status if jobs else 'NO_JOB'}"
+        )
+
+    job = jobs[0]
+
+    # 3. 加載模型預測器
+    try:
+        predictor = ModelPredictor.from_model_id(db, model_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"模型權重文件不存在: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"加載模型失敗: {str(e)}")
+
+    # 4. 準備數據適配器
+    adapter = QlibDataAdapter()
+
+    # 5. 對每支股票生成預測
+    all_predictions = []
+
+    for symbol in req.symbols:
+        try:
+            # 獲取因子數據
+            qlib_config = model.qlib_config or {}
+            data_handler = qlib_config.get('data', {}).get('handler', {})
+
+            if data_handler.get('class') == 'Alpha158':
+                # 使用 Alpha158 因子
+                df = adapter.get_alpha158_data(
+                    symbol=symbol,
+                    start_date=req.start_date,
+                    end_date=req.end_date
+                )
+            else:
+                # 使用自定義因子
+                from app.repositories.model_factor import ModelFactorRepository
+                model_factors = ModelFactorRepository.get_by_model(db, model_id)
+
+                if not model_factors:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"模型 {model_id} 沒有關聯的因子"
+                    )
+
+                factor_formulas = [mf.factor.formula for mf in model_factors]
+
+                df = adapter.get_qlib_features(
+                    symbol=symbol,
+                    start_date=req.start_date,
+                    end_date=req.end_date,
+                    fields=factor_formulas
+                )
+
+            if df is None or df.empty:
+                logger.warning(f"⚠️ 股票 {symbol} 沒有數據")
+                continue
+
+            # 生成預測和信號
+            result = predictor.predict_with_signals(
+                df,
+                buy_threshold=req.buy_threshold,
+                sell_threshold=req.sell_threshold
+            )
+
+            # 轉換為字典格式（日期字符串 -> 值）
+            predictions_dict = {str(date): float(pred) for date, pred in result['prediction'].items()}
+            signals_dict = {str(date): int(signal) for date, signal in result['signal'].items()}
+
+            # 計算統計
+            stats = {
+                'mean_prediction': float(result['prediction'].mean()),
+                'std_prediction': float(result['prediction'].std()),
+                'buy_signals': int((result['signal'] == 1).sum()),
+                'sell_signals': int((result['signal'] == -1).sum()),
+                'hold_signals': int((result['signal'] == 0).sum()),
+                'total_days': len(result)
+            }
+
+            all_predictions.append(
+                PredictionData(
+                    symbol=symbol,
+                    predictions=predictions_dict,
+                    signals=signals_dict,
+                    stats=stats
+                )
+            )
+
+            logger.info(f"✅ 股票 {symbol} 預測完成: {stats['buy_signals']} 買入, {stats['sell_signals']} 賣出")
+
+        except Exception as e:
+            logger.error(f"❌ 股票 {symbol} 預測失敗: {str(e)}")
+            # 跳過失敗的股票，繼續處理其他股票
+            continue
+
+    # 6. 返回結果
+    return ModelPredictionResponse(
+        model_id=model_id,
+        model_name=model.name,
+        predictions=all_predictions,
+        test_ic=job.test_ic,
+        generated_at=datetime.now(timezone.utc)
+    )
+
+
+@router.post("/models/{model_id}/export-strategy", response_model=ExportStrategyResponse)
+async def export_model_as_strategy(
+    model_id: int,
+    request: ExportStrategyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    將訓練好的模型導出為 Qlib 策略
+
+    流程：
+    1. 獲取模型及其訓練任務
+    2. 驗證模型已完成訓練
+    3. 創建基於模型的 Qlib 策略
+    4. 返回策略 ID 供回測使用
+    """
+    from app.repositories.generated_model import GeneratedModelRepository
+    from app.repositories.model_training_job import ModelTrainingJobRepository
+
+    logger.info(f"User {current_user.id} exporting model {model_id} as strategy: {request.strategy_name}")
+
+    try:
+        # 1. 驗證模型權限
+        model = GeneratedModelRepository.get_by_id(db, model_id)
+        if not model:
+            raise HTTPException(status_code=404, detail=f"模型 {model_id} 不存在")
+
+        if model.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="無權訪問此模型")
+
+        # 2. 獲取最新訓練任務
+        training_jobs = ModelTrainingJobRepository.get_by_model(db, model_id, limit=1)
+        if not training_jobs:
+            raise HTTPException(
+                status_code=400,
+                detail="模型尚未訓練。請先訓練模型。"
+            )
+
+        training_job = training_jobs[0]
+
+        if training_job.status != "COMPLETED":
+            raise HTTPException(
+                status_code=400,
+                detail=f"訓練任務狀態為 {training_job.status}。只有已完成的模型可以導出。"
+            )
+
+        if not training_job.model_weight_path:
+            raise HTTPException(
+                status_code=400,
+                detail="模型權重不存在。無法導出未訓練的模型。"
+            )
+
+        # 3. 使用 rdagent_service 導出為策略
+        rdagent_svc = RDAgentService(db)
+        strategy_id = await rdagent_svc.export_model_as_qlib_strategy(
+            db=db,
+            user_id=current_user.id,
+            model_id=model_id,
+            model=model,
+            training_job=training_job,
+            strategy_name=request.strategy_name,
+            buy_threshold=request.buy_threshold,
+            sell_threshold=request.sell_threshold,
+            description=request.description
+        )
+
+        logger.info(f"✅ Successfully exported model {model_id} as strategy {strategy_id}")
+
+        return ExportStrategyResponse(
+            strategy_id=strategy_id,
+            strategy_name=request.strategy_name,
+            model_id=model_id,
+            message=f"模型已成功導出為策略！策略 ID: {strategy_id}，可在回測中心使用。"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to export model {model_id}: {str(e)}")
+        import traceback
+        logger.debug(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"導出失敗: {str(e)}")

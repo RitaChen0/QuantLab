@@ -310,6 +310,9 @@
             <div class="model-title">
               <h3>{{ model.name }}</h3>
               <span class="model-type-badge">{{ model.model_type }}</span>
+              <span v-if="model.training_status" class="training-status-badge" :class="`status-${model.training_status}`">
+                {{ getTrainingStatusText(model.training_status) }}
+              </span>
             </div>
             <div class="model-meta">
               <span class="model-date">{{ formatDate(model.created_at) }}</span>
@@ -388,13 +391,19 @@
             </div>
           </div>
 
-          <!-- 訓練按鈕 -->
+          <!-- 操作按鈕 -->
           <div class="model-actions">
             <NuxtLink
               :to="`/rdagent/models/${model.id}/train`"
               class="btn-train"
             >
               🎯 訓練模型
+            </NuxtLink>
+            <NuxtLink
+              :to="`/rdagent/models/${model.id}/predict`"
+              class="btn-predict"
+            >
+              📊 模型預測
             </NuxtLink>
           </div>
         </div>
@@ -817,6 +826,18 @@ const getTypeLabel = (type: string) => {
     model_extraction: '模型提取'
   }
   return labels[type] || type
+}
+
+// 訓練狀態文字
+const getTrainingStatusText = (status: string) => {
+  const labels: Record<string, string> = {
+    'COMPLETED': '✅ 已訓練',
+    'RUNNING': '⏳ 訓練中',
+    'PENDING': '⏸️ 等待訓練',
+    'FAILED': '❌ 訓練失敗',
+    'NOT_TRAINED': '未訓練'
+  }
+  return labels[status] || status
 }
 
 onMounted(async () => {
@@ -1381,6 +1402,39 @@ watch(activeTab, (newTab) => {
       text-transform: uppercase;
       letter-spacing: 0.025em;
     }
+
+    .training-status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.025em;
+
+      &.status-COMPLETED {
+        background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+        color: white;
+      }
+
+      &.status-RUNNING {
+        background: linear-gradient(135deg, #ff9800 0%, #ffa726 100%);
+        color: white;
+      }
+
+      &.status-PENDING {
+        background: #e0e0e0;
+        color: #666;
+      }
+
+      &.status-FAILED {
+        background: linear-gradient(135deg, #f44336 0%, #ef5350 100%);
+        color: white;
+      }
+
+      &.status-NOT_TRAINED {
+        background: #f5f5f5;
+        color: #999;
+      }
+    }
   }
 
   .model-meta {
@@ -1515,6 +1569,7 @@ watch(activeTab, (newTab) => {
   padding-top: 1.25rem;
   border-top: 1px solid #e5e7eb;
   display: flex;
+  gap: 1rem;
   justify-content: center;
 }
 
@@ -1532,6 +1587,23 @@ watch(activeTab, (newTab) => {
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  }
+}
+
+.btn-predict {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+  color: white;
+  text-decoration: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
   }
 }
 </style>

@@ -392,8 +392,11 @@ class QlibBacktestEngine:
             dict: 回測結果
         """
         try:
+            # 將 symbol 添加到 parameters 中，供策略代碼使用
+            parameters_with_symbol = {**parameters, 'symbol': symbol}
+
             # 執行策略代碼生成信號
-            signals = self._execute_strategy_code(strategy_code, dataset, parameters)
+            signals = self._execute_strategy_code(strategy_code, dataset, parameters_with_symbol)
 
             # 模擬交易
             trades, equity_curve = self._simulate_trading(
@@ -627,6 +630,23 @@ class QlibBacktestEngine:
                 import numpy as np
                 lgb = None
 
+            # 導入 RD-Agent 導出策略所需的模組
+            try:
+                import torch
+                import traceback
+                from qlib.strategy.base import BaseStrategy
+                from app.services.alpha158_factors import alpha158_calculator
+                from app.services.model_predictor import SimpleMLP
+                from loguru import logger as strategy_logger
+            except ImportError as e:
+                logger.warning(f"Import error for RD-Agent strategy modules: {e}")
+                import traceback
+                torch = None
+                BaseStrategy = None
+                alpha158_calculator = None
+                SimpleMLP = None
+                strategy_logger = logger
+
             # 創建受限的安全命名空間（完全隔離 __builtins__）
             # 與 backtest_engine.py 保持一致的安全策略
             safe_builtins = {
@@ -654,6 +674,29 @@ class QlibBacktestEngine:
                 'True': True,
                 'False': False,
                 'None': None,
+                # 類定義所需的內建函數（用於 RD-Agent 導出的策略）
+                '__build_class__': __builtins__['__build_class__'],
+                '__name__': __name__,
+                'type': type,
+                'isinstance': isinstance,
+                'issubclass': issubclass,
+                'hasattr': hasattr,
+                'getattr': getattr,
+                'setattr': setattr,
+                'super': super,
+                'property': property,
+                'staticmethod': staticmethod,
+                'classmethod': classmethod,
+                # 異常處理所需的內建異常類
+                'Exception': Exception,
+                'ValueError': ValueError,
+                'TypeError': TypeError,
+                'KeyError': KeyError,
+                'IndexError': IndexError,
+                'AttributeError': AttributeError,
+                'RuntimeError': RuntimeError,
+                'ImportError': ImportError,
+                'NameError': NameError,
             }
 
             # 創建執行環境（使用受限的 __builtins__）
@@ -665,7 +708,14 @@ class QlibBacktestEngine:
                 'lgb': lgb,  # LightGBM for ML strategies
                 'df': dataset,
                 'params': parameters,
-                'signals': pd.Series(0, index=dataset.index)
+                'signals': pd.Series(0, index=dataset.index),
+                # RD-Agent 導出策略所需模組
+                'torch': torch,
+                'traceback': traceback,
+                'BaseStrategy': BaseStrategy,
+                'alpha158_calculator': alpha158_calculator,
+                'SimpleMLP': SimpleMLP,
+                'logger': strategy_logger,
             }
 
             # 移除策略代碼中的 import 語句（因為我們已預先導入所需模組）

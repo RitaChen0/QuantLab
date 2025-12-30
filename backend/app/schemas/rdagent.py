@@ -237,3 +237,49 @@ class ModelTrainingJobListResponse(BaseModel):
     """訓練任務列表響應"""
     jobs: List[ModelTrainingJobResponse]
     total: int
+
+
+# ========== 模型預測 Schemas ==========
+
+class ModelPredictionRequest(BaseModel):
+    """模型預測請求"""
+    symbols: List[str] = Field(..., description="股票代碼列表（如：['2330', 'TXCONT']）")
+    start_date: str = Field(..., description="開始日期 (YYYY-MM-DD)")
+    end_date: str = Field(..., description="結束日期 (YYYY-MM-DD)")
+    buy_threshold: float = Field(0.02, description="買入信號閾值（預測值 > threshold）")
+    sell_threshold: float = Field(-0.02, description="賣出信號閾值（預測值 < threshold）")
+
+
+class PredictionData(BaseModel):
+    """單支股票的預測數據"""
+    symbol: str
+    predictions: Dict[str, float] = Field(..., description="日期 -> 預測值的映射")
+    signals: Dict[str, int] = Field(..., description="日期 -> 信號的映射 (1=買入, 0=持有, -1=賣出)")
+    stats: Dict[str, Any] = Field(..., description="預測統計（平均值、標準差、買賣信號數量）")
+
+
+class ModelPredictionResponse(BaseModel):
+    """模型預測響應"""
+    model_id: int
+    model_name: str
+    predictions: List[PredictionData] = Field(..., description="各股票的預測結果")
+    test_ic: Optional[float] = Field(None, description="模型訓練時的測試集 IC")
+    generated_at: datetime = Field(..., description="預測生成時間")
+
+
+# ========== 模型導出 Schemas ==========
+
+class ExportStrategyRequest(BaseModel):
+    """模型導出為策略請求"""
+    strategy_name: str = Field(..., description="策略名稱")
+    buy_threshold: float = Field(0.02, description="買入信號閾值（預測值 > threshold）")
+    sell_threshold: float = Field(-0.02, description="賣出信號閾值（預測值 < threshold）")
+    description: Optional[str] = Field(None, description="策略描述")
+
+
+class ExportStrategyResponse(BaseModel):
+    """模型導出為策略響應"""
+    strategy_id: int
+    strategy_name: str
+    model_id: int
+    message: str

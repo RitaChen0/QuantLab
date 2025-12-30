@@ -804,7 +804,7 @@ onUnmounted(() => {
   color: #718096;
 }
 
-// 響應式設計
+/* 響應式設計 */
 @media (max-width: 768px) {
   .telegram-page {
     padding: 1rem;

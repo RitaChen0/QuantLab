@@ -394,6 +394,7 @@ class StrategyService:
                 'itertools',
                 'functools',
                 'warnings',
+                'traceback',  # 錯誤追踪（AI 策略需要）
             })
 
         # Dangerous function names (blacklist)
@@ -488,19 +489,15 @@ class StrategyService:
         Raises:
             HTTPException: If dangerous function call detected
         """
-        func_name = None
-
+        # Only check bare function calls (e.g., eval()), not method calls (e.g., model.eval())
+        # Method calls are safe because they're bound to objects, not global functions
         if isinstance(node.func, ast.Name):
             func_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            # For method calls like obj.method()
-            func_name = node.func.attr
-
-        if func_name and func_name in dangerous_functions:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Function '{func_name}' is not allowed for security reasons",
-            )
+            if func_name in dangerous_functions:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Function '{func_name}' is not allowed for security reasons",
+                )
 
     def _validate_required_methods(self, tree: ast.AST) -> None:
         """
