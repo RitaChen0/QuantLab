@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     MAX_BACKTESTS_PER_USER: int = 200  # Maximum backtests per user
     MAX_BACKTESTS_PER_STRATEGY: int = 50  # Maximum backtests per strategy
 
+    # Protected Accounts (受保護帳號，無法被刪除)
+    PROTECTED_ACCOUNTS: List[str] = ["admin@quantlab.com", "gameic@gmail.com"]
+
     # Request Limits (防止 DoS 攻擊)
     MAX_REQUEST_SIZE: int = 10 * 1024 * 1024  # 10 MB - 一般 API 請求
     MAX_FILE_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 50 MB - 檔案上傳

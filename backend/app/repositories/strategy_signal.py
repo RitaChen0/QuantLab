@@ -347,6 +347,20 @@ class StrategySignalRepository:
         db.commit()
 
     @staticmethod
+    def count_by_user(db: Session, user_id: int) -> int:
+        """
+        Count signals by user
+
+        Args:
+            db: Database session
+            user_id: User ID
+
+        Returns:
+            Number of signals for the user
+        """
+        return StrategySignalRepository.count(db, user_id=user_id)
+
+    @staticmethod
     def delete_old_signals(db: Session, days: int = 30) -> int:
         """
         Delete signals older than specified days

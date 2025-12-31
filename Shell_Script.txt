@@ -1,0 +1,712 @@
+================================================================================
+✅ QuantLab 系統維護快速參考手冊
+================================================================================
+
+【系統基本信息】
+- 服務器 IP: 122.116.152.55
+- 前端: http://122.116.152.55:3000 或 http://localhost:3000
+- 後端 API: http://122.116.152.55:8000 或 http://localhost:8000
+- 測試帳號: vip_user / test123
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【一】快速開發命令
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 開發階段清除所有緩存
+bash scripts/quick-clean.sh              # 快速清理前端快取
+bash scripts/reset-rate-limit.sh         # 重置速率限制
+docker compose restart backend celery-worker
+
+✅ 重新構建並啟動（確保所有變更生效）
+docker compose down
+docker compose up -d --build
+
+✅ 查看服務狀態
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f celery-worker
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【二】數據管理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 資料庫完整性檢查與修復
+# 快速檢查（推薦每日執行）
+bash scripts/db-integrity-check.sh
+
+# 檢查並自動修復
+bash scripts/db-integrity-check.sh --fix
+
+# 手動補齊缺失資料
+docker compose exec backend python /app/scripts/check_and_fill_gaps.py --auto-fix --min-records 4500
+
+✅ Qlib 數據同步（智慧增量）
+# 同步所有股票（1-5 分鐘）
+# 補齊後同步 Qlib
+bash scripts/sync-qlib-smart.sh
+
+# 同步單一股票
+bash scripts/sync-qlib-smart.sh --stock 2330
+
+# 完整重新導出（30-60 分鐘，少用）
+docker compose exec backend python /app/scripts/export_to_qlib_v2.py \
+  --output-dir /data/qlib/tw_stock_v2 \
+  --stocks all
+
+✅ Shioaji 分鐘線同步
+# 智慧增量同步（推薦）
+docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --smart
+
+# 同步今天
+docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --today
+
+# 背景執行（避免斷線）
+nohup docker compose exec -T backend python /app/scripts/sync_shioaji_to_qlib.py --smart > /tmp/shioaji_sync.log 2>&1 &
+
+✅ 使用分鐘線補齊日線
+# 智慧模式（自動檢測分鐘線範圍內的所有缺失）
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart
+
+# 僅檢查（不修復）
+docker compose exec backend python /app/scripts/backfill_daily_from_minute.py --smart --check
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【三】備份與還原
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ PostgreSQL 資料庫備份
+# 使用備份腳本（推薦）
+bash scripts/backup_database.sh
+
+# 手動備份
+docker compose exec -T postgres pg_dump -U quantlab quantlab | gzip > /home/ubuntu/QuantLab/backups/quantlab_$(date +%Y%m%d).sql.gz
+
+✅ 系統遷移備份（完整打包）
+bash scripts/backup-for-migration.sh
+# 輸出: quantlab_migration_YYYYMMDD_HHMMSS.tar.gz
+
+✅ 從備份還原系統
+# 解壓縮遷移備份
+tar -xzf quantlab_migration_20251230_143000.tar.gz
+
+# 還原系統
+bash scripts/restore-from-backup.sh quantlab_migration_20251230_143000/
+
+✅ Qlib 數據備份與還原
+# 從容器複製出來並壓縮
+docker compose cp backend:/data/qlib/tw_stock_v2 /tmp/qlib_backup
+tar -czf /home/ubuntu/QuantLab/backups/qlib_data_$(date +%Y%m%d).tar.gz -C /tmp qlib_backup
+rm -rf /tmp/qlib_backup
+
+# 從備份還原
+tar -xzf /home/ubuntu/QuantLab/backups/qlib_data_20241213.tar.gz -C /tmp/
+docker compose cp /tmp/qlib_backup/tw_stock_v2 backend:/data/qlib/
+docker compose exec backend ls -lh /data/qlib/tw_stock_v2/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【四】期貨與選擇權
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 期貨合約管理（已自動化）
+# 1. 註冊月份合約（系統自動執行，每年 1/1 00:05）
+docker compose exec backend python /app/scripts/register_futures_contracts.py
+
+# 2. 同步期貨數據（每天 15:30 自動執行）
+docker compose exec backend python /app/scripts/sync_shioaji_to_qlib.py --stocks TX,MTX --smart
+
+# 3. 生成連續合約（每週六 18:00 自動執行）
+docker compose exec backend python /app/scripts/generate_continuous_contract.py \
+  --symbol TX --start-date 2025-12-01 --end-date 2025-12-31
+
+✅ 選擇權數據回補
+# 測試模式（3 天，不寫入資料庫）
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX --days-back 3 --dry-run
+
+# 回補最近 7 天
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX --days-back 7
+
+# 回補完整 90 天
+docker compose exec backend python /app/scripts/backfill_option_data.py \
+  --underlying TX --days-back 90
+
+# 驗證選擇權數據品質
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT date, avg_call_delta, avg_put_delta,
+       ROUND((avg_call_delta - 0.5) / NULLIF(atm_iv, 0), 3) as delta_iv_ratio
+FROM option_daily_factors
+WHERE underlying_id = 'TX'
+ORDER BY date DESC LIMIT 10;"
+
+✅ 策略參數配置範例
+# 股票策略
+{
+  "short_ma": 5,
+  "long_ma": 20,
+  "stocks": ["2330", "2317", "2454"]
+}
+
+# 期貨策略
+{
+  "stocks": ["TX", "MTX"]           # 月份合約（會自動換月）
+}
+# 或
+{
+  "stocks": ["TXCONT", "MTXCONT"]   # 連續合約（無到期日）
+}
+
+# 選擇權策略
+{
+  "stocks": ["TX"]                  # TX 為選擇權標的
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【五】Celery 任務管理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 自動同步排程（共 11 個主要 Celery 定時任務）
+注意：
+- 所有時間均為 UTC 時間（台北時間 = UTC + 8）
+- 以下為 Python 任務，非 .sh 腳本（配置於 backend/app/core/celery_app.py）
+- 部分任務對應手動執行的 .sh 腳本（標註 🔗）
+
+1. cleanup-cache-daily             - 每天 UTC 19:00（台北隔天 03:00）清理快取
+2. cleanup-celery-metadata         - 每天 UTC 21:00（台北隔天 05:00）清理 Celery 元數據
+3. cleanup-stuck-rdagent-tasks 🔗  - 每天 UTC 21:30（台北隔天 05:30）清理卡住的 RD-Agent 任務
+4. check-database-integrity 🔗     - 每天 UTC 22:00（台北隔天 06:00）資料庫完整性檢查
+5. auto-fix-database 🔗            - 每天 UTC 22:30（台北隔天 06:30）自動修復缺失數據
+6. sync-stock-list-daily           - 每天 UTC 00:00（台北 08:00）同步股票清單
+7. sync-latest-prices-frequent     - 交易日每 15 分鐘（台北 09:00-13:59）同步最新價格
+8. sync-shioaji-minute-daily       - 交易日 UTC 07:00（台北 15:00）Shioaji 分鐘線（Top 50）
+9. sync-shioaji-futures-daily      - 交易日 UTC 07:30（台北 15:30）期貨分鐘線（TX/MTX）
+10. sync-daily-prices              - 每天 UTC 13:00（台北 21:00）每日價格
+11. sync-fundamental-weekly        - 每週六 UTC 20:00（台北週日 04:00）完整財務同步
+
+🔗 標註：對應的手動執行 .sh 腳本（詳見下方工具指南）
+   - cleanup-stuck-rdagent-tasks → scripts/cleanup-stuck-rdagent-tasks.sh
+   - check-database-integrity / auto-fix-database → scripts/db-integrity-check.sh
+
+✅ 監控命令
+# 查看 Celery 服務狀態
+docker compose ps celery-beat celery-worker
+
+# 查看已註冊任務
+docker compose exec backend celery -A app.core.celery_app inspect registered
+
+# 查看定時任務清單
+docker compose exec backend celery -A app.core.celery_app inspect scheduled
+
+# 查看活動任務
+docker compose exec backend celery -A app.core.celery_app inspect active
+
+# 即時查看日誌
+docker compose logs -f celery-worker
+docker compose logs -f celery-beat
+
+# 檢查 revoked tasks
+docker compose exec backend celery -A app.core.celery_app inspect revoked
+
+✅ 手動觸發任務
+# 清理 Celery 元數據
+docker compose exec backend celery -A app.core.celery_app call app.tasks.cleanup_celery_metadata
+
+# 清理卡住的 RD-Agent 任務
+bash scripts/cleanup-stuck-rdagent-tasks.sh
+
+# 重啟 Celery Worker
+bash scripts/restart-celery.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【六】資料庫操作
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 進入 PostgreSQL 互動式介面
+docker compose exec postgres psql -U quantlab quantlab
+
+✅ 執行資料庫遷移
+# 執行遷移（部署新版本時必須）
+docker compose exec backend alembic upgrade head
+
+# 創建新遷移（修改 models/ 後）
+docker compose exec backend alembic revision --autogenerate -m "描述變更"
+
+# 查看遷移歷史
+docker compose exec backend alembic history
+
+✅ 常用查詢
+# 查看股票數量
+docker compose exec postgres psql -U quantlab quantlab -c "SELECT COUNT(*) FROM stocks;"
+
+# 查看最新價格日期
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT stock_id, MAX(date) as latest_date
+FROM stock_prices
+GROUP BY stock_id
+ORDER BY latest_date DESC
+LIMIT 10;"
+
+# 檢查分鐘線數據範圍
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT stock_id, MIN(datetime::date), MAX(datetime::date), COUNT(DISTINCT datetime::date)
+FROM stock_minute_prices
+WHERE stock_id IN ('2330', 'TX', 'TXCONT')
+GROUP BY stock_id;"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【七】RD-Agent AI 因子挖掘
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 執行 LLM 因子挖掘
+# 執行完整 LLM 因子挖掘（需要 OpenAI API Key）
+docker compose exec backend python /app/run_rdagent_llm.py
+
+# 背景執行（推薦，避免終端斷線）
+nohup docker compose exec -T backend python /app/run_rdagent_llm.py > /tmp/rdagent_output.log 2>&1 &
+
+# 查看執行日誌
+tail -f /tmp/rdagent_output.log
+
+✅ 檢查任務狀態
+# 查看最近的 RD-Agent 任務
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT id, task_type, status, llm_calls, llm_cost, created_at
+FROM rdagent_tasks
+ORDER BY created_at DESC LIMIT 5;"
+
+# 查看生成的因子
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT id, name, category, formula, created_at
+FROM generated_factors
+ORDER BY created_at DESC LIMIT 5;"
+
+✅ 清理卡住的任務
+# 使用預設超時（24 小時）
+bash scripts/cleanup-stuck-rdagent-tasks.sh
+
+# 自訂超時（12 小時 = 43200 秒）
+bash scripts/cleanup-stuck-rdagent-tasks.sh 43200
+
+✅ 模型生成選項
+- model_type: "Tabular" → 自動使用 MLP
+- model_type: "TimeSeries" + architecture 包含 "Transformer" → 使用 Transformer
+- model_type: "TimeSeries" + architecture 包含 "LSTM" → 使用 LSTM
+- model_type: "TimeSeries" + 其他 → 預設使用 GRU
+
+✅ 訪問前端介面
+http://localhost:3000/rdagent
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【八】網路診斷
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 網路診斷工具
+# 快速診斷
+bash scripts/network-diagnosis.sh
+
+# 檢查端口狀態
+bash scripts/open-ports.sh
+
+# 修復 SSH 斷線問題
+bash scripts/fix-ssh-keepalive.sh
+
+✅ 開放端口（如需要）
+sudo ufw allow 22/tcp     # SSH
+sudo ufw allow 80/tcp     # HTTP
+sudo ufw allow 443/tcp    # HTTPS
+sudo ufw allow 3000/tcp   # Frontend
+sudo ufw allow 8000/tcp   # Backend API
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【九】Git 操作
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ 基本操作
+git status
+git add .
+git commit -m "message"
+git push origin master
+
+✅ 放棄修改
+git checkout .
+
+✅ 遠程倉庫
+git remote add origin http://git.dama168.com:3000/robert/QLab.git
+
+================================================================================
+✅ 系統維護工具完整指南 (17 個核心腳本)
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【一】核心系統工具 (2 個) 🔄 容器啟動時自動執行
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. backend/entrypoint.sh 🔄 自動執行
+   用途：Docker 容器啟動入口腳本
+   功能：
+   - 建立 RD-Agent 工作目錄（/app/git_ignore_folder/）
+   - 修復目錄權限（chown quantlab:quantlab）
+   - 切換到 quantlab 用戶執行應用
+
+   執行時機：每次 backend 容器啟動時（Docker ENTRYPOINT）
+   觸發方式：docker compose up / restart backend（自動執行）
+
+2. backend/start.sh 🔄 自動執行
+   用途：後端應用啟動腳本
+   功能：
+   - 執行資料庫遷移（alembic upgrade head）
+   - 根據環境啟動 Uvicorn 服務器
+     * 生產環境：4 workers（高並發）
+     * 開發環境：--reload 模式（即時更新）
+
+   執行時機：每次 backend 容器啟動時（Docker CMD）
+   觸發方式：docker compose up / restart backend（自動執行）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【二】數據管理工具 (2 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. scripts/sync-qlib-smart.sh
+   用途：Qlib 智慧增量同步
+   功能：
+   - 檢查 Qlib 最後日期，只同步缺失的數據
+   - 從 PostgreSQL 讀取數據並轉換為 Qlib 二進制格式
+   - 比完整重新導出快 10-20 倍（1-5 分鐘 vs 30-60 分鐘）
+
+   使用方式：
+   # 同步所有股票（推薦）
+   bash scripts/sync-qlib-smart.sh
+
+   # 同步單一股票
+   bash scripts/sync-qlib-smart.sh --stock 2330
+
+   # 指定輸出目錄
+   bash scripts/sync-qlib-smart.sh --output-dir /data/qlib/custom_dir
+
+4. scripts/db-integrity-check.sh 🔄 Celery 定時任務自動執行
+   用途：資料庫完整性檢查與修復
+   功能：
+   - 檢查日線和分鐘線數據完整性
+   - 驗證 Qlib 數據一致性
+   - 自動修復缺失數據
+
+   使用方式：
+   # 僅檢查（不修復）
+   bash scripts/db-integrity-check.sh
+
+   # 檢查並自動修復
+   bash scripts/db-integrity-check.sh --fix
+
+   自動執行：
+   - 每天 UTC 22:00（台北隔天 06:00）- 完整性檢查（check-database-integrity-daily）
+   - 每天 UTC 22:30（台北隔天 06:30）- 自動修復缺失（auto-fix-database-daily）
+   - 對應 Celery 任務：check_database_integrity, auto_fix_database
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【三】快取管理工具 (2 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. scripts/quick-clean.sh
+   用途：快速清理前端快取（無交互）
+   功能：
+   - 停止前端服務
+   - 清理 Nuxt.js 快取（.nuxt、.output、node_modules/.vite）
+   - 自動重啟前端
+
+   使用時機：
+   - 前端代碼更新後無變化
+   - 頁面顯示異常
+   - 開發階段快速重置
+
+   使用方式：
+   bash scripts/quick-clean.sh
+
+6. scripts/clear-frontend-cache.sh
+   用途：完整前端快取清理（含容器內快取）
+   功能：
+   - 清理本地快取目錄
+   - 清理容器內快取
+   - 重建前端容器
+   - 顯示清理統計
+
+   使用方式：
+   bash scripts/clear-frontend-cache.sh
+
+   說明：比 quick-clean.sh 更徹底，但需要更長時間
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【四】服務管理工具 (2 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7. scripts/restart-celery.sh
+   用途：重啟 Celery Worker
+   功能：
+   - 重啟 celery-worker 容器
+   - 檢查 Worker 健康狀態（ping 測試）
+   - 顯示已註冊任務清單
+
+   使用時機：
+   - 後端代碼更新後（Task 定義變更）
+   - Worker 卡住或無響應
+   - 需要重新載入任務配置
+
+   使用方式：
+   bash scripts/restart-celery.sh
+
+8. scripts/reset-rate-limit.sh
+   用途：重置 API 速率限制
+   功能：
+   - 查詢 Redis 中的速率限制 keys
+   - 提供互動式選單：
+     1) 刪除所有速率限制
+     2) 僅刪除 RD-Agent 相關
+     3) 僅刪除因子挖掘
+     4) 僅刪除策略優化
+
+   使用時機：
+   - 開發/測試階段頻繁測試 API
+   - 觸發速率限制（429 Too Many Requests）
+   - 清理特定功能的限制
+
+   使用方式：
+   bash scripts/reset-rate-limit.sh
+   # 互動式選單，根據提示選擇操作
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【五】任務管理工具 (1 個) 🔄 Celery 定時任務自動執行
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+9. scripts/cleanup-stuck-rdagent-tasks.sh 🔄 Celery 定時任務自動執行
+   用途：清理卡住的 RD-Agent 任務
+   功能：
+   - 檢測執行超過 24 小時仍處於 RUNNING 的任務
+   - 自動標記為 FAILED 並記錄錯誤訊息
+   - 顯示卡住任務詳情和統計
+   - 檢查 Celery Worker 狀態
+
+   使用方式：
+   # 使用預設超時（24 小時）
+   bash scripts/cleanup-stuck-rdagent-tasks.sh
+
+   # 自訂超時（12 小時 = 43200 秒）
+   bash scripts/cleanup-stuck-rdagent-tasks.sh 43200
+
+   自動執行：
+   - 每天 UTC 21:30（台北隔天 05:30）自動清理
+   - 對應 Celery 任務：cleanup-stuck-rdagent-tasks-daily
+   - 超時設定：24 小時
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【六】備份還原工具 (3 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+10. scripts/backup_database.sh
+    用途：PostgreSQL 資料庫定期備份
+    功能：
+    - 完整備份 quantlab 資料庫
+    - 自動命名（quantlab_backup_YYYYMMDD_HHMMSS.sql）
+    - 記錄備份日誌
+    - 清理 30 天前的舊備份
+
+    使用方式：
+    bash scripts/backup_database.sh
+
+    備份位置：/home/ubuntu/QuantLab/backups/
+    建議：加入 cron 定期執行（每天/每週）
+
+11. scripts/backup-for-migration.sh
+    用途：系統遷移備份（打包整個系統）
+    功能：
+    - 備份 PostgreSQL 資料庫
+    - 備份 Qlib 數據目錄
+    - 備份 .env 配置文件
+    - 生成遷移指南文檔
+    - 打包為 tar.gz 壓縮檔
+
+    使用方式：
+    bash scripts/backup-for-migration.sh
+
+    輸出：quantlab_migration_YYYYMMDD_HHMMSS.tar.gz
+    用途：遷移到新機器、災難恢復、版本升級前備份
+
+12. scripts/restore-from-backup.sh
+    用途：從備份還原系統
+    功能：
+    - 自動檢測備份目錄結構
+    - 還原 PostgreSQL 資料庫
+    - 還原 Qlib 數據目錄
+    - 還原 .env 配置文件
+    - 執行資料庫遷移（alembic upgrade head）
+
+    使用方式：
+    bash scripts/restore-from-backup.sh /path/to/backup/directory
+
+    範例：
+    # 解壓縮遷移備份
+    tar -xzf quantlab_migration_20251230_143000.tar.gz
+
+    # 還原系統
+    bash scripts/restore-from-backup.sh quantlab_migration_20251230_143000/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【七】系統配置工具 (2 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+13. scripts/setup.sh
+    用途：初始環境設置
+    功能：
+    - 檢查 Docker 和 Docker Compose 安裝
+    - 建立 .env 配置文件（從 .env.example）
+    - 提示必要配置項
+
+    使用時機：
+    - 全新部署
+    - 初次設置環境
+
+    使用方式：
+    bash scripts/setup.sh
+
+    必填配置：
+    - DB_PASSWORD（資料庫密碼）
+    - JWT_SECRET（JWT 金鑰）
+    - FINLAB_API_TOKEN（FinLab API Token）
+
+14. scripts/generate-credentials.sh
+    用途：生成安全憑證
+    功能：
+    - 生成 JWT_SECRET（64 字元隨機字串）
+    - 生成 DB_PASSWORD（32 字元強密碼）
+    - 生成 ENCRYPTION_KEY（Fernet 格式金鑰）
+    - 使用加密學安全的隨機數生成器
+
+    使用時機：
+    - 新部署環境
+    - 重置安全憑證
+    - 安全審計後更新憑證
+
+    使用方式：
+    bash scripts/generate-credentials.sh
+
+    說明：將輸出複製到 .env 文件中對應欄位
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【八】網路診斷工具 (3 個)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+15. scripts/fix-ssh-keepalive.sh
+    用途：修復 SSH 連線斷線問題
+    功能：
+    - 優化 SSH Keep-Alive 設定
+    - 備份原始 sshd_config
+    - 設定 ClientAliveInterval=30（每 30 秒發送心跳）
+    - 設定 ClientAliveCountMax=5（最多 5 次無響應）
+    - 總超時時間：150 秒（2.5 分鐘）
+
+    使用時機：
+    - SSH 連線經常斷線
+    - NAT 超時導致連線中斷
+
+    使用方式：
+    bash scripts/fix-ssh-keepalive.sh
+
+    說明：需要 sudo 權限，修改後自動重新載入 SSH 服務
+
+16. scripts/network-diagnosis.sh
+    用途：網路診斷
+    功能：
+    - 顯示系統資源狀態（負載、記憶體、磁碟）
+    - 顯示 Docker 容器狀態
+    - 統計 TCP 連接狀態分布
+    - 檢查關鍵服務端口（22/80/443/3000/8000/5432/6379）
+    - 顯示 SSH 連接歷史
+    - 顯示 SSH Keep-Alive 設定
+    - 測試網路延遲（Google DNS、Cloudflare DNS）
+
+    使用時機：
+    - 網路問題排查
+    - 連線異常診斷
+    - 系統健康檢查
+
+    使用方式：
+    bash scripts/network-diagnosis.sh
+
+17. scripts/open-ports.sh
+    用途：檢查端口和防火牆狀態
+    功能：
+    - 顯示 UFW 防火牆狀態
+    - 列出正在監聽的端口
+    - 顯示 Docker 端口映射
+    - 測試端口可達性（localhost）
+      * Port 22 (SSH)
+      * Port 80 (HTTP)
+      * Port 443 (HTTPS)
+      * Port 3000 (Frontend)
+      * Port 8000 (Backend API)
+      * Port 5432 (PostgreSQL)
+      * Port 6379 (Redis)
+
+    使用時機：
+    - 部署後驗證端口配置
+    - 無法訪問服務時診斷
+    - 安全審計
+
+    使用方式：
+    bash scripts/open-ports.sh
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【九】快速參考
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+常用維護命令組合：
+
+1. 每日開發流程
+   bash scripts/quick-clean.sh              # 清理前端快取
+   bash scripts/reset-rate-limit.sh         # 重置速率限制
+   docker compose restart backend           # 重啟後端
+
+2. 代碼更新後
+   docker compose restart backend celery-worker
+   bash scripts/restart-celery.sh
+
+3. 數據同步
+   bash scripts/db-integrity-check.sh --fix # 檢查並修復
+
+4. 系統遷移
+   bash scripts/backup-for-migration.sh     # 打包備份
+   # 傳輸到新機器後
+   bash scripts/restore-from-backup.sh /path/to/backup/
+
+5. 問題排查
+   bash scripts/network-diagnosis.sh        # 網路診斷
+   bash scripts/open-ports.sh               # 端口檢查
+   bash scripts/cleanup-stuck-rdagent-tasks.sh  # 清理卡住任務
+
+6. 定期維護（建議加入 cron）
+   bash scripts/backup_database.sh          # 每天備份
+   bash scripts/db-integrity-check.sh --fix # 每天檢查
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【十】注意事項
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  安全提示：
+   - generate-credentials.sh 生成的憑證請妥善保管
+   - backup_database.sh 備份包含敏感數據，注意權限設定
+   - restore-from-backup.sh 會覆蓋現有數據，執行前請確認
+
+⚠️  性能提示：
+   - sync-qlib-smart.sh 使用智慧增量，比完整同步快 10-20 倍
+   - quick-clean.sh 比 clear-frontend-cache.sh 更快但不夠徹底
+   - db-integrity-check.sh 每天自動執行，無需手動運行
+
+⚠️  網路提示：
+   - fix-ssh-keepalive.sh 需要 sudo 權限
+   - open-ports.sh 僅檢查不修改配置
+   - network-diagnosis.sh 可安全重複執行
+
+⚠️  任務管理：
+   - cleanup-stuck-rdagent-tasks.sh 每天自動執行
+   - restart-celery.sh 會中斷正在執行的任務
+   - reset-rate-limit.sh 開發環境使用，生產環境慎用
+
+================================================================================

@@ -40,6 +40,7 @@ class User(Base):
     last_login = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
+    strategies = relationship("Strategy", back_populates="user", cascade="all, delete-orphan")
     rdagent_tasks = relationship("RDAgentTask", back_populates="user", cascade="all, delete-orphan")
     telegram_notifications = relationship("TelegramNotification", back_populates="user", cascade="all, delete-orphan")
     telegram_notification_preferences = relationship("TelegramNotificationPreference", back_populates="user", cascade="all, delete-orphan", uselist=False)

@@ -82,7 +82,7 @@ class AdminService:
 
         return user
 
-    def delete_user(self, user_id: int, current_user_id: int) -> bool:
+    def delete_user(self, user_id: int, current_user_id: int) -> Dict[str, Any]:
         """
         Delete user (admin only)
 
@@ -91,18 +91,156 @@ class AdminService:
             current_user_id: Current admin user ID
 
         Returns:
-            True if deleted successfully, False if user not found or trying to delete self
+            Dictionary with success status and details:
+            {
+                "success": True/False,
+                "message": str,
+                "error_code": str (optional),
+                "details": dict (optional)
+            }
         """
+        from sqlalchemy.exc import IntegrityError
+        from app.core.exceptions import DatabaseError
+
         # Cannot delete yourself
         if user_id == current_user_id:
-            return False
+            return {
+                "success": False,
+                "message": "無法刪除自己的帳號",
+                "error_code": "CANNOT_DELETE_SELF"
+            }
 
         user = UserRepository.get_by_id(self.db, user_id)
         if not user:
-            return False
+            return {
+                "success": False,
+                "message": "用戶不存在",
+                "error_code": "USER_NOT_FOUND"
+            }
 
-        UserRepository.delete(self.db, user)
-        return True
+        # Cannot delete protected accounts
+        from app.core.config import settings
+        if user.email in settings.PROTECTED_ACCOUNTS:
+            return {
+                "success": False,
+                "message": f"無法刪除受保護的帳號（{user.email}）",
+                "error_code": "CANNOT_DELETE_PROTECTED_ACCOUNT"
+            }
+
+        # Check related data before deletion
+        related_data = self._check_user_related_data(user_id)
+
+        try:
+            UserRepository.delete(self.db, user)
+
+            logger.info(
+                f"Successfully deleted user {user.username} (ID: {user_id}). "
+                f"Related data: {related_data}"
+            )
+
+            return {
+                "success": True,
+                "message": f"成功刪除用戶 {user.username}",
+                "details": related_data
+            }
+
+        except IntegrityError as e:
+            self.db.rollback()
+
+            # Parse the error message
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+
+            # Detect foreign key constraint violation
+            if "foreign key constraint" in error_msg.lower():
+                # Extract table name from error
+                import re
+                table_match = re.search(r'table "(\w+)"', error_msg)
+                constraint_match = re.search(r'constraint "(\w+)"', error_msg)
+
+                table_name = table_match.group(1) if table_match else "unknown"
+                constraint_name = constraint_match.group(1) if constraint_match else "unknown"
+
+                logger.error(
+                    f"Failed to delete user {user.username} (ID: {user_id}): "
+                    f"Foreign key violation on table '{table_name}'. "
+                    f"Related data: {related_data}"
+                )
+
+                return {
+                    "success": False,
+                    "message": f"無法刪除用戶 {user.username}：存在關聯數據",
+                    "error_code": "FOREIGN_KEY_VIOLATION",
+                    "details": {
+                        "table": table_name,
+                        "constraint": constraint_name,
+                        "related_data": related_data,
+                        "suggestion": "請先刪除該用戶的關聯數據，或聯繫技術支援"
+                    }
+                }
+            else:
+                logger.error(f"Database error when deleting user {user_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "message": "資料庫錯誤：刪除失敗",
+                    "error_code": "DATABASE_ERROR",
+                    "details": {"error": error_msg}
+                }
+
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Unexpected error when deleting user {user_id}: {str(e)}", exc_info=True)
+
+            return {
+                "success": False,
+                "message": f"刪除用戶時發生未知錯誤",
+                "error_code": "UNKNOWN_ERROR",
+                "details": {"error": str(e)}
+            }
+
+    def _check_user_related_data(self, user_id: int) -> Dict[str, int]:
+        """
+        Check how much related data a user has
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            Dictionary with counts of related data
+        """
+        from app.models.industry_chain import IndustryChain
+
+        related_data = {
+            "strategies": StrategyRepository.count_by_user(self.db, user_id),
+            "backtests": BacktestRepository.count_by_user(self.db, user_id),
+        }
+
+        # Check RD-Agent tasks
+        try:
+            from app.models.rdagent import RDAgentTask
+            rdagent_count = self.db.query(RDAgentTask).filter(
+                RDAgentTask.user_id == user_id
+            ).count()
+            related_data["rdagent_tasks"] = rdagent_count
+        except Exception:
+            related_data["rdagent_tasks"] = 0
+
+        # Check industry chains (potential foreign key issue)
+        try:
+            industry_chain_count = self.db.query(IndustryChain).filter(
+                IndustryChain.user_id == user_id
+            ).count()
+            related_data["industry_chains"] = industry_chain_count
+        except Exception:
+            related_data["industry_chains"] = 0
+
+        # Check signals
+        try:
+            signal_count = StrategySignalRepository.count_by_user(self.db, user_id)
+            related_data["signals"] = signal_count
+        except Exception:
+            related_data["signals"] = 0
+
+        return related_data
 
     # ============ System Stats ============
 

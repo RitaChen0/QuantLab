@@ -46,11 +46,6 @@
           <p>載入回測記錄中...</p>
         </div>
 
-        <!-- 錯誤訊息 -->
-        <div v-else-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
-
         <!-- 回測列表 -->
         <div v-else-if="filteredBacktests.length > 0" class="backtests-grid">
           <div
@@ -227,10 +222,6 @@
         </div>
 
         <div class="modal-body">
-          <div v-if="createError" class="error-message">
-            {{ createError }}
-          </div>
-
           <form @submit.prevent="handleCreateBacktest">
             <div class="form-group">
               <label for="name">回測名稱 *</label>
@@ -387,10 +378,20 @@
         </div>
       </div>
     </div>
+
+    <!-- 錯誤對話框 -->
+    <ErrorDisplay
+      v-if="currentError"
+      :error="currentError"
+      @close="clearError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -398,6 +399,7 @@ definePageMeta({
 const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
+const { currentError, handleError, clearError } = useErrorHandler()
 
 // 時區處理 composables
 const { formatToTaiwanTime } = useDateTime()
@@ -408,10 +410,8 @@ const availableStrategies = ref<any[]>([])
 const availableStocks = ref<any[]>([])
 const loadingStocks = ref(false)
 const loading = ref(false)
-const errorMessage = ref('')
 const showCreateModal = ref(false)
 const creatingBacktest = ref(false)
-const createError = ref('')
 const running = ref<number | null>(null)
 const pollingInterval = ref<NodeJS.Timeout | null>(null)
 const taskIds = ref<Record<number, string>>({}) // 存儲每個回測的任務 ID
@@ -488,7 +488,6 @@ const selectedStockInfo = computed(() => {
 // 載入回測列表
 const loadBacktests = async () => {
   loading.value = true
-  errorMessage.value = ''
 
   try {
     const token = process.client ? localStorage.getItem('access_token') : null
@@ -513,10 +512,14 @@ const loadBacktests = async () => {
     console.log('Loaded backtests:', backtests.value.length)
   } catch (error: any) {
     console.error('Failed to load backtests:', error)
-    errorMessage.value = error.data?.detail || '載入回測失敗'
 
     if (error.status === 401) {
       router.push('/login')
+    } else {
+      handleError(error, {
+        showDialog: true,
+        context: '載入回測列表'
+      })
     }
   } finally {
     loading.value = false
@@ -614,7 +617,6 @@ const loadStocks = async () => {
 
 // 建立回測
 const handleCreateBacktest = async () => {
-  createError.value = ''
   creatingBacktest.value = true
 
   try {
@@ -663,20 +665,10 @@ const handleCreateBacktest = async () => {
     await loadBacktests()
   } catch (error: any) {
     console.error('Failed to create backtest:', error)
-
-    if (error.data?.detail) {
-      if (typeof error.data.detail === 'string') {
-        createError.value = error.data.detail
-      } else if (Array.isArray(error.data.detail)) {
-        createError.value = error.data.detail.map((err: any) => {
-          const field = err.loc ? err.loc.join('.') : ''
-          const msg = err.msg || err.message || ''
-          return field ? `${field}: ${msg}` : msg
-        }).join('; ')
-      }
-    } else {
-      createError.value = '建立回測失敗，請稍後再試'
-    }
+    handleError(error, {
+      showDialog: true,
+      context: '建立回測'
+    })
   } finally {
     creatingBacktest.value = false
   }
@@ -890,7 +882,10 @@ const runBacktest = async (id: number) => {
     if (error.status === 429) {
       alert('⚠️ 超過執行次數限制\n\n每小時最多執行 30 次回測。\n請稍後再試，或等待限制重置。\n\n提示：速率限制每小時重置一次。')
     } else {
-      alert(error.data?.detail || '執行回測失敗')
+      handleError(error, {
+        showDialog: true,
+        context: '執行回測'
+      })
     }
     running.value = null
   }
@@ -923,7 +918,10 @@ const deleteBacktest = async (id: number) => {
     await loadBacktests()
   } catch (error: any) {
     console.error('Failed to delete backtest:', error)
-    alert(error.data?.detail || '刪除回測失敗')
+    handleError(error, {
+      showDialog: true,
+      context: '刪除回測'
+    })
   }
 }
 

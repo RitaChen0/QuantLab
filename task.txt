@@ -1,70 +1,58 @@
-步骤 1：训练模型（必须）
+推薦方案（按優先順序）
 
-  在使用前，需要先训练模型：
+1. Alpha Vantage ⭐⭐⭐⭐⭐
 
-  # 使用 Qlib 训练模型
-  import qlib
-  from qlib.data.dataset import DatasetH
-  from qlib.model.trainer import TrainerR
+  最佳性價比選擇
 
-  # 1. 准备数据（台股历史数据）
-  dataset = DatasetH(
-      handler="Alpha158",
-      segments={
-          "train": ("2015-01-01", "2020-12-31"),
-          "valid": ("2021-01-01", "2021-12-31"),
-          "test": ("2022-01-01", "2023-12-31")
-      }
-  )
+  優勢：
+  - ✅ 免費額度：500 次請求/天（足夠日線回測）
+  - ✅ 完整貨幣對：150+ 種（EUR/USD, USD/JPY, USD/TWD 等）
+  - ✅ 多時間週期：1 分鐘、5 分鐘、15 分鐘、30 分鐘、60 分鐘、日線
+  - ✅ 歷史數據：20+ 年完整歷史
+  - ✅ 技術指標：內建 RSI、MACD、布林帶等
 
-  # 2. 加载你生成的模型
-  from custom_models.gru_financial_model import GRUFinancialModel
+  限制：
+  - ⚠️ 免費版：5 次請求/分鐘
+  - ⚠️ 付費版：$49.99/月（無限請求）
 
-  # 3. 训练模型
-  model = GRUFinancialModel(d_feat=20, hidden_dim=128, num_layers=2)
-  trainer = TrainerR(model=model, dataset=dataset)
-  trainer.train()  # 训练 50 个 epoch
+2. OANDA API ⭐⭐⭐⭐
 
-  # 4. 保存训练好的模型
-  trainer.save("gru_model_weights.pth")
+  專業外匯交易平台
 
-  训练时间：约 30-60 分钟（取决于数据量）
+  優勢：
+  - ✅ 免費試用帳戶：模擬交易 + 完整歷史數據
+  - ✅ 極高精度：Tick 級別數據（最細粒度）
+  - ✅ 即時報價：實盤級別數據質量
+  - ✅ 亞洲主流貨幣：USD/TWD, USD/CNY, JPY/TWD 等
 
-步骤 2：使用模型预测
+  限制：
+  - ⚠️ 需要註冊 OANDA 帳戶（免費）
+  - ⚠️ 實盤交易需要入金（但只用數據不需要）
 
-  训练完成后，可以用来预测股价：
+3. Yahoo Finance ⭐⭐⭐
 
-  # 预测未来收益
-  predictions = model.predict(latest_data)
+  完全免費但數據較粗略
 
-  # 例如：
-  # 股票 2330：预测明天涨 +2.5%
-  # 股票 2454：预测明天跌 -1.2%
+  優勢：
+  - ✅ 完全免費：無 API Key、無請求限制
+  - ✅ 簡單易用：一行代碼搞定
+  - ✅ 主流貨幣對：EUR/USD, GBP/USD, USD/JPY 等
 
-步骤 3：建立交易策略
+  限制：
+  - ⚠️ 只有日線：無分鐘線數據
+  - ⚠️ 貨幣對有限：約 50 種
+  - ⚠️ 不保證穩定：Yahoo 可能隨時關閉 API
 
-  将模型预测整合到交易策略中：
+4. twelvedata ⭐⭐⭐⭐
 
-  class MLStrategy:
-      def __init__(self, model):
-          self.model = model
+  新興數據平台（平衡免費與專業）
 
-      def generate_signals(self, date):
-          # 1. 获取今天的特征数据
-          features = get_features(date)
+  優勢：
+  - ✅ 免費額度：800 次請求/天
+  - ✅ 完整外匯：180+ 貨幣對
+  - ✅ 分鐘線數據：1 分鐘到日線
+  - ✅ WebSocket 即時數據：付費版支援
 
-          # 2. 模型预测明天涨跌
-          predictions = self.model.predict(features)
-
-          # 3. 选出预测最高的前 10 只股票
-          top10 = predictions.nlargest(10)
-
-          # 4. 买入这 10 只股票
-          return {"buy": top10.index.tolist()}
-
-
-  1. QuantConnect LEAN：支援 AI 驅動的 Alpha 生成
-  2. Alpaca AutoTrader：GPT-4 生成交易邏輯
-  3. TradingView Pine Script AI：自然語言轉策略代碼
-  4. Bloomberg Terminal GPT：財經新聞情緒分析
-
+  限制：
+  - ⚠️ 免費版：8 次請求/分鐘
+  - ⚠️ 付費版：$29/月起

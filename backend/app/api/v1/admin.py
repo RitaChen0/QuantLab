@@ -197,23 +197,55 @@ async def delete_user(
     current_user: User = Depends(get_current_superuser),
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    """Delete user (admin only)"""
-    success = admin_service.delete_user(user_id, current_user.id)
+    """
+    Delete user (admin only)
 
-    if not success:
-        if user_id == current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete yourself"
+    Returns detailed information about the deletion result,
+    including related data counts and error details if deletion fails.
+    """
+    from app.core.exceptions import DatabaseError
+
+    result = admin_service.delete_user(user_id, current_user.id)
+
+    if not result["success"]:
+        error_code = result.get("error_code", "UNKNOWN_ERROR")
+
+        # Map error codes to HTTP status codes
+        status_code_map = {
+            "CANNOT_DELETE_SELF": status.HTTP_400_BAD_REQUEST,
+            "CANNOT_DELETE_SYSTEM_ADMIN": status.HTTP_403_FORBIDDEN,
+            "CANNOT_DELETE_PROTECTED_ACCOUNT": status.HTTP_403_FORBIDDEN,
+            "USER_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+            "FOREIGN_KEY_VIOLATION": status.HTTP_409_CONFLICT,
+            "DATABASE_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "UNKNOWN_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
+        }
+
+        http_status = status_code_map.get(error_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Use DatabaseError for better error formatting
+        if error_code in ["FOREIGN_KEY_VIOLATION", "DATABASE_ERROR"]:
+            raise DatabaseError(
+                message=result["message"],
+                details=result.get("details", {})
             )
         else:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=http_status,
+                detail={
+                    "message": result["message"],
+                    "error_code": error_code,
+                    "details": result.get("details")
+                }
             )
 
     logger.info(f"Admin {current_user.username} deleted user ID {user_id}")
-    return {"message": "User deleted successfully"}
+
+    return {
+        "success": True,
+        "message": result["message"],
+        "details": result.get("details", {})
+    }
 
 
 # ============ System Stats ============

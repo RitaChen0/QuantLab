@@ -6,14 +6,6 @@
       <p>{{ isEditMode ? '載入策略中...' : '初始化編輯器...' }}</p>
     </div>
 
-    <!-- 錯誤訊息 -->
-    <div v-else-if="loadError" class="error-message">
-      {{ loadError }}
-      <NuxtLink to="/strategies" class="btn-secondary" style="margin-top: 1rem; display: inline-block;">
-        返回策略列表
-      </NuxtLink>
-    </div>
-
     <!-- 編輯表單 -->
     <div v-else class="edit-container">
       <div class="page-header">
@@ -28,10 +20,6 @@
       </div>
 
       <div class="edit-form-card">
-        <div v-if="saveError" class="error-message">
-          {{ saveError }}
-        </div>
-
         <form @submit.prevent="handleSave">
           <!-- 左右分欄佈局 -->
           <div class="create-strategy-layout">
@@ -205,10 +193,19 @@
         </form>
       </div>
     </div>
+
+    <!-- 錯誤對話框 -->
+    <ErrorDisplay
+      v-if="currentError"
+      :error="currentError"
+      @close="clearError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
 // Props
 const props = defineProps<{
   strategyId?: string | number  // 可選：有 ID 為編輯模式，無 ID 為建立模式
@@ -216,6 +213,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const config = useRuntimeConfig()
+const { currentError, handleError, clearError } = useErrorHandler()
 
 // 判斷是編輯模式還是建立模式
 const isEditMode = computed(() => !!props.strategyId)
@@ -223,8 +221,6 @@ const isEditMode = computed(() => !!props.strategyId)
 // 狀態
 const loading = ref(false)
 const saving = ref(false)
-const loadError = ref('')
-const saveError = ref('')
 const templateTab = ref('general') // 'general' | 'factor'
 
 // 策略資料
@@ -303,7 +299,6 @@ const loadStrategy = async () => {
   }
 
   loading.value = true
-  loadError.value = ''
 
   try {
     const token = process.client ? localStorage.getItem('access_token') : null
@@ -336,12 +331,13 @@ const loadStrategy = async () => {
   } catch (error: any) {
     console.error('Failed to load strategy:', error)
 
-    if (error.status === 404) {
-      loadError.value = '策略不存在或已被刪除'
-    } else if (error.status === 401) {
+    if (error.status === 401) {
       router.push('/login')
     } else {
-      loadError.value = error.data?.detail || '載入策略失敗'
+      handleError(error, {
+        showDialog: true,
+        context: '載入策略'
+      })
     }
   } finally {
     loading.value = false
@@ -360,7 +356,6 @@ const handleSave = async () => {
     engine_type: strategy.engine_type
   })
 
-  saveError.value = ''
   saving.value = true
 
   try {
@@ -408,26 +403,10 @@ const handleSave = async () => {
       message: error.message
     })
 
-    if (error.data?.detail) {
-      if (typeof error.data.detail === 'string') {
-        saveError.value = error.data.detail
-      } else if (Array.isArray(error.data.detail)) {
-        saveError.value = error.data.detail.map((err: any) => {
-          const field = err.loc ? err.loc.join('.') : ''
-          const msg = err.msg || err.message || ''
-          return field ? `${field}: ${msg}` : msg
-        }).join('; ')
-      } else {
-        saveError.value = JSON.stringify(error.data.detail)
-      }
-    } else if (error.message) {
-      saveError.value = `錯誤: ${error.message}`
-    } else {
-      saveError.value = isEditMode.value ? '更新策略失敗，請稍後再試' : '建立策略失敗，請稍後再試'
-    }
-
-    // 也用 alert 顯示錯誤
-    alert(`❌ ${saveError.value}`)
+    handleError(error, {
+      showDialog: true,
+      context: isEditMode.value ? '更新策略' : '建立策略'
+    })
   } finally {
     saving.value = false
   }

@@ -46,11 +46,6 @@
           <p>載入策略中...</p>
         </div>
 
-        <!-- 錯誤訊息 -->
-        <div v-else-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
-
         <!-- 策略列表 -->
         <div v-else-if="filteredStrategies.length > 0" class="strategies-grid">
           <div
@@ -146,10 +141,20 @@
         </div>
       </div>
     </main>
+
+    <!-- 錯誤對話框 -->
+    <ErrorDisplay
+      v-if="currentError"
+      :error="currentError"
+      @close="clearError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -158,11 +163,11 @@ const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
 const { formatToTaiwanTime } = useDateTime()
+const { currentError, handleError, clearError } = useErrorHandler()
 
 // 狀態
 const strategies = ref<any[]>([])
 const loading = ref(false)
-const errorMessage = ref('')
 
 // 搜尋和篩選
 const searchQuery = ref('')
@@ -202,7 +207,6 @@ const filteredStrategies = computed(() => {
 // 載入策略列表
 const loadStrategies = async () => {
   loading.value = true
-  errorMessage.value = ''
 
   try {
     const token = process.client ? localStorage.getItem('access_token') : null
@@ -247,11 +251,15 @@ const loadStrategies = async () => {
     console.log('Loaded strategies:', strategies.value.length)
   } catch (error: any) {
     console.error('Failed to load strategies:', error)
-    errorMessage.value = error.data?.detail || '載入策略失敗'
     strategies.value = [] // 確保 strategies 是陣列
 
     if (error.status === 401) {
       router.push('/login')
+    } else {
+      handleError(error, {
+        showDialog: true,
+        context: '載入策略列表'
+      })
     }
   } finally {
     loading.value = false
@@ -290,7 +298,10 @@ const cloneStrategy = async (id: number) => {
     await loadStrategies()
   } catch (error: any) {
     console.error('Failed to clone strategy:', error)
-    alert(error.data?.detail || '複製策略失敗')
+    handleError(error, {
+      showDialog: true,
+      context: '複製策略'
+    })
   }
 }
 
@@ -325,7 +336,10 @@ const deleteStrategy = async (id: number) => {
     loadStrategies()
   } catch (error: any) {
     console.error('Failed to delete strategy:', error)
-    alert(error.data?.detail || '刪除策略失敗')
+    handleError(error, {
+      showDialog: true,
+      context: '刪除策略'
+    })
   }
 }
 
@@ -375,7 +389,10 @@ const activateStrategy = async (id: number) => {
     loadStrategies()
   } catch (error: any) {
     console.error('Failed to activate strategy:', error)
-    alert(error.data?.detail || '啟用策略失敗')
+    handleError(error, {
+      showDialog: true,
+      context: '啟用策略'
+    })
   }
 }
 
@@ -425,7 +442,10 @@ const pauseStrategy = async (id: number) => {
     loadStrategies()
   } catch (error: any) {
     console.error('Failed to pause strategy:', error)
-    alert(error.data?.detail || '暫停策略失敗')
+    handleError(error, {
+      showDialog: true,
+      context: '暫停策略'
+    })
   }
 }
 

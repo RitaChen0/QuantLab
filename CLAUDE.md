@@ -141,13 +141,18 @@ docker compose exec backend python /app/scripts/backfill_option_data.py \
   --end-date 2025-12-15
 
 # 驗證選擇權數據品質
-bash /home/ubuntu/QuantLab/verify_option_quality.sh
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT date, avg_call_delta, avg_put_delta,
+       ROUND((avg_call_delta - 0.5) / NULLIF(atm_iv, 0), 3) as delta_iv_ratio
+FROM option_daily_factors
+WHERE underlying_id = 'TX'
+ORDER BY date DESC LIMIT 10;"
 ```
 
 **重要說明**：
 - MTX (小台期貨) **沒有選擇權產品**，僅 TX (台指期貨) 有 TXO (台指選擇權)
 - 回補腳本會計算真實的 Black-Scholes Greeks（Delta, Gamma, Theta, Vega, Rho, Vanna）
-- 數據品質驗證會檢查 Greeks 是否為真實計算而非估算值
+- 數據品質驗證：delta_iv_ratio 應接近 0（真實計算），如為 0.10 則為估算值
 - 回補過程中會自動處理 API 限制並重試
 
 ### Celery 任務管理
@@ -848,8 +853,13 @@ FROM stock_minute_prices
 WHERE stock_id IN ('TX', 'TXCONT')
 GROUP BY stock_id;"
 
-# 3. 驗證數據品質
-bash /home/ubuntu/QuantLab/verify_option_quality.sh
+# 3. 驗證數據品質（檢查是否為真實計算 vs 估算值）
+docker compose exec postgres psql -U quantlab quantlab -c "
+SELECT COUNT(*) as total_days,
+       SUM(CASE WHEN ABS((avg_call_delta - 0.5) / NULLIF(atm_iv, 0) - 0.10) < 0.001 THEN 1 ELSE 0 END) as estimated_days,
+       SUM(CASE WHEN avg_call_delta IS NOT NULL THEN 1 ELSE 0 END) as non_null_days
+FROM option_daily_factors
+WHERE underlying_id = 'TX';"
 ```
 
 **解決方案**：
@@ -1141,6 +1151,391 @@ Code Review 時：
 - [ ] Celery crontab 有正確的時區註解
 
 **詳細說明**：參見 [Document/TIMEZONE_COMPLETE_GUIDE.md](Document/TIMEZONE_COMPLETE_GUIDE.md)
+
+---
+
+## 🚨 錯誤處理規範
+
+QuantLab 使用統一的錯誤處理系統，確保後端和前端的錯誤訊息格式一致、用戶體驗友好、開發除錯容易。
+
+### 後端錯誤處理
+
+**核心原則**：使用 `app.core.exceptions` 中的自定義異常類，全局異常處理器會自動格式化錯誤響應。
+
+#### 1. 可用的異常類
+
+```python
+from app.core.exceptions import (
+    QuantLabException,      # 基礎異常類（可自定義狀態碼）
+    DatabaseError,          # 資料庫錯誤（500）
+    BacktestError,          # 回測執行錯誤（500）
+    StrategyError,          # 策略錯誤（400）
+)
+```
+
+#### 2. 使用範例
+
+**Service 層**（推薦）：
+```python
+from app.core.exceptions import DatabaseError, StrategyError
+
+class BacktestService:
+    def create_backtest(self, data: BacktestCreate):
+        # 業務邏輯驗證
+        if not self._validate_date_range(data.start_date, data.end_date):
+            raise StrategyError(
+                message="結束日期必須晚於開始日期",
+                details={
+                    "start_date": data.start_date,
+                    "end_date": data.end_date
+                }
+            )
+
+        # 資料庫操作
+        try:
+            return BacktestRepository.create(self.db, data)
+        except IntegrityError as e:
+            raise DatabaseError(
+                message="創建回測失敗：資料庫約束衝突",
+                details={"error": str(e)}
+            )
+```
+
+**API 層**：
+```python
+from fastapi import HTTPException, status
+from app.core.exceptions import DatabaseError
+
+@router.post("/backtests/")
+async def create_backtest(
+    data: BacktestCreate,
+    service: BacktestService = Depends()
+):
+    try:
+        result = service.create_backtest(data)
+        return {"success": True, "data": result}
+    except StrategyError as e:
+        # QuantLabException 會被全局處理器自動捕獲
+        raise
+    except Exception as e:
+        # 未預期的錯誤：包裝為 DatabaseError
+        raise DatabaseError(
+            message="系統錯誤",
+            details={"error": str(e)}
+        )
+```
+
+#### 3. 錯誤響應格式
+
+**開發環境**（`DEBUG=True`）：
+```json
+{
+  "success": false,
+  "error": {
+    "type": "DatabaseError",
+    "message": "創建回測失敗：資料庫約束衝突",
+    "code": "DATABASE_ERROR",
+    "details": {
+      "error": "duplicate key value violates unique constraint"
+    },
+    "traceback": "Traceback (most recent call last):\n  ..."
+  },
+  "request": {
+    "method": "POST",
+    "url": "http://localhost:8000/api/v1/backtests/",
+    "client": "127.0.0.1"
+  }
+}
+```
+
+**生產環境**（`DEBUG=False`）：
+```json
+{
+  "success": false,
+  "error": {
+    "type": "DatabaseError",
+    "message": "創建回測失敗：資料庫約束衝突",
+    "code": "DATABASE_ERROR"
+  }
+}
+```
+
+#### 4. 自定義異常（如需要）
+
+```python
+class QuotaExceededError(QuantLabException):
+    """配額超限錯誤"""
+    def __init__(self, message: str, details: Dict[str, Any] = None):
+        super().__init__(
+            message=message,
+            status_code=429,  # Too Many Requests
+            error_code="QUOTA_EXCEEDED",
+            details=details
+        )
+
+# 使用
+if user_backtest_count >= MAX_BACKTESTS_PER_USER:
+    raise QuotaExceededError(
+        message=f"已達回測配額上限（{MAX_BACKTESTS_PER_USER}）",
+        details={
+            "current": user_backtest_count,
+            "limit": MAX_BACKTESTS_PER_USER
+        }
+    )
+```
+
+### 前端錯誤處理
+
+**核心原則**：使用 `useErrorHandler` composable 和 `ErrorDisplay` 組件統一處理所有錯誤。
+
+#### 1. 基本使用
+
+```typescript
+// 任何 Vue 組件中
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
+
+const { currentError, handleError, clearError } = useErrorHandler()
+
+// API 調用
+async function deleteUser(userId: number) {
+  try {
+    await $fetch(`/api/v1/users/${userId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    alert('刪除成功！')
+  } catch (error: any) {
+    console.error('Failed to delete user:', error)
+
+    // 401 自動導向登入
+    if (error.status === 401) {
+      router.push('/login')
+      return
+    }
+
+    // 其他錯誤顯示對話框
+    handleError(error, {
+      showDialog: true,
+      context: '刪除用戶'
+    })
+  }
+}
+```
+
+```vue
+<template>
+  <div>
+    <!-- 你的頁面內容 -->
+
+    <!-- 錯誤對話框（統一放在模板最後） -->
+    <ErrorDisplay
+      v-if="currentError"
+      :error="currentError"
+      @close="clearError"
+    />
+  </div>
+</template>
+```
+
+#### 2. ErrorDisplay 組件功能
+
+✅ **自動格式化錯誤**：
+- ValidationError：顯示缺失欄位列表
+- DatabaseError：顯示資料庫錯誤詳情
+- NetworkError：顯示網絡連接失敗提示
+
+✅ **環境感知**：
+- 開發環境：顯示完整堆棧追蹤
+- 生產環境：隱藏敏感信息
+
+✅ **一鍵複製**：
+- 「複製錯誤信息」按鈕
+- 複製內容包含錯誤類型、訊息、代碼、詳情、堆棧追蹤
+
+✅ **上下文提示**：
+- 顯示錯誤發生的操作（例如：「刪除用戶時發生錯誤」）
+
+#### 3. 常見錯誤處理模式
+
+**模式 1：表單提交錯誤**
+```typescript
+async function handleSubmit() {
+  try {
+    await api.createStrategy(formData)
+    alert('✅ 策略建立成功！')
+    router.push('/strategies')
+  } catch (error: any) {
+    handleError(error, {
+      showDialog: true,
+      context: '建立策略'
+    })
+    // ValidationError 會自動顯示缺失欄位
+    // 例如：code: Field required
+  }
+}
+```
+
+**模式 2：載入資料錯誤**
+```typescript
+async function loadData() {
+  loading.value = true
+  try {
+    const response = await api.getBacktests()
+    data.value = response
+  } catch (error: any) {
+    if (error.status === 401) {
+      router.push('/login')
+    } else {
+      handleError(error, {
+        showDialog: true,
+        context: '載入回測列表'
+      })
+    }
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+**模式 3：成功保留 alert，錯誤使用 ErrorDisplay**
+```typescript
+async function activateStrategy(id: number) {
+  try {
+    await api.activateStrategy(id)
+    alert('✅ 策略已啟用！')  // 成功訊息仍用 alert
+    await loadStrategies()
+  } catch (error: any) {
+    handleError(error, {      // 錯誤用 ErrorDisplay
+      showDialog: true,
+      context: '啟用策略'
+    })
+  }
+}
+```
+
+### 錯誤處理最佳實踐
+
+#### ✅ 應該做的
+
+1. **Service 層拋出語義化異常**
+   ```python
+   # ✅ 好
+   raise StrategyError(message="策略代碼不能為空")
+
+   # ❌ 不好
+   raise ValueError("code is required")
+   ```
+
+2. **提供詳細的錯誤上下文**
+   ```python
+   # ✅ 好
+   raise DatabaseError(
+       message="刪除用戶失敗：存在關聯數據",
+       details={
+           "user_id": user_id,
+           "related_strategies": 5,
+           "related_backtests": 12
+       }
+   )
+
+   # ❌ 不好
+   raise Exception("delete failed")
+   ```
+
+3. **前端保留 401 自動導向**
+   ```typescript
+   // ✅ 好
+   if (error.status === 401) {
+     router.push('/login')
+     return
+   }
+   handleError(error, { showDialog: true })
+
+   // ❌ 不好：所有錯誤都顯示對話框（用戶未登入也彈窗）
+   handleError(error, { showDialog: true })
+   ```
+
+4. **使用上下文參數說明操作**
+   ```typescript
+   // ✅ 好
+   handleError(error, {
+     showDialog: true,
+     context: '刪除策略'  // 用戶看到：「刪除策略時發生錯誤」
+   })
+
+   // ❌ 不好：缺少上下文
+   handleError(error, { showDialog: true })
+   ```
+
+#### ❌ 不應該做的
+
+1. **不要在 API 層直接返回原始錯誤**
+   ```python
+   # ❌ 不好
+   @router.get("/strategies/")
+   def get_strategies():
+       strategies = db.query(Strategy).all()  # 錯誤會洩漏 SQL
+       return strategies
+
+   # ✅ 好：使用 Service 層包裝
+   @router.get("/strategies/")
+   def get_strategies(service: StrategyService = Depends()):
+       return service.get_all_strategies()
+   ```
+
+2. **不要在前端手動格式化 ValidationError**
+   ```typescript
+   // ❌ 不好：重複造輪子
+   catch (error: any) {
+     if (error.data?.detail && Array.isArray(error.data.detail)) {
+       const formatted = error.data.detail.map(err => {
+         // 15 行格式化邏輯...
+       }).join('; ')
+       alert(formatted)
+     }
+   }
+
+   // ✅ 好：ErrorDisplay 自動處理
+   catch (error: any) {
+     handleError(error, { showDialog: true, context: '建立策略' })
+   }
+   ```
+
+3. **不要混合使用舊式錯誤處理**
+   ```typescript
+   // ❌ 不好：同時使用 errorMessage ref 和 ErrorDisplay
+   const errorMessage = ref('')
+   catch (error: any) {
+     errorMessage.value = error.message
+     handleError(error, { showDialog: true })
+   }
+
+   // ✅ 好：只使用 ErrorDisplay
+   catch (error: any) {
+     handleError(error, { showDialog: true, context: '操作' })
+   }
+   ```
+
+### 已整合 ErrorDisplay 的頁面
+
+✅ **高優先級頁面**（已完成）：
+- `pages/admin/index.vue` - 管理後台
+- `pages/strategies/index.vue` - 策略列表
+- `pages/backtest/index.vue` - 回測列表
+
+✅ **中優先級頁面**（已完成）：
+- `pages/backtest/[id].vue` - 回測詳情
+- `components/StrategyEditor.vue` - 策略編輯
+
+**新增頁面時**：請參考上述頁面的錯誤處理模式，確保一致性。
+
+### 參考文檔
+
+- [ENHANCED_ERROR_HANDLING_GUIDE.md](ENHANCED_ERROR_HANDLING_GUIDE.md) - 完整錯誤處理指南
+- `backend/app/core/exceptions.py` - 後端異常類定義
+- `frontend/composables/useErrorHandler.ts` - 前端錯誤處理 composable
+- `frontend/components/ErrorDisplay.vue` - 錯誤顯示組件
 
 ---
 

@@ -19,11 +19,6 @@
           <p>載入回測結果中...</p>
         </div>
 
-        <!-- 錯誤訊息 -->
-        <div v-else-if="errorMessage" class="error-message">
-          {{ errorMessage }}
-        </div>
-
         <!-- 回測詳情 -->
         <div v-else-if="backtest" class="backtest-detail">
           <!-- 基本信息 -->
@@ -123,11 +118,7 @@
                 </button>
               </div>
 
-              <div v-if="chartError" class="chart-error">
-                {{ chartError }}
-              </div>
-
-              <div v-else-if="chartLoading" class="chart-loading">
+              <div v-if="chartLoading" class="chart-loading">
                 <div class="spinner"></div>
                 <p>載入圖表資料中...</p>
               </div>
@@ -138,7 +129,7 @@
               </div>
 
               <!-- 圖表畫布 -->
-              <div v-show="priceData && !chartError && !chartLoading" ref="tradeChartRef" class="trade-chart-canvas"></div>
+              <div v-show="priceData && !chartLoading" ref="tradeChartRef" class="trade-chart-canvas"></div>
             </div>
 
             <div class="trades-table-container">
@@ -178,10 +169,20 @@
         </div>
       </div>
     </main>
+
+    <!-- 錯誤對話框 -->
+    <ErrorDisplay
+      v-if="currentError"
+      :error="currentError"
+      @close="clearError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
+
 definePageMeta({
   middleware: 'auth'
 })
@@ -190,11 +191,11 @@ const route = useRoute()
 const router = useRouter()
 const { loadUserInfo } = useUserInfo()
 const config = useRuntimeConfig()
+const { currentError, handleError, clearError } = useErrorHandler()
 
 // 狀態
 const backtest = ref<any>(null)
 const loading = ref(false)
-const errorMessage = ref('')
 
 // 從路由獲取 ID
 const backtestId = computed(() => parseInt(route.params.id as string))
@@ -202,7 +203,6 @@ const backtestId = computed(() => parseInt(route.params.id as string))
 // 載入回測詳情
 const loadBacktestDetail = async () => {
   loading.value = true
-  errorMessage.value = ''
 
   try {
     const token = process.client ? localStorage.getItem('access_token') : null
@@ -244,10 +244,14 @@ const loadBacktestDetail = async () => {
 
   } catch (error: any) {
     console.error('Failed to load backtest detail:', error)
-    errorMessage.value = error.data?.detail || '載入回測詳情失敗'
 
     if (error.status === 401) {
       router.push('/login')
+    } else {
+      handleError(error, {
+        showDialog: true,
+        context: '載入回測詳情'
+      })
     }
   } finally {
     loading.value = false
@@ -292,7 +296,6 @@ declare global {
 const tradeChartRef = ref<HTMLElement | null>(null)
 let chartInstance: any = null
 const chartLoading = ref(false)
-const chartError = ref('')
 const priceData = ref<any>(null)
 
 // ===== 視覺化圖表相關 =====
@@ -354,13 +357,19 @@ const initChart = async () => {
     // 初始化圖表實例
     if (!tradeChartRef.value) {
       console.error('Chart ref not available')
-      chartError.value = '圖表元素未就緒'
+      handleError(new Error('圖表元素未就緒'), {
+        showDialog: true,
+        context: '初始化圖表'
+      })
       return
     }
 
     if (!window.echarts) {
       console.error('ECharts not available')
-      chartError.value = 'ECharts 載入失敗'
+      handleError(new Error('ECharts 載入失敗'), {
+        showDialog: true,
+        context: '載入 ECharts'
+      })
       return
     }
 
@@ -386,7 +395,10 @@ const initChart = async () => {
     }, 100)
   } catch (error: any) {
     console.error('初始化圖表失敗:', error)
-    chartError.value = error.message || '圖表初始化失敗'
+    handleError(error, {
+      showDialog: true,
+      context: '初始化圖表'
+    })
     throw error
   }
 }
@@ -399,13 +411,15 @@ const loadChartData = async () => {
   }
 
   chartLoading.value = true
-  chartError.value = ''
 
   // 確保 DOM 已渲染
   await nextTick()
 
   if (!tradeChartRef.value) {
-    chartError.value = '圖表元素尚未就緒，請稍後再試'
+    handleError(new Error('圖表元素尚未就緒，請稍後再試'), {
+      showDialog: true,
+      context: '載入圖表資料'
+    })
     chartLoading.value = false
     return
   }
@@ -413,7 +427,10 @@ const loadChartData = async () => {
   try {
     const token = localStorage.getItem('access_token')
     if (!token) {
-      chartError.value = '未登入，請先登入'
+      handleError(new Error('未登入，請先登入'), {
+        showDialog: true,
+        context: '載入圖表資料'
+      })
       chartLoading.value = false
       return
     }
@@ -437,7 +454,10 @@ const loadChartData = async () => {
     await renderTradeChart()
   } catch (error: any) {
     console.error('載入圖表資料失敗:', error)
-    chartError.value = error.data?.detail || '無法載入圖表資料'
+    handleError(error, {
+      showDialog: true,
+      context: '載入圖表資料'
+    })
   } finally {
     chartLoading.value = false
   }
@@ -459,7 +479,10 @@ const renderTradeChart = async () => {
 
     if (!chartInstance) {
       console.error('Chart instance not created')
-      chartError.value = '圖表初始化失敗'
+      handleError(new Error('圖表初始化失敗'), {
+        showDialog: true,
+        context: '渲染圖表'
+      })
       return
     }
 
@@ -786,7 +809,10 @@ const renderTradeChart = async () => {
     console.log('📊 圖表包含 3 個系列:', option.series.map((s: any) => s.name))
   } catch (error: any) {
     console.error('渲染圖表失敗:', error)
-    chartError.value = error.message || '圖表渲染失敗'
+    handleError(error, {
+      showDialog: true,
+      context: '渲染圖表'
+    })
   }
 }
 

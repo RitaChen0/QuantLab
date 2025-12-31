@@ -507,6 +507,13 @@
       </div>
     </div>
 
+    <!-- Error Display Dialog -->
+    <div v-if="currentError" class="modal-overlay" @click.self="clearError">
+      <div class="error-dialog-wrapper">
+        <ErrorDisplay :error="currentError" @close="clearError" />
+      </div>
+    </div>
+
     <!-- Edit User Modal -->
     <div v-if="showEditModal" class="modal-overlay" @click.self="closeEditModal">
       <div class="modal-content">
@@ -614,6 +621,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import ErrorDisplay from '@/components/ErrorDisplay.vue'
 
 // 要求管理員權限
 definePageMeta({
@@ -624,6 +633,7 @@ const router = useRouter()
 const config = useRuntimeConfig()
 const { loadUserInfo } = useUserInfo()
 const { formatToTaiwanTime } = useDateTime()
+const { currentError, handleError, clearError } = useErrorHandler()
 
 // State
 const activeTab = ref('stats')
@@ -985,8 +995,10 @@ async function saveUser() {
 
 async function deleteUser(user: any) {
   // Prevent deleting yourself
-  const currentUserId = users.value.find(u => u.is_superuser)?.id
-  if (user.id === currentUserId) {
+  const { email: currentUserEmail } = useUserInfo()
+  const currentUser = users.value.find(u => u.email === currentUserEmail.value)
+
+  if (currentUser && user.id === currentUser.id) {
     alert('不能刪除自己的帳號')
     return
   }
@@ -1009,11 +1021,11 @@ async function deleteUser(user: any) {
     alert(`用戶 ${user.username} 已成功刪除`)
   } catch (error: any) {
     console.error('Failed to delete user:', error)
-    if (error.data?.detail) {
-      alert('刪除失敗：' + error.data.detail)
-    } else {
-      alert('刪除用戶失敗，請稍後再試')
-    }
+    // 使用增強錯誤處理系統顯示詳細錯誤
+    handleError(error, {
+      showDialog: true,
+      context: `刪除用戶 ${user.username}`
+    })
   }
 }
 
@@ -1710,6 +1722,13 @@ watch(activeTab, (newTab) => {
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
+}
+
+.error-dialog-wrapper {
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-content {

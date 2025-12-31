@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.rate_limit import limiter, get_rate_limit_error_handler
+from app.core.exceptions import register_exception_handlers
 from app.middleware.request_size_limit import RequestSizeLimitMiddleware, StrategyCodeSizeLimitMiddleware
 from app.middleware.monitoring import MonitoringMiddleware
 from app.api.v1 import auth, users, strategies, backtest, data, trading, ai, industry, industry_chain, admin, rdagent, factor_evaluation, intraday, metrics, membership, institutional, telegram, options
@@ -24,6 +25,9 @@ app = FastAPI(
     redoc_url=None,  # Disable default Redoc to use custom one
     openapi_url=f"{settings.API_PREFIX}/openapi.json"
 )
+
+# Register exception handlers (must be first)
+register_exception_handlers(app)
 
 # Add rate limiting
 app.state.limiter = limiter
